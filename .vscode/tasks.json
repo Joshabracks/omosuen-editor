@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "esbuild",
+      "group": "build",
+      "label": "npm: esbuild",
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "type": "npm",
+      "script": "esbuild-watch",
+      "group": "build",
+      "label": "npm: esbuild-watch",
+      "isBackground": true,
+      "problemMatcher": ["$tsc-watch"]
+    },
+    {
+      "type": "npm",
+      "script": "compile",
+      "group": "build",
+      "label": "npm: compile",
+      "problemMatcher": ["$tsc"]
+    }
+  ]
+}

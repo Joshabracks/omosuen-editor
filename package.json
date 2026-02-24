@@ -1,0 +1,116 @@
+{
+  "name": "omosuen-editor",
+  "displayName": "Omosuen Editor",
+  "description": "VS Code editor extension for the Omosuen axonometric game engine",
+  "version": "0.1.0",
+  "publisher": "omosuen",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:json",
+    "workspaceContains:**/*.omoscene"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "omosuen.omosceneEditor",
+        "displayName": "Omosuen Scene Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.omoscene"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "omosuen",
+          "title": "Omosuen",
+          "icon": "$(symbol-misc)"
+        }
+      ]
+    },
+    "views": {
+      "omosuen": [
+        {
+          "id": "omosuen.sceneTree",
+          "name": "Scene Tree",
+          "icon": "$(list-tree)",
+          "contextualTitle": "Omosuen Scene Tree"
+        },
+        {
+          "id": "omosuen.inspector",
+          "name": "Inspector",
+          "type": "webview",
+          "icon": "$(symbol-property)",
+          "contextualTitle": "Omosuen Inspector"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "omosuen.launchPreview",
+        "title": "Omosuen: Launch Preview",
+        "icon": "$(play)"
+      },
+      {
+        "command": "omosuen.stopPreview",
+        "title": "Omosuen: Stop Preview",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "omosuen.refreshSceneTree",
+        "title": "Omosuen: Refresh Scene Tree",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "omosuen.refreshSceneTree",
+          "when": "view == omosuen.sceneTree",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.launchPreview",
+          "when": "view == omosuen.sceneTree && !omosuen.previewRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.stopPreview",
+          "when": "view == omosuen.sceneTree && omosuen.previewRunning",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "esbuild": "node esbuild.js",
+    "esbuild-watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production",
+    "vscode:prepublish": "npm run package",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.16.0"
+  }
+}
