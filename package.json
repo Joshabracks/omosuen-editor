@@ -13,6 +13,8 @@
   ],
   "activationEvents": [
     "onLanguage:json",
+    "onLanguage:typescript",
+    "onLanguage:javascript",
     "workspaceContains:**/*.omoscene",
     "workspaceContains:**/*.omocomp",
     "onCommand:omosuen.createProject"
@@ -392,7 +394,17 @@
         { "command": "omosuen.addComponent.atlas-manager",        "group": "5_system@5", "when": "!omosuen.exists.atlas-manager" },
         { "command": "omosuen.addComponent.cell-map",             "group": "5_system@6" }
       ]
-    }
+    },
+    "snippets": [
+      {
+        "language": "typescript",
+        "path": "./snippets/omosuen.code-snippets"
+      },
+      {
+        "language": "javascript",
+        "path": "./snippets/omosuen.code-snippets"
+      }
+    ]
   },
   "scripts": {
     "compile": "tsc -p ./",

@@ -28,6 +28,11 @@ import type {
 } from './types/protocol';
 import { parseOmoscene } from './types/omoscene';
 import { parseOmocomp, createOmocomp } from './types/omocomp';
+import { OmosuenCompletionProvider } from './language/completion';
+import { OmosuenHoverProvider } from './language/hover';
+import { OmosuenDefinitionProvider } from './language/definition';
+import { WorkspaceDiscovery } from './language/discovery';
+import { registerDiagnostics } from './language/diagnostics';
 
 export function activate(context: vscode.ExtensionContext): void {
   // ── Console ─────────────────────────────────────────────────────
@@ -375,6 +380,34 @@ export function activate(context: vscode.ExtensionContext): void {
   // ── Build tasks ────────────────────────────────────────────────
 
   registerBuildTasks(context);
+
+  // ── Language Intelligence ─────────────────────────────────────
+
+  const tsJsSelector: vscode.DocumentSelector = [
+    { language: 'typescript', scheme: 'file' },
+    { language: 'javascript', scheme: 'file' },
+  ];
+
+  const discovery = new WorkspaceDiscovery();
+  context.subscriptions.push(discovery);
+  discovery.scanAllFiles();
+
+  context.subscriptions.push(
+    vscode.languages.registerCompletionItemProvider(
+      tsJsSelector,
+      new OmosuenCompletionProvider(discovery),
+      "'", '"', '{', ',', ':'
+    ),
+    vscode.languages.registerHoverProvider(
+      tsJsSelector,
+      new OmosuenHoverProvider(discovery)
+    ),
+    vscode.languages.registerDefinitionProvider(
+      tsJsSelector,
+      new OmosuenDefinitionProvider(discovery)
+    ),
+    registerDiagnostics(context, discovery),
+  );
 
   // ── Refresh command ─────────────────────────────────────────────
 
