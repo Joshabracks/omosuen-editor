@@ -13,7 +13,8 @@
   ],
   "activationEvents": [
     "onLanguage:json",
-    "workspaceContains:**/*.omoscene"
+    "workspaceContains:**/*.omoscene",
+    "onCommand:omosuen.createProject"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -70,6 +71,11 @@
         "command": "omosuen.refreshSceneTree",
         "title": "Omosuen: Refresh Scene Tree",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "omosuen.createProject",
+        "title": "Omosuen: Create New Project",
+        "icon": "$(new-folder)"
       }
     ],
     "menus": {

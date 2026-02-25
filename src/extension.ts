@@ -14,6 +14,7 @@ import {
   registerPreviewCommands,
   getDevServer,
 } from './commands/preview';
+import { registerCreateProjectCommand } from './commands/create-project';
 import type {
   EditorMessage,
   ComponentSelectedPayload,
@@ -144,6 +145,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // ── Preview commands ────────────────────────────────────────────
 
   registerPreviewCommands(context, omoConsole, handlePreviewMessage);
+
+  // ── Create Project command ────────────────────────────────────
+
+  registerCreateProjectCommand(context);
 
   // ── Refresh command ─────────────────────────────────────────────
 

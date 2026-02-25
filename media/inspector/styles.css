@@ -162,6 +162,23 @@ body {
   flex: 0 0 50px;
 }
 
+/* Enum select */
+.property-value select.enum-select {
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  outline: none;
+  border-radius: 2px;
+}
+
+.property-value select.enum-select:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
 /* Sub-fields (object type) */
 .sub-fields {
   padding-left: 12px;

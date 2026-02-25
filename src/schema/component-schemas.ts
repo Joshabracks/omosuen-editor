@@ -1,7 +1,6 @@
 /**
- * Property schemas for the 5 Phase 1 component types.
+ * Property schemas for all 20 component types.
  * Derived from engine's PROPERTY_ALLOWLIST and *Options interfaces in each data.ts.
- * Source: https://github.com/Joshabracks/omosuen/tree/0.1.0
  */
 
 import type { COMPONENT_TYPE } from '../types/engine';
@@ -32,12 +31,7 @@ export interface PropertySchema {
   subFields?: PropertySchema[];
 }
 
-/**
- * Phase 1 schemas: nexus, transform, sprite, camera, viewport
- */
-export const COMPONENT_SCHEMAS: Partial<
-  Record<COMPONENT_TYPE, PropertySchema[]>
-> = {
+export const COMPONENT_SCHEMAS: Record<COMPONENT_TYPE, PropertySchema[]> = {
   nexus: [
     {
       name: 'paused',
@@ -215,11 +209,407 @@ export const COMPONENT_SCHEMAS: Partial<
       default: { x: 0.1, y: 0.1, z: 0.15, w: 1.0 },
     },
   ],
+
+  collider: [
+    {
+      name: 'shape',
+      type: 'enum',
+      label: 'Shape',
+      default: 'box',
+      values: ['box', 'sphere'],
+    },
+    {
+      name: 'size',
+      type: 'Vector3D',
+      label: 'Size',
+      default: { x: 0.5, y: 0.5, z: 0.5 },
+    },
+    {
+      name: 'radius',
+      type: 'number',
+      label: 'Radius',
+      default: 0.5,
+      min: 0,
+      step: 0.1,
+    },
+    {
+      name: 'offset',
+      type: 'Vector3D',
+      label: 'Offset',
+      default: { x: 0, y: 0, z: 0 },
+    },
+  ],
+
+  'event-collider': [
+    {
+      name: 'shape',
+      type: 'enum',
+      label: 'Shape',
+      default: 'box',
+      values: ['box', 'sphere'],
+    },
+    {
+      name: 'size',
+      type: 'Vector3D',
+      label: 'Size',
+      default: { x: 0.5, y: 0.5, z: 0.5 },
+    },
+    {
+      name: 'radius',
+      type: 'number',
+      label: 'Radius',
+      default: 0.5,
+      min: 0,
+      step: 0.1,
+    },
+    {
+      name: 'offset',
+      type: 'Vector3D',
+      label: 'Offset',
+      default: { x: 0, y: 0, z: 0 },
+    },
+  ],
+
+  light: [
+    {
+      name: 'lightType',
+      type: 'enum',
+      label: 'Light Type',
+      default: 'point',
+      values: ['ambient', 'point', 'spot', 'directional'],
+    },
+    {
+      name: 'color',
+      type: 'Color3',
+      label: 'Color',
+      default: { x: 1, y: 1, z: 1 },
+    },
+    {
+      name: 'brightness',
+      type: 'number',
+      label: 'Brightness',
+      default: 1,
+      min: 0,
+      max: 10,
+      step: 0.01,
+    },
+    {
+      name: 'radius',
+      type: 'number',
+      label: 'Radius',
+      default: 100,
+      min: 0,
+      step: 1,
+    },
+    {
+      name: 'hardness',
+      type: 'number',
+      label: 'Hardness',
+      default: 0,
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    {
+      name: 'direction',
+      type: 'Vector3D',
+      label: 'Direction',
+      default: { x: 0, y: -1, z: 0 },
+    },
+  ],
+
+  timer: [
+    {
+      name: 'duration',
+      type: 'number',
+      label: 'Duration (ms)',
+      default: 1000,
+      min: 0,
+      step: 100,
+    },
+    {
+      name: 'time',
+      type: 'number',
+      label: 'Current Time',
+      default: 0,
+      min: 0,
+    },
+    {
+      name: 'speed',
+      type: 'number',
+      label: 'Speed',
+      default: 1,
+      step: 0.1,
+    },
+    {
+      name: 'repeat',
+      type: 'boolean',
+      label: 'Repeat',
+      default: false,
+    },
+    {
+      name: 'destroy',
+      type: 'boolean',
+      label: 'Destroy on Complete',
+      default: false,
+    },
+    {
+      name: 'running',
+      type: 'boolean',
+      label: 'Running',
+      default: false,
+    },
+  ],
+
+  messenger: [
+    {
+      name: 'listeners',
+      type: 'readonly',
+      label: 'Listeners',
+      readOnly: true,
+    },
+  ],
+
+  'input-controller': [
+    {
+      name: 'preventDefault',
+      type: 'boolean',
+      label: 'Prevent Default',
+      default: true,
+    },
+    {
+      name: 'bindings',
+      type: 'readonly',
+      label: 'Bindings',
+      readOnly: true,
+    },
+  ],
+
+  'audio-manager': [
+    {
+      name: 'masterVolume',
+      type: 'number',
+      label: 'Master Volume',
+      default: 1.0,
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    {
+      name: 'musicVolume',
+      type: 'number',
+      label: 'Music Volume',
+      default: 1.0,
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    {
+      name: 'sfxVolume',
+      type: 'number',
+      label: 'SFX Volume',
+      default: 1.0,
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    {
+      name: 'muted',
+      type: 'boolean',
+      label: 'Muted',
+      default: false,
+    },
+  ],
+
+  'audio-controller': [
+    {
+      name: 'volume',
+      type: 'number',
+      label: 'Volume',
+      default: 1.0,
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    {
+      name: 'maxSFX',
+      type: 'number',
+      label: 'Max SFX',
+      default: 16,
+      min: 1,
+      step: 1,
+    },
+  ],
+
+  'animation-controller': [
+    {
+      name: 'spriteId',
+      type: 'number',
+      label: 'Sprite ID',
+      default: 0,
+      min: 0,
+      step: 1,
+    },
+    {
+      name: 'speed',
+      type: 'number',
+      label: 'Speed',
+      default: 1.0,
+      min: 0,
+      step: 0.1,
+    },
+    {
+      name: 'state',
+      type: 'enum',
+      label: 'State',
+      default: 'stopped',
+      values: ['playing', 'paused', 'stopped'],
+    },
+    {
+      name: 'currentAnimation',
+      type: 'string',
+      label: 'Current Animation',
+      default: '',
+    },
+  ],
+
+  'ui-overlay': [
+    {
+      name: 'htmlConstructorKey',
+      type: 'string',
+      label: 'HTML Constructor Key',
+      default: '',
+    },
+    {
+      name: 'showOverride',
+      type: 'string',
+      label: 'Show Override',
+      default: '',
+    },
+    {
+      name: 'hideOverride',
+      type: 'string',
+      label: 'Hide Override',
+      default: '',
+    },
+    {
+      name: 'cssOverrides',
+      type: 'readonly',
+      label: 'CSS Overrides',
+      readOnly: true,
+    },
+  ],
+
+  'data-layer': [
+    {
+      name: 'storage',
+      type: 'readonly',
+      label: 'Storage',
+      readOnly: true,
+    },
+  ],
+
+  'flag-manager': [
+    {
+      name: 'flags',
+      type: 'readonly',
+      label: 'Flags',
+      readOnly: true,
+    },
+  ],
+
+  'texture-map': [
+    {
+      name: 'textureMapKey',
+      type: 'string',
+      label: 'Texture Map Key',
+      default: '',
+    },
+    {
+      name: 'filePath',
+      type: 'string',
+      label: 'File Path',
+      default: '',
+    },
+  ],
+
+  'atlas-manager': [
+    {
+      name: 'config',
+      type: 'object',
+      label: 'Config',
+      subFields: [
+        {
+          name: 'atlasSize',
+          type: 'enum',
+          label: 'Atlas Size',
+          default: '4096',
+          values: ['1024', '2048', '4096', '8192'],
+        },
+        {
+          name: 'maxAtlases',
+          type: 'number',
+          label: 'Max Atlases',
+          default: 16,
+          min: 1,
+          max: 16,
+          step: 1,
+        },
+        {
+          name: 'padding',
+          type: 'number',
+          label: 'Padding',
+          default: 1,
+          min: 0,
+          max: 4,
+          step: 1,
+        },
+      ],
+    },
+  ],
+
+  'cell-map': [
+    {
+      name: 'cellSize',
+      type: 'Vector3D',
+      label: 'Cell Size',
+      readOnly: true,
+    },
+    {
+      name: 'mapSize',
+      type: 'Vector3D',
+      label: 'Map Size',
+      readOnly: true,
+    },
+    {
+      name: 'smoothing',
+      type: 'number',
+      label: 'Smoothing',
+      default: 0,
+      min: 0,
+      step: 1,
+    },
+    {
+      name: 'normalSmoothing',
+      type: 'number',
+      label: 'Normal Smoothing',
+      default: 0,
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    {
+      name: 'revealExempt',
+      type: 'boolean',
+      label: 'Reveal Exempt',
+      default: false,
+    },
+  ],
 };
 
 /**
- * Returns the property schema for a given component type, or empty array if unsupported.
+ * Returns the property schema for a given component type.
  */
 export function getSchemaForType(type: COMPONENT_TYPE): PropertySchema[] {
-  return COMPONENT_SCHEMAS[type] ?? [];
+  return COMPONENT_SCHEMAS[type];
 }

@@ -1,8 +1,9 @@
 /**
- * Preview commands — launch/stop the browser preview with dev server.
+ * Preview commands — build with webpack, then launch dev server + browser.
  */
 
 import * as vscode from 'vscode';
+import { execFile } from 'child_process';
 import { OmosuenDevServer } from '../bridge/server';
 import { OmosuenConsole } from '../panels/console';
 import type { EditorMessage, PreviewLogPayload } from '../types/protocol';
@@ -14,6 +15,84 @@ let devServer: OmosuenDevServer | null = null;
  */
 export function getDevServer(): OmosuenDevServer | null {
   return devServer;
+}
+
+/**
+ * Run a shell command as a promise
+ */
+function runCommand(
+  command: string,
+  args: string[],
+  cwd: string
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, { cwd, shell: true }, (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(stderr || err.message));
+      } else {
+        resolve(stdout);
+      }
+    });
+  });
+}
+
+/**
+ * Find the active .omoscene file — either the currently open one
+ * or prompt the user to pick one from the workspace.
+ */
+async function resolveScenePath(
+  workspaceRoot: vscode.Uri
+): Promise<string | undefined> {
+  // Check if the active editor has an .omoscene file
+  const activeEditor = vscode.window.activeTextEditor;
+  if (activeEditor?.document.fileName.endsWith('.omoscene')) {
+    return vscode.workspace.asRelativePath(
+      activeEditor.document.uri,
+      false
+    );
+  }
+
+  // Check for visible custom editors with .omoscene
+  for (const tabGroup of vscode.window.tabGroups.all) {
+    for (const tab of tabGroup.tabs) {
+      if (
+        tab.input &&
+        typeof tab.input === 'object' &&
+        'uri' in tab.input
+      ) {
+        const uri = (tab.input as { uri: vscode.Uri }).uri;
+        if (uri.fsPath.endsWith('.omoscene')) {
+          return vscode.workspace.asRelativePath(uri, false);
+        }
+      }
+    }
+  }
+
+  // Search workspace for .omoscene files and let user pick
+  const files = await vscode.workspace.findFiles('**/*.omoscene');
+  if (files.length === 0) {
+    vscode.window.showErrorMessage(
+      'No .omoscene files found in the workspace.'
+    );
+    return undefined;
+  }
+
+  if (files.length === 1) {
+    return vscode.workspace.asRelativePath(files[0], false);
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    files.map((f) => ({
+      label: vscode.workspace.asRelativePath(f, false),
+      uri: f,
+    })),
+    {
+      placeHolder: 'Select a scene to preview',
+      title: 'Choose Scene',
+    }
+  );
+
+  return picked?.label;
 }
 
 /**
@@ -56,6 +135,65 @@ export function registerPreviewCommands(
           'No index.html found in the workspace root. Cannot launch preview.'
         );
         return;
+      }
+
+      // Resolve which .omoscene to use
+      const scenePath = await resolveScenePath(workspaceFolders[0].uri);
+      if (!scenePath) {
+        return;
+      }
+
+      // Check if webpack.config.js exists (TypeScript/webpack project)
+      const webpackConfigUri = vscode.Uri.joinPath(
+        workspaceFolders[0].uri,
+        'webpack.config.js'
+      );
+      let hasWebpack = false;
+      try {
+        await vscode.workspace.fs.stat(webpackConfigUri);
+        hasWebpack = true;
+      } catch {
+        // No webpack config — skip build step
+      }
+
+      // Build with webpack if available
+      if (hasWebpack) {
+        try {
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: 'Building project...',
+              cancellable: false,
+            },
+            async (progress) => {
+              progress.report({
+                message: `Bundling scene: ${scenePath}`,
+              });
+              await runCommand(
+                'npx',
+                [
+                  'webpack',
+                  '--config',
+                  'webpack.config.js',
+                  '--env',
+                  'mode=development',
+                  '--env',
+                  `scene=./${scenePath}`,
+                ],
+                projectRoot
+              );
+            }
+          );
+          console.info(`Built scene: ${scenePath}`);
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : String(err);
+          console.error(`Build failed: ${message}`);
+          vscode.window.showErrorMessage(
+            `Webpack build failed: ${message}`
+          );
+          return;
+        }
       }
 
       const port = vscode.workspace

@@ -98,6 +98,12 @@
       case 'boolean':
         container.appendChild(renderBooleanField(schema, value));
         break;
+      case 'enum':
+        container.appendChild(renderEnumField(schema, value));
+        break;
+      case 'readonly':
+        container.appendChild(renderReadonlyField(schema, value));
+        break;
       case 'Vector2D':
         container.appendChild(renderVector2DField(schema, value));
         break;
@@ -150,6 +156,62 @@
       sendPropertyChange(schema.name, input.checked);
     });
     row.querySelector('.property-value').appendChild(input);
+    return row;
+  }
+
+  function renderEnumField(schema, value) {
+    const row = document.createElement('div');
+    row.className = 'property-row';
+
+    const label = document.createElement('div');
+    label.className = 'property-label';
+    label.textContent = schema.label;
+    row.appendChild(label);
+
+    const valueDiv = document.createElement('div');
+    valueDiv.className = 'property-value';
+
+    const select = document.createElement('select');
+    select.className = 'enum-select';
+
+    for (const option of (schema.values || [])) {
+      const opt = document.createElement('option');
+      opt.value = option;
+      opt.textContent = option;
+      if (value === option || (value === undefined && option === schema.default)) {
+        opt.selected = true;
+      }
+      select.appendChild(opt);
+    }
+
+    select.addEventListener('change', () => {
+      sendPropertyChange(schema.name, select.value);
+    });
+
+    valueDiv.appendChild(select);
+    row.appendChild(valueDiv);
+    return row;
+  }
+
+  function renderReadonlyField(schema, value) {
+    const row = createPropertyRow(schema.label, 'readonly');
+    const span = document.createElement('span');
+    span.style.fontSize = '12px';
+    span.style.color = 'var(--vscode-descriptionForeground)';
+
+    if (value === undefined || value === null) {
+      span.textContent = schema.default !== undefined ? String(schema.default) : '--';
+    } else if (typeof value === 'object') {
+      try {
+        span.textContent = JSON.stringify(value);
+      } catch {
+        span.textContent = String(value);
+      }
+    } else {
+      span.textContent = String(value);
+    }
+
+    row.querySelector('.property-value').appendChild(span);
     return row;
   }
 
@@ -362,6 +424,12 @@
             break;
           case 'boolean':
             subContainer.appendChild(renderBooleanField(subPropertySchema, subValue));
+            break;
+          case 'enum':
+            subContainer.appendChild(renderEnumField(subPropertySchema, subValue));
+            break;
+          case 'readonly':
+            subContainer.appendChild(renderReadonlyField(subPropertySchema, subValue));
             break;
         }
       }
