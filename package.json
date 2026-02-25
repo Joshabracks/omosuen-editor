@@ -244,6 +244,26 @@
         "command": "omosuen.searchSceneTree",
         "title": "Omosuen: Search Scene Tree",
         "icon": "$(search)"
+      },
+      {
+        "command": "omosuen.pausePreview",
+        "title": "Omosuen: Pause Preview",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "omosuen.resumePreview",
+        "title": "Omosuen: Resume Preview",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "omosuen.stepFrame",
+        "title": "Omosuen: Step Frame",
+        "icon": "$(debug-step-over)"
+      },
+      {
+        "command": "omosuen.togglePerformanceOverlay",
+        "title": "Omosuen: Toggle Performance Overlay",
+        "icon": "$(dashboard)"
       }
     ],
     "submenus": [
@@ -305,6 +325,21 @@
         "command": "omosuen.searchSceneTree",
         "key": "ctrl+f",
         "when": "focusedView == 'omosuen.sceneTree'"
+      },
+      {
+        "command": "omosuen.pausePreview",
+        "key": "f6",
+        "when": "omosuen.previewRunning && !omosuen.previewPaused"
+      },
+      {
+        "command": "omosuen.resumePreview",
+        "key": "f6",
+        "when": "omosuen.previewRunning && omosuen.previewPaused"
+      },
+      {
+        "command": "omosuen.stepFrame",
+        "key": "f10",
+        "when": "omosuen.previewRunning && omosuen.previewPaused"
       }
     ],
     "menus": {
@@ -327,6 +362,21 @@
         {
           "command": "omosuen.stopPreview",
           "when": "view == omosuen.sceneTree && omosuen.previewRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.pausePreview",
+          "when": "view == omosuen.sceneTree && omosuen.previewRunning && !omosuen.previewPaused",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.resumePreview",
+          "when": "view == omosuen.sceneTree && omosuen.previewRunning && omosuen.previewPaused",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.stepFrame",
+          "when": "view == omosuen.sceneTree && omosuen.previewRunning && omosuen.previewPaused",
           "group": "navigation"
         },
         {

@@ -212,13 +212,31 @@ export function getOverlayScript(wsPort: number): string {
       case 'preview:pause':
         if (window.Omosuen && window.Omosuen.pause) {
           window.Omosuen.pause();
+          sendMessage('preview:pauseState', { paused: true });
         }
         break;
 
       case 'preview:resume':
         if (window.Omosuen && window.Omosuen.resume) {
           window.Omosuen.resume();
+          sendMessage('preview:pauseState', { paused: false });
         }
+        break;
+
+      case 'preview:step':
+        if (window.Omosuen && window.Omosuen.resume) {
+          window.Omosuen.resume();
+          requestAnimationFrame(function() {
+            if (window.Omosuen && window.Omosuen.pause) {
+              window.Omosuen.pause();
+            }
+            sendMessage('preview:pauseState', { paused: true });
+          });
+        }
+        break;
+
+      case 'preview:togglePerf':
+        togglePerfOverlay();
         break;
 
       case 'scene:load':
@@ -378,10 +396,191 @@ export function getOverlayScript(wsPort: number): string {
     }, 2000);
   }
 
+  // ── Performance Overlay ──────────────────────────────────────────
+
+  var perfDiv = null;
+  var perfVisible = false;
+  var perfTimer = null;
+
+  function createPerfOverlay() {
+    perfDiv = document.createElement('div');
+    perfDiv.id = '__omosuen_perf_overlay';
+    perfDiv.style.cssText = [
+      'position: fixed',
+      'bottom: 8px',
+      'left: 8px',
+      'padding: 4px 8px',
+      'background: rgba(0, 0, 0, 0.6)',
+      'color: #0f0',
+      'font-family: monospace',
+      'font-size: 12px',
+      'border-radius: 3px',
+      'pointer-events: none',
+      'z-index: 99998',
+      'display: none',
+    ].join(';');
+    perfDiv.textContent = 'FPS: --';
+    document.body.appendChild(perfDiv);
+  }
+
+  function togglePerfOverlay() {
+    perfVisible = !perfVisible;
+    if (perfDiv) {
+      perfDiv.style.display = perfVisible ? 'block' : 'none';
+    }
+    if (perfVisible) {
+      startPerfUpdate();
+    } else {
+      stopPerfUpdate();
+    }
+  }
+
+  function startPerfUpdate() {
+    stopPerfUpdate();
+    perfTimer = setInterval(function() {
+      if (perfDiv && window.Omosuen && window.Omosuen.getFPS) {
+        var fps = window.Omosuen.getFPS();
+        perfDiv.textContent = 'FPS: ' + Math.round(fps);
+      }
+    }, 500);
+  }
+
+  function stopPerfUpdate() {
+    if (perfTimer) {
+      clearInterval(perfTimer);
+      perfTimer = null;
+    }
+  }
+
+  // ── Editor Camera Controls ─────────────────────────────────────────
+
+  var pressedKeys = {};
+  var cameraLoopRunning = false;
+  var lastCameraTime = 0;
+  var PAN_SPEED = 200; // units per second
+
+  function getEditorCamera() {
+    if (!window.Omosuen || !window.Omosuen.getActiveScene) return null;
+    var scene = window.Omosuen.getActiveScene();
+    if (!scene) return null;
+    return scene.getComponentByType('camera', true);
+  }
+
+  function getCameraTransform(camera) {
+    if (!camera || !camera.parent) return null;
+    // The camera's parent nexus should have a transform
+    if (camera.parent.getComponentByType) {
+      return camera.parent.getComponentByType('transform');
+    }
+    return null;
+  }
+
+  function startCameraLoop() {
+    if (cameraLoopRunning) return;
+    cameraLoopRunning = true;
+    lastCameraTime = performance.now();
+    requestAnimationFrame(cameraFrame);
+  }
+
+  function stopCameraLoop() {
+    cameraLoopRunning = false;
+  }
+
+  function cameraFrame(now) {
+    if (!cameraLoopRunning) return;
+
+    var dt = (now - lastCameraTime) / 1000;
+    lastCameraTime = now;
+
+    // Clamp delta to prevent large jumps
+    if (dt > 0.1) dt = 0.1;
+
+    var hasPan = pressedKeys['KeyW'] || pressedKeys['KeyA'] ||
+                 pressedKeys['KeyS'] || pressedKeys['KeyD'] ||
+                 pressedKeys['ArrowUp'] || pressedKeys['ArrowLeft'] ||
+                 pressedKeys['ArrowDown'] || pressedKeys['ArrowRight'];
+
+    if (hasPan) {
+      var camera = getEditorCamera();
+      var transform = getCameraTransform(camera);
+      if (transform) {
+        var dx = 0;
+        var dy = 0;
+
+        if (pressedKeys['KeyA'] || pressedKeys['ArrowLeft'])  dx -= PAN_SPEED * dt;
+        if (pressedKeys['KeyD'] || pressedKeys['ArrowRight']) dx += PAN_SPEED * dt;
+        if (pressedKeys['KeyW'] || pressedKeys['ArrowUp'])    dy -= PAN_SPEED * dt;
+        if (pressedKeys['KeyS'] || pressedKeys['ArrowDown'])  dy += PAN_SPEED * dt;
+
+        if (transform.position) {
+          transform.position.x += dx;
+          transform.position.y += dy;
+
+          sendMessage('editor:cameraState', {
+            panX: transform.position.x,
+            panY: transform.position.y,
+            zoom: camera.zoom !== undefined ? camera.zoom : 1,
+          });
+        }
+      }
+    }
+
+    if (Object.keys(pressedKeys).length > 0) {
+      requestAnimationFrame(cameraFrame);
+    } else {
+      cameraLoopRunning = false;
+    }
+  }
+
+  function onKeyDown(e) {
+    // Don't intercept when focused on input elements
+    var tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    var code = e.code;
+    if (code === 'KeyW' || code === 'KeyA' || code === 'KeyS' || code === 'KeyD' ||
+        code === 'ArrowUp' || code === 'ArrowLeft' || code === 'ArrowDown' || code === 'ArrowRight') {
+      e.preventDefault();
+      pressedKeys[code] = true;
+      startCameraLoop();
+    }
+  }
+
+  function onKeyUp(e) {
+    delete pressedKeys[e.code];
+  }
+
+  function onWheel(e) {
+    // Don't intercept when focused on input elements
+    var tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    var camera = getEditorCamera();
+    if (!camera) return;
+
+    e.preventDefault();
+    var zoom = camera.zoom !== undefined ? camera.zoom : 1;
+    var delta = e.deltaY > 0 ? -0.1 : 0.1;
+    zoom = Math.max(0.1, Math.min(10, zoom + delta));
+    camera.zoom = zoom;
+
+    var transform = getCameraTransform(camera);
+    sendMessage('editor:cameraState', {
+      panX: transform && transform.position ? transform.position.x : 0,
+      panY: transform && transform.position ? transform.position.y : 0,
+      zoom: zoom,
+    });
+  }
+
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('keyup', onKeyUp);
+  document.addEventListener('wheel', onWheel, { passive: false });
+
   // ── Initialize ────────────────────────────────────────────────────
 
   interceptConsole();
   createOverlayElement();
+  createPerfOverlay();
   connect();
   startFpsReporting();
 

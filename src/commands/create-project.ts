@@ -281,7 +281,13 @@ body {
 }
 
 function indexTs(): string {
-  return `import { init, start, registerScene, switchScene, deserializeComponentRecursive, exposeEditorAPI } from 'omosuen';
+  return `import {
+  init, start, registerScene, switchScene,
+  deserializeComponentRecursive, serializeComponentRecursive,
+  getActiveScene, setComponentCount, markForDisposal,
+  pause, resume, getFPS, version,
+  Vector2D, Vector3D, Vector4D,
+} from 'omosuen';
 import sceneRaw from '@scene';
 
 interface OmosceneFile {
@@ -299,7 +305,11 @@ if (!scene) {
 }
 
 init();
-exposeEditorAPI();
+(window as any).Omosuen = {
+  getActiveScene, serializeComponentRecursive, deserializeComponentRecursive,
+  setComponentCount, markForDisposal, pause, resume, getFPS,
+  Vector2D, Vector3D, Vector4D, version,
+};
 registerScene('main', scene as any);
 switchScene('main');
 start(60);

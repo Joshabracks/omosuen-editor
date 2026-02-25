@@ -21,7 +21,8 @@ export type ExtensionMessageType =
   | 'component:move'
   | 'preview:pause'
   | 'preview:resume'
-  | 'preview:step';
+  | 'preview:step'
+  | 'preview:togglePerf';
 
 /**
  * Messages the preview sends to the extension
@@ -33,6 +34,8 @@ export type PreviewMessageType =
   | 'preview:log'
   | 'preview:error'
   | 'preview:fps'
+  | 'preview:pauseState'
+  | 'editor:cameraState'
   | 'scene:state';
 
 export type MessageType = ExtensionMessageType | PreviewMessageType;
@@ -97,6 +100,16 @@ export interface ComponentMovePayload {
 export interface ComponentInstantiatePayload {
   parentId: number;
   component: SerializedComponent;
+}
+
+export interface PreviewPauseStatePayload {
+  paused: boolean;
+}
+
+export interface EditorCameraStatePayload {
+  panX: number;
+  panY: number;
+  zoom: number;
 }
 
 /**

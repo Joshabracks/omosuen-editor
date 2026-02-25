@@ -254,6 +254,43 @@ export function registerPreviewCommands(
         'omosuen.previewRunning',
         false
       );
+      vscode.commands.executeCommand(
+        'setContext',
+        'omosuen.previewPaused',
+        false
+      );
+    })
+  );
+
+  // ── Pause / Resume / Step / Perf Toggle ─────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('omosuen.pausePreview', () => {
+      if (!devServer?.isRunning) { return; }
+      devServer.broadcast('preview:pause', {});
+      vscode.commands.executeCommand('setContext', 'omosuen.previewPaused', true);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('omosuen.resumePreview', () => {
+      if (!devServer?.isRunning) { return; }
+      devServer.broadcast('preview:resume', {});
+      vscode.commands.executeCommand('setContext', 'omosuen.previewPaused', false);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('omosuen.stepFrame', () => {
+      if (!devServer?.isRunning) { return; }
+      devServer.broadcast('preview:step', {});
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('omosuen.togglePerformanceOverlay', () => {
+      if (!devServer?.isRunning) { return; }
+      devServer.broadcast('preview:togglePerf', {});
     })
   );
 }

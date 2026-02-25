@@ -25,6 +25,8 @@ import type {
   EditorMessage,
   ComponentSelectedPayload,
   PreviewReadyPayload,
+  PreviewPauseStatePayload,
+  EditorCameraStatePayload,
 } from './types/protocol';
 import { parseOmoscene } from './types/omoscene';
 import { parseOmocomp, createOmocomp } from './types/omocomp';
@@ -182,6 +184,22 @@ export function activate(context: vscode.ExtensionContext): void {
       case 'preview:fps':
         // Could display in status bar in the future
         break;
+
+      case 'preview:pauseState': {
+        const pausePayload = msg.payload as PreviewPauseStatePayload;
+        vscode.commands.executeCommand(
+          'setContext',
+          'omosuen.previewPaused',
+          pausePayload.paused
+        );
+        break;
+      }
+
+      case 'editor:cameraState': {
+        // Camera state from preview — could persist to editor state in the future
+        const _camPayload = msg.payload as EditorCameraStatePayload;
+        break;
+      }
 
       case 'preview:error': {
         const errPayload = msg.payload as { message?: string };
