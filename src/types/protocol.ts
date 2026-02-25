@@ -22,7 +22,10 @@ export type ExtensionMessageType =
   | 'preview:pause'
   | 'preview:resume'
   | 'preview:step'
-  | 'preview:togglePerf';
+  | 'preview:togglePerf'
+  | 'gizmo:mode'
+  | 'editor:setCameraState'
+  | 'editor:toggleGrid';
 
 /**
  * Messages the preview sends to the extension
@@ -110,6 +113,16 @@ export interface EditorCameraStatePayload {
   panX: number;
   panY: number;
   zoom: number;
+}
+
+export interface ComponentChangedPayload {
+  componentId: number;
+  property: string;
+  value: unknown;
+}
+
+export interface GizmoModePayload {
+  mode: 'translate' | 'rotate' | 'scale';
 }
 
 /**

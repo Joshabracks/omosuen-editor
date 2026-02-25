@@ -24,6 +24,7 @@ import { registerBuildTasks } from './tasks/build';
 import type {
   EditorMessage,
   ComponentSelectedPayload,
+  ComponentChangedPayload,
   PreviewReadyPayload,
   PreviewPauseStatePayload,
   EditorCameraStatePayload,
@@ -162,6 +163,14 @@ export function activate(context: vscode.ExtensionContext): void {
         omoConsole.info(
           `Preview connected — engine v${payload.engineVersion}, contract v${payload.contractVersion}`
         );
+        // Restore saved camera state
+        const camState = omosceneEditor.getCameraState();
+        if (camState) {
+          const server = getDevServer();
+          if (server?.isRunning) {
+            server.broadcast('editor:setCameraState', camState);
+          }
+        }
         break;
       }
 
@@ -195,9 +204,19 @@ export function activate(context: vscode.ExtensionContext): void {
         break;
       }
 
+      case 'component:changed': {
+        const changedPayload = msg.payload as ComponentChangedPayload;
+        omosceneEditor.updateComponentProperty(
+          changedPayload.componentId,
+          changedPayload.property,
+          changedPayload.value
+        );
+        break;
+      }
+
       case 'editor:cameraState': {
-        // Camera state from preview — could persist to editor state in the future
-        const _camPayload = msg.payload as EditorCameraStatePayload;
+        const camPayload = msg.payload as EditorCameraStatePayload;
+        omosceneEditor.updateCameraState(camPayload.panX, camPayload.panY, camPayload.zoom);
         break;
       }
 

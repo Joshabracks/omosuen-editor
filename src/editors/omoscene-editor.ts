@@ -238,6 +238,22 @@ export class OmosceneEditorProvider
     }
   }
 
+  /**
+   * Update camera state in the editor metadata (persisted to .omoscene on save)
+   */
+  updateCameraState(panX: number, panY: number, zoom: number): void {
+    if (!this.activeParsed) {return;}
+    this.activeParsed.editor.camera = { panX, panY, zoom };
+  }
+
+  /**
+   * Get the current camera state from editor metadata
+   */
+  getCameraState(): { panX: number; panY: number; zoom: number } | null {
+    if (!this.activeParsed) {return null;}
+    return this.activeParsed.editor.camera;
+  }
+
   private updateWebview(
     panel: vscode.WebviewPanel,
     data: OmosceneFile | null
