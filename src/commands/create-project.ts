@@ -281,7 +281,7 @@ body {
 }
 
 function indexTs(): string {
-  return `import { init, start, registerScene, switchScene, deserializeComponentRecursive } from 'omosuen';
+  return `import { init, start, registerScene, switchScene, deserializeComponentRecursive, exposeEditorAPI } from 'omosuen';
 import sceneRaw from '@scene';
 
 interface OmosceneFile {
@@ -299,6 +299,7 @@ if (!scene) {
 }
 
 init();
+exposeEditorAPI();
 registerScene('main', scene as any);
 switchScene('main');
 start(60);

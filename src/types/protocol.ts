@@ -18,6 +18,7 @@ export type ExtensionMessageType =
   | 'component:add'
   | 'component:instantiate'
   | 'component:remove'
+  | 'component:move'
   | 'preview:pause'
   | 'preview:resume'
   | 'preview:step';
@@ -84,6 +85,18 @@ export interface PreviewFpsPayload {
 
 export interface SceneStatePayload {
   scene: SerializedComponent;
+}
+
+export interface ComponentMovePayload {
+  componentId: number;
+  oldParentId: number;
+  newParentId: number;
+  index: number;
+}
+
+export interface ComponentInstantiatePayload {
+  parentId: number;
+  component: SerializedComponent;
 }
 
 /**

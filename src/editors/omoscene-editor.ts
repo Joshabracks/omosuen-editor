@@ -79,6 +79,133 @@ export class OmosceneEditorProvider
   }
 
   /**
+   * Add a component as a child of the given parent nexus.
+   */
+  async addComponent(
+    parentId: number,
+    component: SerializedComponent
+  ): Promise<void> {
+    if (!this.activeDocument || !this.activeParsed) {return;}
+
+    const updated = JSON.parse(
+      JSON.stringify(this.activeParsed)
+    ) as OmosceneFile;
+    const parent = findComponentById(updated.scene, parentId);
+    if (!parent || !isSerializedNexus(parent)) {return;}
+
+    parent.components.push(component);
+
+    await this.writeDocument(updated);
+
+    const server = getDevServer();
+    if (server?.isRunning) {
+      server.broadcast('component:add', { parentId, component });
+    }
+  }
+
+  /**
+   * Remove a component by ID from the scene.
+   */
+  async removeComponent(componentId: number): Promise<void> {
+    if (!this.activeDocument || !this.activeParsed) {return;}
+
+    const updated = JSON.parse(
+      JSON.stringify(this.activeParsed)
+    ) as OmosceneFile;
+    const parent = findParentNexus(updated.scene, componentId);
+    if (!parent) {return;}
+
+    const idx = parent.components.findIndex((c) => c.id === componentId);
+    if (idx === -1) {return;}
+    parent.components.splice(idx, 1);
+
+    await this.writeDocument(updated);
+
+    const server = getDevServer();
+    if (server?.isRunning) {
+      server.broadcast('component:remove', { componentId });
+    }
+  }
+
+  /**
+   * Returns the next available component ID (max existing + 1).
+   */
+  getNextId(): number {
+    if (!this.activeParsed) {return 0;}
+    return getMaxId(this.activeParsed.scene) + 1;
+  }
+
+  /**
+   * Move a component to a new parent at a specific index.
+   */
+  async moveComponent(
+    componentId: number,
+    newParentId: number,
+    index: number
+  ): Promise<void> {
+    if (!this.activeDocument || !this.activeParsed) {return;}
+
+    const updated = JSON.parse(
+      JSON.stringify(this.activeParsed)
+    ) as OmosceneFile;
+
+    // Find and remove from old parent
+    const oldParent = findParentNexus(updated.scene, componentId);
+    if (!oldParent) {return;}
+
+    const oldIdx = oldParent.components.findIndex((c) => c.id === componentId);
+    if (oldIdx === -1) {return;}
+
+    const [component] = oldParent.components.splice(oldIdx, 1);
+
+    // Find new parent
+    const newParent = findComponentById(updated.scene, newParentId);
+    if (!newParent || !isSerializedNexus(newParent)) {return;}
+
+    // Adjust index when moving within the same parent
+    let insertIdx = index;
+    if (oldParent.id === newParent.id && oldIdx < index) {
+      insertIdx--;
+    }
+
+    // Clamp to valid range
+    insertIdx = Math.max(0, Math.min(insertIdx, newParent.components.length));
+
+    newParent.components.splice(insertIdx, 0, component);
+
+    await this.writeDocument(updated);
+
+    const server = getDevServer();
+    if (server?.isRunning) {
+      server.broadcast('component:move', {
+        componentId,
+        oldParentId: oldParent.id,
+        newParentId,
+        index: insertIdx,
+      });
+    }
+  }
+
+  /**
+   * Write an updated OmosceneFile back to the active document.
+   */
+  private async writeDocument(updated: OmosceneFile): Promise<void> {
+    if (!this.activeDocument) {return;}
+
+    const edit = new vscode.WorkspaceEdit();
+    const fullRange = new vscode.Range(
+      this.activeDocument.positionAt(0),
+      this.activeDocument.positionAt(this.activeDocument.getText().length)
+    );
+    edit.replace(
+      this.activeDocument.uri,
+      fullRange,
+      JSON.stringify(updated, null, 2)
+    );
+    await vscode.workspace.applyEdit(edit);
+  }
+
+  /**
    * Update a component property in the document
    */
   async updateComponentProperty(
@@ -98,18 +225,7 @@ export class OmosceneEditorProvider
     // Handle dotted paths (e.g., "textureMapKeys.albedo")
     setNestedValue(component, property, value);
 
-    // Write back to document
-    const edit = new vscode.WorkspaceEdit();
-    const fullRange = new vscode.Range(
-      this.activeDocument.positionAt(0),
-      this.activeDocument.positionAt(this.activeDocument.getText().length)
-    );
-    edit.replace(
-      this.activeDocument.uri,
-      fullRange,
-      JSON.stringify(updated, null, 2)
-    );
-    await vscode.workspace.applyEdit(edit);
+    await this.writeDocument(updated);
 
     // Send update to preview if running
     const server = getDevServer();
@@ -156,7 +272,7 @@ export class OmosceneEditorProvider
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-function findComponentById(
+export function findComponentById(
   component: SerializedComponent,
   id: number
 ): SerializedComponent | null {
@@ -170,7 +286,7 @@ function findComponentById(
   return null;
 }
 
-function setNestedValue(
+export function setNestedValue(
   obj: Record<string, unknown>,
   path: string,
   value: unknown
@@ -189,7 +305,33 @@ function setNestedValue(
   current[parts[parts.length - 1]] = value;
 }
 
-function countComponents(component: SerializedComponent): number {
+export function findParentNexus(
+  root: SerializedComponent,
+  childId: number
+): SerializedNexus | null {
+  if (!isSerializedNexus(root)) {return null;}
+  for (const child of root.components) {
+    if (child.id === childId) {return root;}
+    if (isSerializedNexus(child)) {
+      const found = findParentNexus(child, childId);
+      if (found) {return found;}
+    }
+  }
+  return null;
+}
+
+export function getMaxId(component: SerializedComponent): number {
+  let max = component.id ?? -1;
+  if (isSerializedNexus(component)) {
+    for (const child of component.components) {
+      const childMax = getMaxId(child);
+      if (childMax > max) {max = childMax;}
+    }
+  }
+  return max;
+}
+
+export function countComponents(component: SerializedComponent): number {
   let count = 1;
   if (isSerializedNexus(component)) {
     for (const child of component.components) {
@@ -199,7 +341,7 @@ function countComponents(component: SerializedComponent): number {
   return count;
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

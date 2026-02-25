@@ -26,6 +26,11 @@
         currentSchema = message.schema || [];
         render();
         break;
+      case 'showMultiSelection':
+        currentComponent = null;
+        currentSchema = [];
+        renderMultiSelection(message.count);
+        break;
     }
   });
 
@@ -52,6 +57,17 @@
     for (const schema of currentSchema) {
       renderProperty(propertiesContainer, schema, currentComponent);
     }
+  }
+
+  function renderMultiSelection(count) {
+    propertiesContainer.innerHTML = '';
+    emptyState.style.display = 'none';
+    header.style.display = 'none';
+
+    const info = document.createElement('div');
+    info.className = 'multi-selection-info';
+    info.textContent = count + ' components selected';
+    propertiesContainer.appendChild(info);
   }
 
   function renderBaseFields() {

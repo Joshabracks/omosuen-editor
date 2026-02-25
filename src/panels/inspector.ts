@@ -43,6 +43,19 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * Show a multi-selection summary instead of individual properties
+   */
+  showMultiSelection(count: number): void {
+    this.currentComponent = null;
+    if (this.webviewView) {
+      this.webviewView.webview.postMessage({
+        command: 'showMultiSelection',
+        count,
+      });
+    }
+  }
+
   resolveWebviewView(
     webviewView: vscode.WebviewView,
     _context: vscode.WebviewViewResolveContext,

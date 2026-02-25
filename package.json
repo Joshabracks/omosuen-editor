@@ -14,6 +14,7 @@
   "activationEvents": [
     "onLanguage:json",
     "workspaceContains:**/*.omoscene",
+    "workspaceContains:**/*.omocomp",
     "onCommand:omosuen.createProject"
   ],
   "main": "./dist/extension.js",
@@ -25,6 +26,16 @@
         "selector": [
           {
             "filenamePattern": "*.omoscene"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "omosuen.omocompEditor",
+        "displayName": "Omosuen Component Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.omocomp"
           }
         ],
         "priority": "default"
@@ -53,6 +64,12 @@
           "type": "webview",
           "icon": "$(symbol-property)",
           "contextualTitle": "Omosuen Inspector"
+        },
+        {
+          "id": "omosuen.assetBrowser",
+          "name": "Asset Browser",
+          "icon": "$(folder-library)",
+          "contextualTitle": "Omosuen Asset Browser"
         }
       ]
     },
@@ -76,10 +93,124 @@
         "command": "omosuen.createProject",
         "title": "Omosuen: Create New Project",
         "icon": "$(new-folder)"
+      },
+      {
+        "command": "omosuen.addComponent",
+        "title": "Add Component",
+        "icon": "$(add)"
+      },
+      {
+        "command": "omosuen.deleteComponent",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "omosuen.duplicateComponent",
+        "title": "Duplicate",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "omosuen.renameComponent",
+        "title": "Rename",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "omosuen.moveComponentUp",
+        "title": "Move Up",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "omosuen.moveComponentDown",
+        "title": "Move Down",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "omosuen.exportRuntimeScene",
+        "title": "Omosuen: Export Runtime Scene",
+        "icon": "$(export)"
+      },
+      {
+        "command": "omosuen.newOmocomp",
+        "title": "New Component File",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "omosuen.openAsset",
+        "title": "Open Asset"
+      },
+      {
+        "command": "omosuen.refreshAssetBrowser",
+        "title": "Refresh Asset Browser",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "omosuen.searchSceneTree",
+        "title": "Omosuen: Search Scene Tree",
+        "icon": "$(search)"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "omosuen",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "The build task to run",
+            "enum": ["build:dev", "build:prod", "watch"]
+          }
+        },
+        "required": ["task"]
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "omosuen.deleteComponent",
+        "key": "delete",
+        "when": "focusedView == 'omosuen.sceneTree' && listFocus"
+      },
+      {
+        "command": "omosuen.renameComponent",
+        "key": "f2",
+        "when": "focusedView == 'omosuen.sceneTree' && listFocus"
+      },
+      {
+        "command": "omosuen.duplicateComponent",
+        "key": "ctrl+d",
+        "when": "focusedView == 'omosuen.sceneTree' && listFocus"
+      },
+      {
+        "command": "omosuen.moveComponentUp",
+        "key": "alt+up",
+        "when": "focusedView == 'omosuen.sceneTree' && listFocus"
+      },
+      {
+        "command": "omosuen.moveComponentDown",
+        "key": "alt+down",
+        "when": "focusedView == 'omosuen.sceneTree' && listFocus"
+      },
+      {
+        "command": "omosuen.launchPreview",
+        "key": "f5",
+        "when": "!omosuen.previewRunning && resourceExtname == '.omoscene'"
+      },
+      {
+        "command": "omosuen.stopPreview",
+        "key": "shift+f5",
+        "when": "omosuen.previewRunning"
+      },
+      {
+        "command": "omosuen.searchSceneTree",
+        "key": "ctrl+f",
+        "when": "focusedView == 'omosuen.sceneTree'"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "omosuen.searchSceneTree",
+          "when": "view == omosuen.sceneTree",
+          "group": "navigation"
+        },
         {
           "command": "omosuen.refreshSceneTree",
           "when": "view == omosuen.sceneTree",
@@ -94,6 +225,48 @@
           "command": "omosuen.stopPreview",
           "when": "view == omosuen.sceneTree && omosuen.previewRunning",
           "group": "navigation"
+        },
+        {
+          "command": "omosuen.refreshAssetBrowser",
+          "when": "view == omosuen.assetBrowser",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "omosuen.moveComponentUp",
+          "when": "view == omosuen.sceneTree",
+          "group": "0_reorder@1"
+        },
+        {
+          "command": "omosuen.moveComponentDown",
+          "when": "view == omosuen.sceneTree",
+          "group": "0_reorder@2"
+        },
+        {
+          "command": "omosuen.addComponent",
+          "when": "view == omosuen.sceneTree && viewItem == nexus",
+          "group": "1_modify@1"
+        },
+        {
+          "command": "omosuen.duplicateComponent",
+          "when": "view == omosuen.sceneTree",
+          "group": "1_modify@2"
+        },
+        {
+          "command": "omosuen.renameComponent",
+          "when": "view == omosuen.sceneTree",
+          "group": "1_modify@3"
+        },
+        {
+          "command": "omosuen.deleteComponent",
+          "when": "view == omosuen.sceneTree",
+          "group": "2_danger@1"
+        },
+        {
+          "command": "omosuen.newOmocomp",
+          "when": "view == omosuen.assetBrowser",
+          "group": "1_create@1"
         }
       ]
     }

@@ -127,6 +127,55 @@ export function getOverlayScript(wsPort: number): string {
     }, 2000);
   }
 
+  // ── Live Editing Helpers ─────────────────────────────────────────
+
+  /**
+   * Reconstruct serialized values into proper engine types.
+   * Converts { _vectorType: 'Vector3D', x, y, z } → new Vector3D(x, y, z) etc.
+   */
+  function reconstructValue(value) {
+    if (value === null || value === undefined || typeof value !== 'object') {
+      return value;
+    }
+    if (!window.Omosuen) return value;
+
+    if (value._vectorType === 'Vector2D' && window.Omosuen.Vector2D) {
+      return new window.Omosuen.Vector2D(value.x || 0, value.y || 0);
+    }
+    if (value._vectorType === 'Vector3D' && window.Omosuen.Vector3D) {
+      return new window.Omosuen.Vector3D(value.x || 0, value.y || 0, value.z || 0);
+    }
+    if (value._vectorType === 'Vector4D' && window.Omosuen.Vector4D) {
+      return new window.Omosuen.Vector4D(value.x || 0, value.y || 0, value.z || 0, value.w || 0);
+    }
+
+    // Plain object — recursively reconstruct sub-values
+    if (Array.isArray(value)) return value;
+    var result = {};
+    for (var key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        result[key] = reconstructValue(value[key]);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Set a property on an object using a dotted path.
+   * e.g. setNestedProperty(comp, 'textureMapKeys.albedo', 'myTex')
+   */
+  function setNestedProperty(obj, path, value) {
+    var parts = path.split('.');
+    var current = obj;
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (current[parts[i]] === undefined || current[parts[i]] === null) {
+        current[parts[i]] = {};
+      }
+      current = current[parts[i]];
+    }
+    current[parts[parts.length - 1]] = value;
+  }
+
   // ── Message Handling ──────────────────────────────────────────────
 
   function handleMessage(msg) {
@@ -134,6 +183,26 @@ export function getOverlayScript(wsPort: number): string {
       case 'component:select':
         selectedComponentId = msg.payload.componentId;
         highlightSelected();
+        break;
+
+      case 'component:update':
+        handleComponentUpdate(msg.payload);
+        break;
+
+      case 'component:add':
+        handleComponentAdd(msg.payload);
+        break;
+
+      case 'component:remove':
+        handleComponentRemove(msg.payload);
+        break;
+
+      case 'component:move':
+        handleComponentMove(msg.payload);
+        break;
+
+      case 'component:instantiate':
+        handleComponentAdd(msg.payload);
         break;
 
       case 'scene:reload':
@@ -156,6 +225,87 @@ export function getOverlayScript(wsPort: number): string {
         // Full scene state requested
         sendSceneState();
         break;
+    }
+  }
+
+  function handleComponentUpdate(payload) {
+    if (!window.Omosuen || !window.Omosuen.getActiveScene) return;
+    var scene = window.Omosuen.getActiveScene();
+    if (!scene) return;
+
+    var comp = scene.getComponentById(payload.componentId, true);
+    if (!comp) return;
+
+    var value = reconstructValue(payload.value);
+    setNestedProperty(comp, payload.property, value);
+  }
+
+  function handleComponentAdd(payload) {
+    if (!window.Omosuen || !window.Omosuen.getActiveScene) return;
+    var scene = window.Omosuen.getActiveScene();
+    if (!scene) return;
+
+    var parent = scene.getComponentById(payload.parentId, true);
+    if (!parent) return;
+
+    var maxId = { value: -1 };
+    var newComp = window.Omosuen.deserializeComponentRecursive(payload.component, maxId);
+    if (!newComp) return;
+
+    // Advance the ID counter past the new component's ID to prevent conflicts
+    if (maxId.value >= 0 && window.Omosuen.setComponentCount) {
+      window.Omosuen.setComponentCount(maxId.value + 1);
+    }
+
+    parent.addComponent(newComp);
+  }
+
+  function handleComponentRemove(payload) {
+    if (!window.Omosuen || !window.Omosuen.getActiveScene) return;
+    var scene = window.Omosuen.getActiveScene();
+    if (!scene) return;
+
+    var comp = scene.getComponentById(payload.componentId, true);
+    if (!comp) return;
+
+    window.Omosuen.markForDisposal(comp);
+
+    // Clear selection if the removed component was selected
+    if (selectedComponentId === payload.componentId) {
+      selectedComponentId = null;
+      highlightSelected();
+    }
+  }
+
+  function handleComponentMove(payload) {
+    if (!window.Omosuen || !window.Omosuen.getActiveScene) return;
+    var scene = window.Omosuen.getActiveScene();
+    if (!scene) return;
+
+    var comp = scene.getComponentById(payload.componentId, true);
+    if (!comp) return;
+
+    // Remove from old parent's components array (without disposing)
+    var oldParent = scene.getComponentById(payload.oldParentId, true);
+    if (oldParent && oldParent.components) {
+      var oldIdx = -1;
+      for (var i = 0; i < oldParent.components.length; i++) {
+        if (oldParent.components[i].id === payload.componentId) {
+          oldIdx = i;
+          break;
+        }
+      }
+      if (oldIdx !== -1) {
+        oldParent.components.splice(oldIdx, 1);
+      }
+    }
+
+    // Insert into new parent's components array at the specified index
+    var newParent = scene.getComponentById(payload.newParentId, true);
+    if (newParent && newParent.components) {
+      var insertIdx = Math.max(0, Math.min(payload.index, newParent.components.length));
+      newParent.components.splice(insertIdx, 0, comp);
+      comp.parent = newParent;
     }
   }
 
