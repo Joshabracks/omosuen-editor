@@ -18,7 +18,7 @@ import {
   getDevServer,
 } from './commands/preview';
 import { registerCreateProjectCommand } from './commands/create-project';
-import { registerCrudCommands, reassignIds, ALL_COMPONENT_TYPES, createDefaultComponent } from './commands/component-crud';
+import { registerCrudCommands, reassignIds, ALL_COMPONENT_TYPES, createDefaultComponent, computeGlobalUniquenessFlags } from './commands/component-crud';
 import { registerExportCommand } from './commands/scene-export';
 import { registerBuildTasks } from './tasks/build';
 import type {
@@ -51,6 +51,15 @@ export function activate(context: vscode.ExtensionContext): void {
     canSelectMany: true,
   });
   context.subscriptions.push(treeView);
+
+  // ── Context keys for global uniqueness ─────────────────────────
+
+  sceneTree.onSceneChanged((scene) => {
+    const flags = computeGlobalUniquenessFlags(scene);
+    for (const [type, exists] of flags) {
+      vscode.commands.executeCommand('setContext', `omosuen.exists.${type}`, exists);
+    }
+  });
 
   // ── Inspector ───────────────────────────────────────────────────
 

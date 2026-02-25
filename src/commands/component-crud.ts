@@ -55,11 +55,18 @@ export function registerCrudCommands(
   omosceneEditor: OmosceneEditorProvider,
   treeView: vscode.TreeView<ComponentTreeItem>
 ): void {
+  // Register per-type "Add Component" commands (submenu entries)
+  for (const type of ALL_COMPONENT_TYPES) {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        `omosuen.addComponent.${type}`,
+        (item: ComponentTreeItem) =>
+          handleAddComponentOfType(type, item, omosceneEditor)
+      )
+    );
+  }
+
   context.subscriptions.push(
-    vscode.commands.registerCommand(
-      'omosuen.addComponent',
-      (item: ComponentTreeItem) => handleAddComponent(item, omosceneEditor)
-    ),
     vscode.commands.registerCommand(
       'omosuen.deleteComponent',
       (item: ComponentTreeItem) =>
@@ -79,7 +86,8 @@ export function registerCrudCommands(
 
 // ── Command Handlers ────────────────────────────────────────────
 
-async function handleAddComponent(
+async function handleAddComponentOfType(
+  type: COMPONENT_TYPE,
   item: ComponentTreeItem,
   editor: OmosceneEditorProvider
 ): Promise<void> {
@@ -90,63 +98,37 @@ async function handleAddComponent(
   const scene = editor.getActiveScene();
   if (!scene) {return;}
 
-  // Build QuickPick items with uniqueness filtering
-  const items: vscode.QuickPickItem[] = ALL_COMPONENT_TYPES.map((type) => {
-    const uniqueness = COMPONENT_UNIQUENESS[type];
-    let disabled = false;
-    let detail = '';
-
-    if (uniqueness === ComponentUnique.GLOBAL) {
-      // Check if this type already exists anywhere in the scene
-      if (hasComponentOfType(scene.scene, type)) {
-        disabled = true;
-        detail = '(already exists in scene — GLOBAL unique)';
-      }
-    } else if (uniqueness === ComponentUnique.LOCAL) {
-      // Check if this type already exists under the target nexus
-      if (hasComponentOfTypeInNexus(item.component, type)) {
-        disabled = true;
-        detail = '(already exists under this nexus — LOCAL unique)';
-      }
-    }
-
-    return {
-      label: disabled ? `$(circle-slash) ${type}` : type,
-      description: disabled ? detail : '',
-      detail: disabled ? undefined : undefined,
-      picked: false,
-      alwaysShow: true,
-      _type: type,
-      _disabled: disabled,
-    } as vscode.QuickPickItem & { _type: COMPONENT_TYPE; _disabled: boolean };
-  });
-
-  const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: 'Select component type to add',
-    title: 'Add Component',
-  }) as (vscode.QuickPickItem & { _type: COMPONENT_TYPE; _disabled: boolean }) | undefined;
-
-  if (!picked || picked._disabled) {
-    if (picked?._disabled) {
+  // Runtime check for LOCAL uniqueness (cannot be enforced via when-clauses)
+  const uniqueness = COMPONENT_UNIQUENESS[type];
+  if (uniqueness === ComponentUnique.LOCAL) {
+    if (hasComponentOfTypeInNexus(item.component, type)) {
       vscode.window.showWarningMessage(
-        `Cannot add ${picked._type}: uniqueness constraint violated.`
+        `Cannot add ${type}: this nexus already has a ${type} component.`
       );
+      return;
     }
-    return;
   }
 
-  const componentType = picked._type;
+  // Belt-and-suspenders check for GLOBAL uniqueness (context keys update async)
+  if (uniqueness === ComponentUnique.GLOBAL) {
+    if (hasComponentOfType(scene.scene, type)) {
+      vscode.window.showWarningMessage(
+        `Cannot add ${type}: a ${type} already exists in the scene.`
+      );
+      return;
+    }
+  }
 
   // Prompt for name
   const name = await vscode.window.showInputBox({
-    prompt: `Name for new ${componentType} component`,
-    value: componentType,
+    prompt: `Name for new ${type} component`,
+    value: type,
     validateInput: (v) => (v.trim() ? null : 'Name cannot be empty'),
   });
   if (!name) {return;}
 
   const id = editor.getNextId();
-  const component = createDefaultComponent(componentType, name, id);
+  const component = createDefaultComponent(type, name, id);
 
   await editor.addComponent(parentId, component);
 }
@@ -277,6 +259,20 @@ export function reassignIds(
       reassignIds(child, nextId);
     }
   }
+}
+
+const GLOBAL_UNIQUE_TYPES = ALL_COMPONENT_TYPES.filter(
+  (type) => COMPONENT_UNIQUENESS[type] === ComponentUnique.GLOBAL
+);
+
+export function computeGlobalUniquenessFlags(
+  scene: SerializedComponent | null
+): Map<string, boolean> {
+  const flags = new Map<string, boolean>();
+  for (const type of GLOBAL_UNIQUE_TYPES) {
+    flags.set(type, scene ? hasComponentOfType(scene, type) : false);
+  }
+  return flags;
 }
 
 export function createDefaultComponent(

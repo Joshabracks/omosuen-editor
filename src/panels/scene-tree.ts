@@ -81,6 +81,9 @@ export class SceneTreeProvider
   private _onDropOmocompFile:
     | ((fileUri: string, targetNexusId: number) => void)
     | null = null;
+  private _onSceneChanged:
+    | ((scene: SerializedComponent | null) => void)
+    | null = null;
 
   // ── Drag and Drop ──────────────────────────────────────────────
 
@@ -207,11 +210,23 @@ export class SceneTreeProvider
   }
 
   /**
+   * Register a handler called whenever the scene data changes
+   */
+  onSceneChanged(
+    handler: (scene: SerializedComponent | null) => void
+  ): void {
+    this._onSceneChanged = handler;
+  }
+
+  /**
    * Set the scene data to display in the tree
    */
   setScene(scene: SerializedComponent | null): void {
     this.sceneRoot = scene;
     this._onDidChangeTreeData.fire();
+    if (this._onSceneChanged) {
+      this._onSceneChanged(scene);
+    }
   }
 
   /**

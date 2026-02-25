@@ -95,9 +95,104 @@
         "icon": "$(new-folder)"
       },
       {
-        "command": "omosuen.addComponent",
-        "title": "Add Component",
-        "icon": "$(add)"
+        "command": "omosuen.addComponent.nexus",
+        "title": "Nexus",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.transform",
+        "title": "Transform",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.sprite",
+        "title": "Sprite",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.camera",
+        "title": "Camera",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.viewport",
+        "title": "Viewport",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.collider",
+        "title": "Collider",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.event-collider",
+        "title": "Event Collider",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.light",
+        "title": "Light",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.timer",
+        "title": "Timer",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.messenger",
+        "title": "Messenger",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.input-controller",
+        "title": "Input Controller",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.audio-manager",
+        "title": "Audio Manager",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.audio-controller",
+        "title": "Audio Controller",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.animation-controller",
+        "title": "Animation Controller",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.ui-overlay",
+        "title": "UI Overlay",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.data-layer",
+        "title": "Data Layer",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.flag-manager",
+        "title": "Flag Manager",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.texture-map",
+        "title": "Texture Map",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.atlas-manager",
+        "title": "Atlas Manager",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.cell-map",
+        "title": "Cell Map",
+        "category": "Omosuen: Add"
       },
       {
         "command": "omosuen.deleteComponent",
@@ -147,6 +242,12 @@
         "command": "omosuen.searchSceneTree",
         "title": "Omosuen: Search Scene Tree",
         "icon": "$(search)"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "omosuen.addComponentSubmenu",
+        "label": "Add Component"
       }
     ],
     "taskDefinitions": [
@@ -244,7 +345,7 @@
           "group": "0_reorder@2"
         },
         {
-          "command": "omosuen.addComponent",
+          "submenu": "omosuen.addComponentSubmenu",
           "when": "view == omosuen.sceneTree && viewItem == nexus",
           "group": "1_modify@1"
         },
@@ -268,6 +369,28 @@
           "when": "view == omosuen.assetBrowser",
           "group": "1_create@1"
         }
+      ],
+      "omosuen.addComponentSubmenu": [
+        { "command": "omosuen.addComponent.nexus",                "group": "1_core@1" },
+        { "command": "omosuen.addComponent.transform",            "group": "1_core@2" },
+        { "command": "omosuen.addComponent.sprite",               "group": "1_core@3" },
+        { "command": "omosuen.addComponent.camera",               "group": "1_core@4" },
+        { "command": "omosuen.addComponent.viewport",             "group": "1_core@5" },
+        { "command": "omosuen.addComponent.collider",             "group": "2_physics@1" },
+        { "command": "omosuen.addComponent.event-collider",       "group": "2_physics@2" },
+        { "command": "omosuen.addComponent.light",                "group": "2_physics@3" },
+        { "command": "omosuen.addComponent.timer",                "group": "3_behavior@1" },
+        { "command": "omosuen.addComponent.messenger",            "group": "3_behavior@2" },
+        { "command": "omosuen.addComponent.input-controller",     "group": "3_behavior@3" },
+        { "command": "omosuen.addComponent.audio-manager",        "group": "4_media@1", "when": "!omosuen.exists.audio-manager" },
+        { "command": "omosuen.addComponent.audio-controller",     "group": "4_media@2" },
+        { "command": "omosuen.addComponent.animation-controller", "group": "4_media@3" },
+        { "command": "omosuen.addComponent.ui-overlay",           "group": "5_system@1" },
+        { "command": "omosuen.addComponent.data-layer",           "group": "5_system@2" },
+        { "command": "omosuen.addComponent.flag-manager",         "group": "5_system@3", "when": "!omosuen.exists.flag-manager" },
+        { "command": "omosuen.addComponent.texture-map",          "group": "5_system@4" },
+        { "command": "omosuen.addComponent.atlas-manager",        "group": "5_system@5", "when": "!omosuen.exists.atlas-manager" },
+        { "command": "omosuen.addComponent.cell-map",             "group": "5_system@6" }
       ]
     }
   },
