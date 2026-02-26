@@ -16,6 +16,7 @@
   let currentComponent = null;
   let currentSchema = [];
   let currentSpriteContext = null;
+  let currentCameraContext = null;
 
   // ── Message Handling ────────────────────────────────────────────
 
@@ -26,6 +27,7 @@
         currentComponent = message.component;
         currentSchema = message.schema || [];
         currentSpriteContext = message.spriteContext || null;
+        currentCameraContext = message.cameraContext || null;
         render();
         break;
       case 'showMultiSelection':
@@ -55,9 +57,12 @@
     // Always show name and type fields (read-only-ish)
     renderBaseFields();
 
-    // Render sprite validation warnings
+    // Render validation warnings
     if (currentSpriteContext) {
       renderSpriteWarnings(currentSpriteContext);
+    }
+    if (currentCameraContext) {
+      renderCameraWarnings(currentCameraContext);
     }
 
     // Render schema-driven properties
@@ -134,6 +139,15 @@
         w3.textContent = ch.charAt(0).toUpperCase() + ch.slice(1) + " texture map '" + key + "' not found";
         propertiesContainer.appendChild(w3);
       }
+    }
+  }
+
+  function renderCameraWarnings(ctx) {
+    if (!ctx.hasSiblingTransform) {
+      var w = document.createElement('div');
+      w.className = 'inspector-warning';
+      w.textContent = 'Missing sibling Transform component';
+      propertiesContainer.appendChild(w);
     }
   }
 

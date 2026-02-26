@@ -24,6 +24,7 @@ export class OmosceneEditorProvider
 
   private activeDocument: vscode.TextDocument | null = null;
   private activeParsed: OmosceneFile | null = null;
+  private activePanel: vscode.WebviewPanel | null = null;
 
   constructor(
     private readonly sceneTree: SceneTreeProvider,
@@ -43,6 +44,7 @@ export class OmosceneEditorProvider
     _token: vscode.CancellationToken
   ): Promise<void> {
     this.activeDocument = document;
+    this.activePanel = webviewPanel;
 
     // Parse the document
     this.activeParsed = parseOmoscene(document.getText());
@@ -79,6 +81,7 @@ export class OmosceneEditorProvider
       if (this.activeDocument === document) {
         this.activeDocument = null;
         this.activeParsed = null;
+        this.activePanel = null;
         this.sceneTree.setScene(null);
         this.inspector.setScene(null);
         this.inspector.showComponent(null);
@@ -262,6 +265,18 @@ export class OmosceneEditorProvider
     return this.activeParsed.editor.camera;
   }
 
+  /**
+   * Notify the editor canvas webview of the currently selected entity
+   */
+  selectEntity(entityId: number): void {
+    if (this.activePanel) {
+      this.activePanel.webview.postMessage({
+        type: 'selection:changed',
+        selectedId: entityId,
+      });
+    }
+  }
+
   private postSceneData(
     panel: vscode.WebviewPanel,
     data: OmosceneFile | null
@@ -299,6 +314,20 @@ export function findComponentById(
   if (isSerializedNexus(component)) {
     for (const child of component.components) {
       const found = findComponentById(child, id);
+      if (found) {return found;}
+    }
+  }
+  return null;
+}
+
+function findComponentByName(
+  root: SerializedComponent,
+  name: string
+): SerializedComponent | null {
+  if (root.name === name) {return root;}
+  if (isSerializedNexus(root)) {
+    for (const child of root.components) {
+      const found = findComponentByName(child, name);
       if (found) {return found;}
     }
   }
@@ -385,6 +414,11 @@ interface EditorEntity {
     showSilhouette: boolean;
     silhouetteColor: { x: number; y: number; z: number; w: number };
   };
+  camera?: {
+    zoom: number;
+    viewportWidth: number;
+    viewportHeight: number;
+  };
 }
 
 interface EditorTextureMap {
@@ -397,22 +431,24 @@ interface EditorTextureMap {
 
 export function extractEntities(scene: SerializedComponent): EditorEntity[] {
   const entities: EditorEntity[] = [];
-  walkScene(scene, entities);
+  walkScene(scene, entities, scene);
   return entities;
 }
 
 function walkScene(
   component: SerializedComponent,
-  out: EditorEntity[]
+  out: EditorEntity[],
+  sceneRoot: SerializedComponent
 ): void {
   if (!isSerializedNexus(component)) {return;}
 
-  // Look for transform and sprite siblings in this nexus
+  // Look for transform, sprite, and camera siblings in this nexus
   const transform = component.components.find((c) => c.type === 'transform');
   const sprite = component.components.find((c) => c.type === 'sprite');
+  const camera = component.components.find((c) => c.type === 'camera');
 
-  // Only create an entity if there's a transform or sprite
-  if (transform || sprite) {
+  // Only create an entity if there's a transform, sprite, or camera
+  if (transform || sprite || camera) {
     const t = transform as Record<string, unknown> | undefined;
     const s = sprite as Record<string, unknown> | undefined;
 
@@ -446,12 +482,35 @@ function walkScene(
       };
     }
 
+    if (camera) {
+      const cam = camera as Record<string, unknown>;
+      const cameraZoom = (cam.zoom as number) ?? 1.0;
+      const viewportRef = (cam.viewportRef as string) || '';
+
+      let vpWidth = 800;
+      let vpHeight = 600;
+      if (viewportRef) {
+        const vp = findComponentByName(sceneRoot, viewportRef);
+        if (vp && vp.type === 'viewport') {
+          const vpData = vp as Record<string, unknown>;
+          vpWidth = (vpData.width as number) ?? 800;
+          vpHeight = (vpData.height as number) ?? 600;
+        }
+      }
+
+      entity.camera = {
+        zoom: cameraZoom,
+        viewportWidth: vpWidth,
+        viewportHeight: vpHeight,
+      };
+    }
+
     out.push(entity);
   }
 
   // Recurse into child nexuses
   for (const child of component.components) {
-    walkScene(child, out);
+    walkScene(child, out, sceneRoot);
   }
 }
 
@@ -561,6 +620,7 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
   var entities = [];
   var textures = {};  // textureMapKey → { img: HTMLImageElement, imageType: ... }
   var sceneName = '';
+  var selectedEntityId = -1;
   var offscreen = document.createElement('canvas');
   var offCtx = offscreen.getContext('2d');
 
@@ -765,6 +825,24 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
     ctx.restore();
   }
 
+  // ── Camera Rect ────────────────────────────────────────────
+  function drawCameraRect(e) {
+    if (!e.camera) return;
+
+    var p = worldToScreen(e.position.x, e.position.y, e.position.z);
+
+    // Camera visible area in isometric space: viewport / (2 * cameraZoom)
+    // Scaled by editor zoom to get screen pixels
+    var halfW = (e.camera.viewportWidth / (2 * e.camera.zoom)) * cam.zoom;
+    var halfH = (e.camera.viewportHeight / (2 * e.camera.zoom)) * cam.zoom;
+
+    var isSelected = (e.id === selectedEntityId);
+
+    ctx.strokeStyle = isSelected ? 'rgba(255, 255, 255, 0.9)' : 'rgba(180, 180, 180, 0.4)';
+    ctx.lineWidth = isSelected ? 2 : 1;
+    ctx.strokeRect(p.x - halfW, p.y - halfH, halfW * 2, halfH * 2);
+  }
+
   // ── Render ──────────────────────────────────────────────────
   function render() {
     canvas.width = canvas.clientWidth;
@@ -784,6 +862,13 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
     for (var i = 0; i < sorted.length; i++) {
       if (sorted[i].sprite) {
         drawSprite(sorted[i]);
+      }
+    }
+
+    // Draw camera view rects
+    for (var k = 0; k < sorted.length; k++) {
+      if (sorted[k].camera) {
+        drawCameraRect(sorted[k]);
       }
     }
 
@@ -867,6 +952,10 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
 
       // If no textures to load, render immediately
       if (pending <= 0) render();
+    }
+    if (msg.type === 'selection:changed') {
+      selectedEntityId = msg.selectedId !== undefined ? msg.selectedId : -1;
+      render();
     }
   });
 

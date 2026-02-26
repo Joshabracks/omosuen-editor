@@ -10,7 +10,7 @@ import { SceneTreeProvider, ComponentTreeItem, setExtensionUri } from './panels/
 import { InspectorProvider } from './panels/inspector';
 import { OmosuenConsole } from './panels/console';
 import { AssetBrowserProvider } from './panels/asset-browser';
-import { OmosceneEditorProvider, findComponentById } from './editors/omoscene-editor';
+import { OmosceneEditorProvider, findComponentById, findParentNexus } from './editors/omoscene-editor';
 import { OmocompEditorProvider } from './editors/omocomp-editor';
 import { isSerializedNexus, type SerializedNexus, type SerializedComponent } from './types/engine';
 import {
@@ -128,6 +128,21 @@ export function activate(context: vscode.ExtensionContext): void {
   // Tree -> Inspector + Preview
   sceneTree.onDidSelectComponent((component) => {
     inspector.showComponent(component);
+
+    // Forward selection to editor canvas for camera rect highlighting
+    if (component.id !== undefined) {
+      let entityId = component.id;
+      if (component.type !== 'nexus') {
+        const scene = omosceneEditor.getActiveScene();
+        if (scene) {
+          const parent = findParentNexus(scene.scene, component.id);
+          if (parent && parent.id !== undefined) {
+            entityId = parent.id;
+          }
+        }
+      }
+      omosceneEditor.selectEntity(entityId);
+    }
 
     // Notify preview of selection
     const server = getDevServer();

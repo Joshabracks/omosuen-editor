@@ -55,6 +55,11 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
         msg.spriteContext = this.computeSpriteContext(component);
       }
 
+      // Compute camera validation context
+      if (component && component.type === 'camera' && this.sceneRoot) {
+        msg.cameraContext = this.computeCameraContext(component);
+      }
+
       this.webviewView.webview.postMessage(msg);
     }
   }
@@ -94,6 +99,19 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
     }
 
     return { hasSiblingTransform, keyValidation };
+  }
+
+  private computeCameraContext(camera: SerializedComponent): {
+    hasSiblingTransform: boolean;
+  } {
+    let hasSiblingTransform = false;
+    if (this.sceneRoot && camera.id !== undefined) {
+      const parent = this.findParentNexus(this.sceneRoot, camera.id);
+      if (parent && isSerializedNexus(parent)) {
+        hasSiblingTransform = parent.components.some((c) => c.type === 'transform');
+      }
+    }
+    return { hasSiblingTransform };
   }
 
   private findParentNexus(
