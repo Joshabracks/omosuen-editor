@@ -294,31 +294,4 @@ export function registerPreviewCommands(
     })
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('omosuen.gizmoTranslate', () => {
-      if (!devServer?.isRunning) { return; }
-      devServer.broadcast('gizmo:mode', { mode: 'translate' });
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('omosuen.gizmoRotate', () => {
-      if (!devServer?.isRunning) { return; }
-      devServer.broadcast('gizmo:mode', { mode: 'rotate' });
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('omosuen.gizmoScale', () => {
-      if (!devServer?.isRunning) { return; }
-      devServer.broadcast('gizmo:mode', { mode: 'scale' });
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('omosuen.toggleGrid', () => {
-      if (!devServer?.isRunning) { return; }
-      devServer.broadcast('editor:toggleGrid', {});
-    })
-  );
 }

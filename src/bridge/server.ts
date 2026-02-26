@@ -8,7 +8,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
-import { getOverlayScript } from './overlay';
+import { getConsoleOverlayScript } from './console-overlay';
 import {
   type EditorMessage,
   isEditorMessage,
@@ -44,7 +44,7 @@ export class OmosuenDevServer {
     // Serve the editor overlay script
     this.app.get('/__omosuen_editor_overlay.js', (_req, res) => {
       res.type('application/javascript');
-      res.send(getOverlayScript(this.port));
+      res.send(getConsoleOverlayScript(this.port));
     });
 
     // Serve index.html with overlay injection

@@ -264,26 +264,6 @@
         "command": "omosuen.togglePerformanceOverlay",
         "title": "Omosuen: Toggle Performance Overlay",
         "icon": "$(dashboard)"
-      },
-      {
-        "command": "omosuen.gizmoTranslate",
-        "title": "Omosuen: Gizmo — Translate",
-        "icon": "$(move)"
-      },
-      {
-        "command": "omosuen.gizmoRotate",
-        "title": "Omosuen: Gizmo — Rotate",
-        "icon": "$(sync)"
-      },
-      {
-        "command": "omosuen.gizmoScale",
-        "title": "Omosuen: Gizmo — Scale",
-        "icon": "$(screen-full)"
-      },
-      {
-        "command": "omosuen.toggleGrid",
-        "title": "Omosuen: Toggle Grid Overlay",
-        "icon": "$(symbol-number)"
       }
     ],
     "submenus": [
@@ -360,26 +340,6 @@
         "command": "omosuen.stepFrame",
         "key": "f10",
         "when": "omosuen.previewRunning && omosuen.previewPaused"
-      },
-      {
-        "command": "omosuen.gizmoTranslate",
-        "key": "t",
-        "when": "omosuen.previewRunning && !inputFocus"
-      },
-      {
-        "command": "omosuen.gizmoRotate",
-        "key": "r",
-        "when": "omosuen.previewRunning && !inputFocus"
-      },
-      {
-        "command": "omosuen.gizmoScale",
-        "key": "e",
-        "when": "omosuen.previewRunning && !inputFocus"
-      },
-      {
-        "command": "omosuen.toggleGrid",
-        "key": "g",
-        "when": "omosuen.previewRunning && !inputFocus"
       }
     ],
     "menus": {

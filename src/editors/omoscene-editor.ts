@@ -50,11 +50,14 @@ export class OmosceneEditorProvider
       this.sceneTree.setScene(this.activeParsed.scene);
     }
 
-    // Set up the webview as a simple document viewer/status panel
+    // Set up the webview with the editor canvas (set HTML once)
     webviewPanel.webview.options = { enableScripts: true };
-    this.updateWebview(webviewPanel, this.activeParsed);
+    webviewPanel.webview.html = getEditorWebviewHtml(webviewPanel.webview);
 
-    // Listen for document changes
+    // Post initial scene data
+    this.postSceneData(webviewPanel, this.activeParsed);
+
+    // Listen for document changes — post updated data without resetting HTML
     const changeSubscription = vscode.workspace.onDidChangeTextDocument(
       (e) => {
         if (e.document.uri.toString() === document.uri.toString()) {
@@ -62,7 +65,7 @@ export class OmosceneEditorProvider
           if (this.activeParsed) {
             this.sceneTree.setScene(this.activeParsed.scene);
           }
-          this.updateWebview(webviewPanel, this.activeParsed);
+          this.postSceneData(webviewPanel, this.activeParsed);
         }
       }
     );
@@ -254,35 +257,20 @@ export class OmosceneEditorProvider
     return this.activeParsed.editor.camera;
   }
 
-  private updateWebview(
+  private postSceneData(
     panel: vscode.WebviewPanel,
     data: OmosceneFile | null
   ): void {
     if (!data) {
-      panel.webview.html = `<!DOCTYPE html>
-<html><body style="color: var(--vscode-foreground); font-family: var(--vscode-font-family); padding: 20px;">
-<h2>Invalid .omoscene file</h2>
-<p>This file could not be parsed as a valid Omosuen scene.</p>
-</body></html>`;
+      panel.webview.postMessage({ type: 'scene:data', entities: [], name: '' });
       return;
     }
-
-    const componentCount = countComponents(data.scene);
-
-    panel.webview.html = `<!DOCTYPE html>
-<html><body style="color: var(--vscode-foreground); font-family: var(--vscode-font-family); padding: 20px;">
-<h2>${escapeHtml(data.name)}</h2>
-<table style="font-size: 13px; border-collapse: collapse;">
-  <tr><td style="padding: 2px 12px 2px 0; opacity: 0.7;">Format</td><td>omoscene v${data.omoscene}</td></tr>
-  <tr><td style="padding: 2px 12px 2px 0; opacity: 0.7;">Engine</td><td>${escapeHtml(data.engine)}</td></tr>
-  <tr><td style="padding: 2px 12px 2px 0; opacity: 0.7;">Root</td><td>${escapeHtml(data.scene.name)} (${data.scene.type})</td></tr>
-  <tr><td style="padding: 2px 12px 2px 0; opacity: 0.7;">Components</td><td>${componentCount}</td></tr>
-</table>
-<p style="margin-top: 16px; opacity: 0.6; font-size: 12px;">
-  Use the Scene Tree panel to browse and select components.<br>
-  Use the Inspector panel to edit properties.
-</p>
-</body></html>`;
+    const entities = extractEntities(data.scene);
+    panel.webview.postMessage({
+      type: 'scene:data',
+      entities,
+      name: data.name,
+    });
   }
 }
 
@@ -363,4 +351,271 @@ export function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ── Entity Extraction ───────────────────────────────────────────
+
+interface EditorEntity {
+  name: string;
+  id: number;
+  position: { x: number; y: number; z: number };
+}
+
+export function extractEntities(scene: SerializedComponent): EditorEntity[] {
+  const entities: EditorEntity[] = [];
+  walkScene(scene, entities);
+  return entities;
+}
+
+function walkScene(
+  component: SerializedComponent,
+  out: EditorEntity[]
+): void {
+  if (!isSerializedNexus(component)) {return;}
+
+  // Look for a transform child in this nexus
+  const transform = component.components.find((c) => c.type === 'transform');
+  if (transform) {
+    const pos = (transform as Record<string, unknown>).position as
+      | { x: number; y: number; z: number }
+      | undefined;
+    out.push({
+      name: component.name,
+      id: component.id ?? -1,
+      position: pos ? { x: pos.x || 0, y: pos.y || 0, z: pos.z || 0 } : { x: 0, y: 0, z: 0 },
+    });
+  }
+
+  // Recurse into child nexuses
+  for (const child of component.components) {
+    walkScene(child, out);
+  }
+}
+
+// ── Editor Webview HTML ─────────────────────────────────────────
+
+function getEditorWebviewHtml(_webview: vscode.Webview): string {
+  const nonce = getNonce();
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #info { position: absolute; top: 8px; left: 8px; color: rgba(255,255,255,0.4); font: 11px monospace; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="editor-canvas"></canvas>
+<div id="info">Editor Preview</div>
+<script nonce="${nonce}">
+(function() {
+  'use strict';
+
+  var COS30 = 0.8660254;
+  var SIN30 = 0.5;
+  var GRID_CELLS = 20;
+  var CELL_SIZE = 32;
+  var GIZMO_LEN = 40;
+  var AXIS_COLORS = { x: '#FF4444', y: '#44FF44', z: '#4488FF' };
+
+  var canvas = document.getElementById('editor-canvas');
+  var ctx = canvas.getContext('2d');
+  var infoEl = document.getElementById('info');
+
+  // Camera state (editor-local)
+  var cam = { panX: 0, panY: 0, zoom: 1.5 };
+  var entities = [];
+  var sceneName = '';
+
+  // Dragging state
+  var dragging = false;
+  var dragStart = { x: 0, y: 0 };
+  var camStart = { x: 0, y: 0 };
+
+  // ── Projection ──────────────────────────────────────────────
+  function worldToScreen(wx, wy, wz) {
+    var isoX = COS30 * wx - COS30 * wz;
+    var isoY = SIN30 * wx - wy + SIN30 * wz;
+    return {
+      x: (isoX - cam.panX) * cam.zoom + canvas.width / 2,
+      y: canvas.height / 2 - (isoY - cam.panY) * cam.zoom,
+    };
+  }
+
+  // ── Grid ────────────────────────────────────────────────────
+  function drawGrid() {
+    var half = GRID_CELLS;
+    for (var i = -half; i <= half; i++) {
+      var w = i * CELL_SIZE;
+      var extent = half * CELL_SIZE;
+
+      // Lines along X (varying Z)
+      var a1 = worldToScreen(-extent, 0, w);
+      var b1 = worldToScreen(extent, 0, w);
+      ctx.strokeStyle = (i === 0) ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.07)';
+      ctx.lineWidth = (i === 0) ? 1 : 0.5;
+      ctx.beginPath(); ctx.moveTo(a1.x, a1.y); ctx.lineTo(b1.x, b1.y); ctx.stroke();
+
+      // Lines along Z (varying X)
+      var a2 = worldToScreen(w, 0, -extent);
+      var b2 = worldToScreen(w, 0, extent);
+      ctx.beginPath(); ctx.moveTo(a2.x, a2.y); ctx.lineTo(b2.x, b2.y); ctx.stroke();
+    }
+  }
+
+  // ── Origin Indicator ────────────────────────────────────────
+  function drawOrigin() {
+    var o = worldToScreen(0, 0, 0);
+    var len = 60;
+
+    // X axis
+    var xDir = { x: COS30, y: -SIN30 };
+    ctx.strokeStyle = AXIS_COLORS.x; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + xDir.x * len, o.y + xDir.y * len); ctx.stroke();
+    ctx.fillStyle = AXIS_COLORS.x; ctx.font = 'bold 11px monospace';
+    ctx.fillText('X', o.x + xDir.x * (len + 6), o.y + xDir.y * (len + 6));
+
+    // Y axis (straight up in screen space)
+    ctx.strokeStyle = AXIS_COLORS.y; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x, o.y - len); ctx.stroke();
+    ctx.fillStyle = AXIS_COLORS.y;
+    ctx.fillText('Y', o.x + 4, o.y - len - 4);
+
+    // Z axis
+    var zDir = { x: -COS30, y: -SIN30 };
+    ctx.strokeStyle = AXIS_COLORS.z; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + zDir.x * len, o.y + zDir.y * len); ctx.stroke();
+    ctx.fillStyle = AXIS_COLORS.z;
+    ctx.fillText('Z', o.x + zDir.x * (len + 6), o.y + zDir.y * (len + 6));
+
+    // Origin dot
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(o.x, o.y, 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // ── Entity Crosshairs ──────────────────────────────────────
+  function drawEntity(e) {
+    var p = worldToScreen(e.position.x, e.position.y, e.position.z);
+    var len = GIZMO_LEN;
+
+    // X axis
+    var xDir = { x: COS30, y: -SIN30 };
+    ctx.strokeStyle = AXIS_COLORS.x; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(p.x - xDir.x * len * 0.3, p.y - xDir.y * len * 0.3);
+    ctx.lineTo(p.x + xDir.x * len * 0.7, p.y + xDir.y * len * 0.7); ctx.stroke();
+
+    // Y axis
+    ctx.strokeStyle = AXIS_COLORS.y;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y + len * 0.3);
+    ctx.lineTo(p.x, p.y - len * 0.7); ctx.stroke();
+
+    // Z axis
+    var zDir = { x: -COS30, y: -SIN30 };
+    ctx.strokeStyle = AXIS_COLORS.z;
+    ctx.beginPath(); ctx.moveTo(p.x - zDir.x * len * 0.3, p.y - zDir.y * len * 0.3);
+    ctx.lineTo(p.x + zDir.x * len * 0.7, p.y + zDir.y * len * 0.7); ctx.stroke();
+
+    // Center dot
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+
+    // Label
+    var label = e.name + ' (' + e.position.x.toFixed(0) + ',' + e.position.y.toFixed(0) + ',' + e.position.z.toFixed(0) + ')';
+    ctx.font = '10px monospace';
+    var m = ctx.measureText(label);
+    ctx.fillStyle = 'rgba(30, 30, 30, 0.8)';
+    ctx.fillRect(p.x - m.width / 2 - 3, p.y - len * 0.7 - 18, m.width + 6, 14);
+    ctx.fillStyle = '#ccc';
+    ctx.fillText(label, p.x - m.width / 2, p.y - len * 0.7 - 7);
+  }
+
+  // ── Render ──────────────────────────────────────────────────
+  function render() {
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    drawGrid();
+    drawOrigin();
+    for (var i = 0; i < entities.length; i++) {
+      drawEntity(entities[i]);
+    }
+  }
+
+  // ── Mouse Handlers ──────────────────────────────────────────
+  canvas.addEventListener('mousedown', function(e) {
+    dragging = true;
+    dragStart.x = e.clientX;
+    dragStart.y = e.clientY;
+    camStart.x = cam.panX;
+    camStart.y = cam.panY;
+    canvas.style.cursor = 'grabbing';
+  });
+
+  canvas.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var dx = e.clientX - dragStart.x;
+    var dy = e.clientY - dragStart.y;
+    cam.panX = camStart.x - dx / cam.zoom;
+    cam.panY = camStart.y + dy / cam.zoom;
+    render();
+  });
+
+  canvas.addEventListener('mouseup', function() {
+    dragging = false;
+    canvas.style.cursor = 'default';
+  });
+
+  canvas.addEventListener('mouseleave', function() {
+    dragging = false;
+    canvas.style.cursor = 'default';
+  });
+
+  canvas.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    var delta = e.deltaY > 0 ? -0.15 : 0.15;
+    cam.zoom = Math.max(0.2, Math.min(10, cam.zoom + delta * cam.zoom));
+    render();
+  }, { passive: false });
+
+  // ── Message Handler ─────────────────────────────────────────
+  window.addEventListener('message', function(event) {
+    var msg = event.data;
+    if (msg.type === 'scene:data') {
+      entities = msg.entities || [];
+      sceneName = msg.name || '';
+      infoEl.textContent = sceneName
+        ? sceneName + ' — ' + entities.length + ' entities'
+        : 'Editor Preview';
+      render();
+    }
+  });
+
+  // ── Resize ──────────────────────────────────────────────────
+  var resizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(render, 50);
+  });
+
+  // Initial render
+  render();
+})();
+</script>
+</body>
+</html>`;
+}
+
+function getNonce(): string {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
 }
