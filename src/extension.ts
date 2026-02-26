@@ -22,6 +22,7 @@ import { registerCrudCommands, reassignIds, ALL_COMPONENT_TYPES, createDefaultCo
 import { registerExportCommand } from './commands/scene-export';
 import { registerBuildTasks } from './tasks/build';
 import { openFrameEditor } from './editors/texture-map-editor';
+import { openAnimationEditor } from './editors/animation-editor';
 import type {
   EditorMessage,
   ComponentSelectedPayload,
@@ -408,6 +409,23 @@ export function activate(context: vscode.ExtensionContext): void {
           return;
         }
         openFrameEditor(context, component, omosceneEditor, inspector);
+      }
+    )
+  );
+
+  // ── Animation Editor command ─────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'omosuen.openAnimationEditor',
+      (component?: SerializedComponent) => {
+        if (!component) {
+          vscode.window.showWarningMessage(
+            'Select an animation-controller component first.'
+          );
+          return;
+        }
+        openAnimationEditor(context, component, omosceneEditor, inspector);
       }
     )
   );

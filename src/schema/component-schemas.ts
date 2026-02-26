@@ -447,14 +447,6 @@ export const COMPONENT_SCHEMAS: Record<COMPONENT_TYPE, PropertySchema[]> = {
 
   'animation-controller': [
     {
-      name: 'spriteId',
-      type: 'number',
-      label: 'Sprite ID',
-      default: 0,
-      min: 0,
-      step: 1,
-    },
-    {
       name: 'speed',
       type: 'number',
       label: 'Speed',
@@ -474,6 +466,12 @@ export const COMPONENT_SCHEMAS: Record<COMPONENT_TYPE, PropertySchema[]> = {
       type: 'string',
       label: 'Current Animation',
       default: '',
+    },
+    {
+      name: 'animations',
+      type: 'action',
+      label: 'Open Animation Editor',
+      command: 'omosuen.openAnimationEditor',
     },
   ],
 

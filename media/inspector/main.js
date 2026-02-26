@@ -17,6 +17,7 @@
   let currentSchema = [];
   let currentSpriteContext = null;
   let currentCameraContext = null;
+  let currentAnimationControllerContext = null;
 
   // ── Message Handling ────────────────────────────────────────────
 
@@ -28,6 +29,7 @@
         currentSchema = message.schema || [];
         currentSpriteContext = message.spriteContext || null;
         currentCameraContext = message.cameraContext || null;
+        currentAnimationControllerContext = message.animationControllerContext || null;
         render();
         break;
       case 'showMultiSelection':
@@ -63,6 +65,9 @@
     }
     if (currentCameraContext) {
       renderCameraWarnings(currentCameraContext);
+    }
+    if (currentAnimationControllerContext) {
+      renderAnimationControllerWarnings(currentAnimationControllerContext);
     }
 
     // Render schema-driven properties
@@ -147,6 +152,15 @@
       var w = document.createElement('div');
       w.className = 'inspector-warning';
       w.textContent = 'Missing sibling Transform component';
+      propertiesContainer.appendChild(w);
+    }
+  }
+
+  function renderAnimationControllerWarnings(ctx) {
+    if (!ctx.hasSiblingSprite) {
+      var w = document.createElement('div');
+      w.className = 'inspector-warning';
+      w.textContent = 'Missing sibling Sprite component';
       propertiesContainer.appendChild(w);
     }
   }
