@@ -16,7 +16,9 @@ export type PropertyType =
   | 'Color3'
   | 'Color4'
   | 'object'
-  | 'readonly';
+  | 'readonly'
+  | 'action'
+  | 'frameList';
 
 export interface PropertySchema {
   name: string;
@@ -29,6 +31,8 @@ export interface PropertySchema {
   values?: string[];
   readOnly?: boolean;
   subFields?: PropertySchema[];
+  /** VS Code command to execute when an 'action' type button is clicked */
+  command?: string;
 }
 
 export const COMPONENT_SCHEMAS: Record<COMPONENT_TYPE, PropertySchema[]> = {
@@ -530,6 +534,17 @@ export const COMPONENT_SCHEMAS: Record<COMPONENT_TYPE, PropertySchema[]> = {
       type: 'string',
       label: 'File Path',
       default: '',
+    },
+    {
+      name: 'imageType',
+      type: 'frameList',
+      label: 'Frames',
+    },
+    {
+      name: '_openFrameEditor',
+      type: 'action',
+      label: 'Edit Frames...',
+      command: 'omosuen.openFrameEditor',
     },
   ],
 

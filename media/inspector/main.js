@@ -135,6 +135,12 @@
       case 'object':
         container.appendChild(renderObjectField(schema, value, data));
         break;
+      case 'action':
+        container.appendChild(renderActionField(schema));
+        break;
+      case 'frameList':
+        container.appendChild(renderFrameListField(schema, value));
+        break;
     }
   }
 
@@ -409,6 +415,155 @@
     valueDiv.appendChild(colorDiv);
     row.appendChild(valueDiv);
     return row;
+  }
+
+  function renderActionField(schema) {
+    const row = document.createElement('div');
+    row.className = 'property-row';
+
+    const label = document.createElement('div');
+    label.className = 'property-label';
+    row.appendChild(label);
+
+    const valueDiv = document.createElement('div');
+    valueDiv.className = 'property-value';
+
+    const button = document.createElement('button');
+    button.className = 'action-button';
+    button.textContent = schema.label;
+    button.addEventListener('click', () => {
+      vscode.postMessage({
+        command: 'executeCommand',
+        vsCommand: schema.command,
+      });
+    });
+
+    valueDiv.appendChild(button);
+    row.appendChild(valueDiv);
+    return row;
+  }
+
+  function renderFrameListField(schema, value) {
+    const group = document.createElement('div');
+    group.className = 'property-group';
+
+    const groupHeader = document.createElement('div');
+    groupHeader.className = 'property-group-header';
+    group.appendChild(groupHeader);
+
+    // Show mode summary
+    if (!value || value === null) {
+      groupHeader.textContent = schema.label + ' (Single)';
+      return group;
+    }
+    if (value.mode === 'grid') {
+      const cols = value.cols || 1;
+      const rows = value.rows || 1;
+      groupHeader.textContent = schema.label + ' (Grid ' + cols + '\u00d7' + rows + ')';
+      return group;
+    }
+    if (value.mode !== 'framemap') {
+      groupHeader.textContent = schema.label;
+      return group;
+    }
+
+    // FrameMap mode — collapsible editable list
+    const frames = value.frames || [];
+    let collapsed = false;
+
+    groupHeader.textContent = schema.label + ' (' + frames.length + ')';
+    groupHeader.style.cursor = 'pointer';
+
+    const subContainer = document.createElement('div');
+    subContainer.className = 'sub-fields frame-list';
+    group.appendChild(subContainer);
+
+    groupHeader.addEventListener('click', () => {
+      collapsed = !collapsed;
+      subContainer.style.display = collapsed ? 'none' : '';
+    });
+
+    function rebuildList() {
+      subContainer.innerHTML = '';
+      groupHeader.textContent = schema.label + ' (' + frames.length + ')';
+
+      for (let i = 0; i < frames.length; i++) {
+        const f = frames[i];
+        const item = document.createElement('div');
+        item.className = 'frame-list-item';
+
+        const idx = document.createElement('span');
+        idx.className = 'frame-list-idx';
+        idx.textContent = String(i);
+        item.appendChild(idx);
+
+        const fields = [
+          { key: 'x', label: 'X' },
+          { key: 'y', label: 'Y' },
+          { key: 'w', label: 'W' },
+          { key: 'h', label: 'H' },
+        ];
+
+        for (const fd of fields) {
+          const fieldWrap = document.createElement('div');
+          fieldWrap.className = 'vector-field';
+
+          const lbl = document.createElement('label');
+          lbl.textContent = fd.label;
+          fieldWrap.appendChild(lbl);
+
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.min = fd.key === 'w' || fd.key === 'h' ? '1' : '0';
+          input.step = '1';
+          input.value = String(f[fd.key] || 0);
+          input.addEventListener('change', ((index, key) => {
+            return () => {
+              frames[index][key] = parseInt(input.value) || 0;
+              emitFrameList();
+            };
+          })(i, fd.key));
+          fieldWrap.appendChild(input);
+          item.appendChild(fieldWrap);
+        }
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'frame-remove-btn';
+        removeBtn.textContent = '\ud83d\uddd1';
+        removeBtn.title = 'Remove frame';
+        removeBtn.addEventListener('click', ((index) => {
+          return () => {
+            frames.splice(index, 1);
+            emitFrameList();
+            rebuildList();
+          };
+        })(i));
+        item.appendChild(removeBtn);
+
+        subContainer.appendChild(item);
+      }
+
+      // Add button
+      const addBtn = document.createElement('button');
+      addBtn.className = 'frame-add-btn';
+      addBtn.textContent = '+ Add Frame';
+      addBtn.addEventListener('click', () => {
+        frames.push({ x: 0, y: 0, w: 32, h: 32 });
+        emitFrameList();
+        rebuildList();
+      });
+      subContainer.appendChild(addBtn);
+    }
+
+    function emitFrameList() {
+      sendPropertyChange(schema.name, {
+        mode: 'framemap',
+        frames: frames.map((f) => ({ x: f.x, y: f.y, w: f.w, h: f.h })),
+      });
+    }
+
+    rebuildList();
+    return group;
   }
 
   function renderObjectField(schema, value, parentData) {

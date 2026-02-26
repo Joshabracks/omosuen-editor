@@ -241,6 +241,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "omosuen.openFrameEditor",
+        "title": "Omosuen: Edit Texture Frames",
+        "icon": "$(symbol-array)"
+      },
+      {
         "command": "omosuen.searchSceneTree",
         "title": "Omosuen: Search Scene Tree",
         "icon": "$(search)"

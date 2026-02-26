@@ -21,6 +21,7 @@ import { registerCreateProjectCommand } from './commands/create-project';
 import { registerCrudCommands, reassignIds, ALL_COMPONENT_TYPES, createDefaultComponent, computeGlobalUniquenessFlags } from './commands/component-crud';
 import { registerExportCommand } from './commands/scene-export';
 import { registerBuildTasks } from './tasks/build';
+import { openFrameEditor } from './editors/texture-map-editor';
 import type {
   EditorMessage,
   ComponentSelectedPayload,
@@ -377,6 +378,23 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('omosuen.refreshAssetBrowser', () => {
       assetBrowser.refresh();
     })
+  );
+
+  // ── Frame Editor command ───────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'omosuen.openFrameEditor',
+      (component?: SerializedComponent) => {
+        if (!component) {
+          vscode.window.showWarningMessage(
+            'Select a texture-map component first.'
+          );
+          return;
+        }
+        openFrameEditor(context, component, omosceneEditor, inspector);
+      }
+    )
   );
 
   // ── Search Scene Tree command ────────────────────────────────

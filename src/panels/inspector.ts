@@ -81,6 +81,11 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
           message.property,
           message.value
         );
+      } else if (message.command === 'executeCommand' && message.vsCommand) {
+        vscode.commands.executeCommand(
+          message.vsCommand as string,
+          this.currentComponent
+        );
       }
     });
 
