@@ -5,6 +5,7 @@
 
 import * as vscode from 'vscode';
 import type { SerializedComponent, COMPONENT_TYPE } from '../types/engine';
+import { isSerializedNexus } from '../types/engine';
 import { getSchemaForType, type PropertySchema } from '../schema/component-schemas';
 
 export class InspectorProvider implements vscode.WebviewViewProvider {
@@ -12,11 +13,19 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
 
   private webviewView: vscode.WebviewView | undefined;
   private currentComponent: SerializedComponent | null = null;
+  private sceneRoot: SerializedComponent | null = null;
   private _onPropertyChanged:
     | ((componentId: number, property: string, value: unknown) => void)
     | null = null;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
+
+  /**
+   * Update the scene root for validation context (e.g. sprite texture map lookups)
+   */
+  setScene(scene: SerializedComponent | null): void {
+    this.sceneRoot = scene;
+  }
 
   /**
    * Register a handler for when the user changes a property in the inspector
@@ -33,14 +42,102 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
   showComponent(component: SerializedComponent | null): void {
     this.currentComponent = component;
     if (this.webviewView) {
-      this.webviewView.webview.postMessage({
+      const msg: Record<string, unknown> = {
         command: 'showComponent',
         component,
         schema: component
           ? getSchemaForType(component.type as COMPONENT_TYPE)
           : [],
-      });
+      };
+
+      // Compute sprite validation context
+      if (component && component.type === 'sprite' && this.sceneRoot) {
+        msg.spriteContext = this.computeSpriteContext(component);
+      }
+
+      this.webviewView.webview.postMessage(msg);
     }
+  }
+
+  private computeSpriteContext(sprite: SerializedComponent): {
+    hasSiblingTransform: boolean;
+    keyValidation: Record<string, { exists: boolean; frameCount: number }>;
+  } {
+    const comp = sprite as Record<string, unknown>;
+    const tmKeys = (comp.textureMapKeys as Record<string, string>) || {};
+    const channels = ['albedo', 'normal', 'material', 'emission'];
+
+    // Find parent nexus containing this sprite
+    let hasSiblingTransform = false;
+    if (this.sceneRoot && sprite.id !== undefined) {
+      const parent = this.findParentNexus(this.sceneRoot, sprite.id);
+      if (parent && isSerializedNexus(parent)) {
+        hasSiblingTransform = parent.components.some((c) => c.type === 'transform');
+      }
+    }
+
+    // Validate each texture map key
+    const keyValidation: Record<string, { exists: boolean; frameCount: number }> = {};
+    for (const channel of channels) {
+      const key = tmKeys[channel] || '';
+      if (!key) {
+        keyValidation[channel] = { exists: false, frameCount: 0 };
+        continue;
+      }
+      // Search scene for matching texture-map component
+      const tm = this.sceneRoot ? this.findTextureMapByKey(this.sceneRoot, key) : null;
+      if (tm) {
+        keyValidation[channel] = { exists: true, frameCount: this.computeFrameCount(tm) };
+      } else {
+        keyValidation[channel] = { exists: false, frameCount: 0 };
+      }
+    }
+
+    return { hasSiblingTransform, keyValidation };
+  }
+
+  private findParentNexus(
+    root: SerializedComponent,
+    childId: number
+  ): SerializedComponent | null {
+    if (!isSerializedNexus(root)) {return null;}
+    for (const child of root.components) {
+      if (child.id === childId) {return root;}
+      if (isSerializedNexus(child)) {
+        const found = this.findParentNexus(child, childId);
+        if (found) {return found;}
+      }
+    }
+    return null;
+  }
+
+  private findTextureMapByKey(
+    component: SerializedComponent,
+    key: string
+  ): Record<string, unknown> | null {
+    if (component.type === 'texture-map') {
+      const tm = component as Record<string, unknown>;
+      if ((tm.textureMapKey as string) === key) {return tm;}
+    }
+    if (isSerializedNexus(component)) {
+      for (const child of component.components) {
+        const found = this.findTextureMapByKey(child, key);
+        if (found) {return found;}
+      }
+    }
+    return null;
+  }
+
+  private computeFrameCount(tm: Record<string, unknown>): number {
+    const imageType = tm.imageType as { mode?: string; cols?: number; rows?: number; cellCount?: number; frames?: unknown[] } | null | undefined;
+    if (!imageType) {return 1;}
+    if (imageType.mode === 'grid') {
+      return imageType.cellCount ?? ((imageType.cols || 1) * (imageType.rows || 1));
+    }
+    if (imageType.mode === 'framemap' && Array.isArray(imageType.frames)) {
+      return imageType.frames.length;
+    }
+    return 1;
   }
 
   /**

@@ -5,6 +5,8 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
 import { parseOmoscene, type OmosceneFile } from '../types/omoscene';
 import {
   type SerializedComponent,
@@ -45,9 +47,10 @@ export class OmosceneEditorProvider
     // Parse the document
     this.activeParsed = parseOmoscene(document.getText());
 
-    // Update scene tree
+    // Update scene tree and inspector context
     if (this.activeParsed) {
       this.sceneTree.setScene(this.activeParsed.scene);
+      this.inspector.setScene(this.activeParsed.scene);
     }
 
     // Set up the webview with the editor canvas (set HTML once)
@@ -64,6 +67,7 @@ export class OmosceneEditorProvider
           this.activeParsed = parseOmoscene(e.document.getText());
           if (this.activeParsed) {
             this.sceneTree.setScene(this.activeParsed.scene);
+            this.inspector.setScene(this.activeParsed.scene);
           }
           this.postSceneData(webviewPanel, this.activeParsed);
         }
@@ -76,6 +80,7 @@ export class OmosceneEditorProvider
         this.activeDocument = null;
         this.activeParsed = null;
         this.sceneTree.setScene(null);
+        this.inspector.setScene(null);
         this.inspector.showComponent(null);
       }
     });
@@ -262,13 +267,23 @@ export class OmosceneEditorProvider
     data: OmosceneFile | null
   ): void {
     if (!data) {
-      panel.webview.postMessage({ type: 'scene:data', entities: [], name: '' });
+      panel.webview.postMessage({ type: 'scene:data', entities: [], textures: [], name: '' });
       return;
     }
     const entities = extractEntities(data.scene);
+
+    // Extract and load texture map images for sprite rendering
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    let textures: EditorTextureMap[] = [];
+    if (workspaceFolders && workspaceFolders.length > 0) {
+      const rawMaps = extractTextureMaps(data.scene);
+      textures = loadTextureImages(rawMaps, workspaceFolders[0].uri.fsPath);
+    }
+
     panel.webview.postMessage({
       type: 'scene:data',
       entities,
+      textures,
       name: data.name,
     });
   }
@@ -353,12 +368,31 @@ export function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-// ── Entity Extraction ───────────────────────────────────────────
+// ── Entity & Texture Extraction ─────────────────────────────────
 
 interface EditorEntity {
   name: string;
   id: number;
   position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number };
+  scale: { x: number; y: number; z: number };
+  sprite?: {
+    albedoKey: string;
+    frameIndex: number;
+    anchor: { x: number; y: number };
+    tint: { x: number; y: number; z: number; w: number };
+    opacity: number;
+    showSilhouette: boolean;
+    silhouetteColor: { x: number; y: number; z: number; w: number };
+  };
+}
+
+interface EditorTextureMap {
+  textureMapKey: string;
+  imageData: string;
+  imageType: { mode: 'grid'; cellWidth: number; cellHeight: number; cols: number; rows: number; cellCount?: number }
+           | { mode: 'framemap'; frames: { x: number; y: number; w: number; h: number }[] }
+           | null;
 }
 
 export function extractEntities(scene: SerializedComponent): EditorEntity[] {
@@ -373,23 +407,118 @@ function walkScene(
 ): void {
   if (!isSerializedNexus(component)) {return;}
 
-  // Look for a transform child in this nexus
+  // Look for transform and sprite siblings in this nexus
   const transform = component.components.find((c) => c.type === 'transform');
-  if (transform) {
-    const pos = (transform as Record<string, unknown>).position as
-      | { x: number; y: number; z: number }
-      | undefined;
-    out.push({
+  const sprite = component.components.find((c) => c.type === 'sprite');
+
+  // Only create an entity if there's a transform or sprite
+  if (transform || sprite) {
+    const t = transform as Record<string, unknown> | undefined;
+    const s = sprite as Record<string, unknown> | undefined;
+
+    const pos = t?.position as { x: number; y: number; z: number } | undefined;
+    const rot = t?.rotation as { x: number; y: number; z: number } | undefined;
+    const scl = t?.scale as { x: number; y: number; z: number } | undefined;
+
+    const entity: EditorEntity = {
       name: component.name,
       id: component.id ?? -1,
       position: pos ? { x: pos.x || 0, y: pos.y || 0, z: pos.z || 0 } : { x: 0, y: 0, z: 0 },
-    });
+      rotation: rot ? { x: rot.x || 0, y: rot.y || 0, z: rot.z || 0 } : { x: 0, y: 0, z: 0 },
+      scale: scl ? { x: scl.x ?? 1, y: scl.y ?? 1, z: scl.z ?? 1 } : { x: 1, y: 1, z: 1 },
+    };
+
+    if (s) {
+      const tmKeys = s.textureMapKeys as { albedo?: string } | undefined;
+      const frame = s.frame as { albedo?: number } | undefined;
+      const anchor = s.anchor as { x?: number; y?: number } | undefined;
+      const tint = s.tint as { x?: number; y?: number; z?: number; w?: number } | undefined;
+      const silCol = s.silhouetteColor as { x?: number; y?: number; z?: number; w?: number } | undefined;
+
+      entity.sprite = {
+        albedoKey: tmKeys?.albedo || '',
+        frameIndex: frame?.albedo ?? 0,
+        anchor: { x: anchor?.x || 0, y: anchor?.y || 0 },
+        tint: { x: tint?.x ?? 1, y: tint?.y ?? 1, z: tint?.z ?? 1, w: tint?.w ?? 1 },
+        opacity: (s.opacity as number) ?? 1,
+        showSilhouette: (s.showSilhouette as boolean) ?? false,
+        silhouetteColor: { x: silCol?.x ?? 0.2, y: silCol?.y ?? 0.4, z: silCol?.z ?? 0.8, w: silCol?.w ?? 0.5 },
+      };
+    }
+
+    out.push(entity);
   }
 
   // Recurse into child nexuses
   for (const child of component.components) {
     walkScene(child, out);
   }
+}
+
+function extractTextureMaps(scene: SerializedComponent): { key: string; filePath: string; imageType: EditorTextureMap['imageType'] }[] {
+  const maps: { key: string; filePath: string; imageType: EditorTextureMap['imageType'] }[] = [];
+  walkForTextureMaps(scene, maps);
+  return maps;
+}
+
+function walkForTextureMaps(
+  component: SerializedComponent,
+  out: { key: string; filePath: string; imageType: EditorTextureMap['imageType'] }[]
+): void {
+  if (component.type === 'texture-map') {
+    const tm = component as Record<string, unknown>;
+    const key = (tm.textureMapKey as string) || '';
+    const filePath = (tm.filePath as string) || '';
+    if (key && filePath) {
+      const imageType = (tm.imageType as EditorTextureMap['imageType']) || null;
+      out.push({ key, filePath, imageType });
+    }
+  }
+  if (isSerializedNexus(component)) {
+    for (const child of component.components) {
+      walkForTextureMaps(child, out);
+    }
+  }
+}
+
+function loadTextureImages(
+  maps: { key: string; filePath: string; imageType: EditorTextureMap['imageType'] }[],
+  workspaceRoot: string
+): EditorTextureMap[] {
+  const mimeMap: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.bmp': 'image/bmp',
+  };
+
+  const result: EditorTextureMap[] = [];
+  const seen = new Set<string>();
+
+  for (const tm of maps) {
+    if (seen.has(tm.key)) {continue;}
+    seen.add(tm.key);
+
+    const absPath = path.isAbsolute(tm.filePath)
+      ? tm.filePath
+      : path.join(workspaceRoot, tm.filePath);
+
+    if (!fs.existsSync(absPath)) {continue;}
+
+    const ext = path.extname(absPath).toLowerCase();
+    const mime = mimeMap[ext] || 'image/png';
+    const base64 = fs.readFileSync(absPath).toString('base64');
+
+    result.push({
+      textureMapKey: tm.key,
+      imageData: `data:${mime};base64,${base64}`,
+      imageType: tm.imageType,
+    });
+  }
+
+  return result;
 }
 
 // ── Editor Webview HTML ─────────────────────────────────────────
@@ -401,11 +530,11 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; }
-  canvas { display: block; width: 100%; height: 100%; }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
   #info { position: absolute; top: 8px; left: 8px; color: rgba(255,255,255,0.4); font: 11px monospace; pointer-events: none; }
 </style>
 </head>
@@ -430,7 +559,10 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
   // Camera state (editor-local)
   var cam = { panX: 0, panY: 0, zoom: 1.5 };
   var entities = [];
+  var textures = {};  // textureMapKey → { img: HTMLImageElement, imageType: ... }
   var sceneName = '';
+  var offscreen = document.createElement('canvas');
+  var offCtx = offscreen.getContext('2d');
 
   // Dragging state
   var dragging = false;
@@ -445,6 +577,28 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
       x: (isoX - cam.panX) * cam.zoom + canvas.width / 2,
       y: canvas.height / 2 - (isoY - cam.panY) * cam.zoom,
     };
+  }
+
+  // ── Frame Extraction ──────────────────────────────────────────
+  function getFrameRect(imageType, frameIndex, imgW, imgH) {
+    if (!imageType) {
+      return { x: 0, y: 0, w: imgW, h: imgH };
+    }
+    if (imageType.mode === 'grid') {
+      var col = frameIndex % imageType.cols;
+      var row = Math.floor(frameIndex / imageType.cols);
+      return {
+        x: col * imageType.cellWidth,
+        y: row * imageType.cellHeight,
+        w: imageType.cellWidth,
+        h: imageType.cellHeight,
+      };
+    }
+    if (imageType.mode === 'framemap' && imageType.frames && imageType.frames[frameIndex]) {
+      var f = imageType.frames[frameIndex];
+      return { x: f.x, y: f.y, w: f.w, h: f.h };
+    }
+    return { x: 0, y: 0, w: imgW, h: imgH };
   }
 
   // ── Grid ────────────────────────────────────────────────────
@@ -534,16 +688,108 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
     ctx.fillText(label, p.x - m.width / 2, p.y - len * 0.7 - 7);
   }
 
+  // ── Sprite Rendering ──────────────────────────────────────────
+  function drawSprite(e) {
+    if (!e.sprite || !e.sprite.albedoKey) return;
+    var entry = textures[e.sprite.albedoKey];
+    if (!entry || !entry.img || !entry.img.complete) return;
+
+    var img = entry.img;
+    var fr = getFrameRect(entry.imageType, e.sprite.frameIndex, img.width, img.height);
+    if (fr.w <= 0 || fr.h <= 0) return;
+
+    var p = worldToScreen(e.position.x, e.position.y, e.position.z);
+
+    // Anchor offset (shader: anchoredPosition = isoProjected - anchor)
+    var ax = p.x - e.sprite.anchor.x * cam.zoom;
+    var ay = p.y - e.sprite.anchor.y * cam.zoom;
+
+    var drawW = fr.w * cam.zoom;
+    var drawH = fr.h * cam.zoom;
+
+    var tint = e.sprite.tint;
+    var opacity = e.sprite.opacity;
+    var needsTint = !(tint.x >= 0.99 && tint.y >= 0.99 && tint.z >= 0.99);
+    var needsAlpha = opacity < 0.99 || tint.w < 0.99;
+
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(e.rotation.z);
+    ctx.scale(e.scale.x, e.scale.y);
+
+    // Silhouette indicator (drawn behind sprite)
+    if (e.sprite.showSilhouette) {
+      var sc = e.sprite.silhouetteColor;
+      ctx.globalAlpha = sc.w * 0.6;
+      ctx.shadowColor = 'rgba(' + Math.round(sc.x * 255) + ',' + Math.round(sc.y * 255) + ',' + Math.round(sc.z * 255) + ',1)';
+      ctx.shadowBlur = 6;
+      ctx.drawImage(img, fr.x, fr.y, fr.w, fr.h, -drawW / 2, -drawH / 2, drawW, drawH);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+
+    if (needsTint) {
+      // Tint via offscreen canvas
+      var ow = Math.ceil(drawW);
+      var oh = Math.ceil(drawH);
+      if (ow > 0 && oh > 0) {
+        offscreen.width = ow;
+        offscreen.height = oh;
+        offCtx.clearRect(0, 0, ow, oh);
+        offCtx.imageSmoothingEnabled = false;
+
+        // Draw the sprite frame
+        offCtx.drawImage(img, fr.x, fr.y, fr.w, fr.h, 0, 0, ow, oh);
+
+        // Multiply tint
+        offCtx.globalCompositeOperation = 'multiply';
+        offCtx.fillStyle = 'rgb(' + Math.round(tint.x * 255) + ',' + Math.round(tint.y * 255) + ',' + Math.round(tint.z * 255) + ')';
+        offCtx.fillRect(0, 0, ow, oh);
+
+        // Restore original alpha
+        offCtx.globalCompositeOperation = 'destination-in';
+        offCtx.drawImage(img, fr.x, fr.y, fr.w, fr.h, 0, 0, ow, oh);
+        offCtx.globalCompositeOperation = 'source-over';
+
+        ctx.globalAlpha = needsAlpha ? opacity * tint.w : 1;
+        ctx.drawImage(offscreen, -drawW / 2, -drawH / 2);
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      // No tint — draw directly
+      ctx.globalAlpha = needsAlpha ? opacity * tint.w : 1;
+      ctx.drawImage(img, fr.x, fr.y, fr.w, fr.h, -drawW / 2, -drawH / 2, drawW, drawH);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+
   // ── Render ──────────────────────────────────────────────────
   function render() {
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = false;
 
     drawGrid();
     drawOrigin();
-    for (var i = 0; i < entities.length; i++) {
-      drawEntity(entities[i]);
+
+    // Depth-sort entities (furthest first = lowest sum drawn first)
+    var sorted = entities.slice().sort(function(a, b) {
+      return (a.position.x + a.position.y + a.position.z) - (b.position.x + b.position.y + b.position.z);
+    });
+
+    // Draw sprites first (back to front)
+    for (var i = 0; i < sorted.length; i++) {
+      if (sorted[i].sprite) {
+        drawSprite(sorted[i]);
+      }
+    }
+
+    // Draw gizmo crosshairs on top
+    for (var j = 0; j < sorted.length; j++) {
+      drawEntity(sorted[j]);
     }
   }
 
@@ -592,7 +838,35 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
       infoEl.textContent = sceneName
         ? sceneName + ' — ' + entities.length + ' entities'
         : 'Editor Preview';
-      render();
+
+      // Load texture images
+      var texList = msg.textures || [];
+      var pending = 0;
+      for (var i = 0; i < texList.length; i++) {
+        var tex = texList[i];
+        if (textures[tex.textureMapKey] && textures[tex.textureMapKey].src === tex.imageData) {
+          // Already loaded with same data, just update imageType
+          textures[tex.textureMapKey].imageType = tex.imageType;
+          continue;
+        }
+        pending++;
+        (function(key, imageType, imageData) {
+          var img = new Image();
+          img.onload = function() {
+            textures[key] = { img: img, imageType: imageType, src: imageData };
+            pending--;
+            if (pending <= 0) render();
+          };
+          img.onerror = function() {
+            pending--;
+            if (pending <= 0) render();
+          };
+          img.src = imageData;
+        })(tex.textureMapKey, tex.imageType, tex.imageData);
+      }
+
+      // If no textures to load, render immediately
+      if (pending <= 0) render();
     }
   });
 

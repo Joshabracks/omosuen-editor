@@ -15,6 +15,7 @@
 
   let currentComponent = null;
   let currentSchema = [];
+  let currentSpriteContext = null;
 
   // ── Message Handling ────────────────────────────────────────────
 
@@ -24,6 +25,7 @@
       case 'showComponent':
         currentComponent = message.component;
         currentSchema = message.schema || [];
+        currentSpriteContext = message.spriteContext || null;
         render();
         break;
       case 'showMultiSelection':
@@ -52,6 +54,11 @@
 
     // Always show name and type fields (read-only-ish)
     renderBaseFields();
+
+    // Render sprite validation warnings
+    if (currentSpriteContext) {
+      renderSpriteWarnings(currentSpriteContext);
+    }
 
     // Render schema-driven properties
     for (const schema of currentSchema) {
@@ -98,6 +105,35 @@
       idSpan.style.color = 'var(--vscode-descriptionForeground)';
       idRow.querySelector('.property-value').appendChild(idSpan);
       propertiesContainer.appendChild(idRow);
+    }
+  }
+
+  function renderSpriteWarnings(ctx) {
+    if (!ctx.hasSiblingTransform) {
+      var w = document.createElement('div');
+      w.className = 'inspector-warning';
+      w.textContent = 'Missing sibling Transform component';
+      propertiesContainer.appendChild(w);
+    }
+
+    var tmKeys = currentComponent.textureMapKeys || {};
+    var channels = ['albedo', 'normal', 'material', 'emission'];
+    var kv = ctx.keyValidation || {};
+
+    for (var i = 0; i < channels.length; i++) {
+      var ch = channels[i];
+      var key = tmKeys[ch] || '';
+      if (ch === 'albedo' && !key) {
+        var w2 = document.createElement('div');
+        w2.className = 'inspector-warning';
+        w2.textContent = 'Albedo texture map key is required';
+        propertiesContainer.appendChild(w2);
+      } else if (key && kv[ch] && !kv[ch].exists) {
+        var w3 = document.createElement('div');
+        w3.className = 'inspector-warning';
+        w3.textContent = ch.charAt(0).toUpperCase() + ch.slice(1) + " texture map '" + key + "' not found";
+        propertiesContainer.appendChild(w3);
+      }
     }
   }
 
@@ -579,12 +615,31 @@
       const subContainer = document.createElement('div');
       subContainer.className = 'sub-fields';
 
+      // For the sprite 'frame' object, only show configured channels and cap max
+      const isFrameField = schema.name === 'frame' && currentSpriteContext;
+      const tmKeys = isFrameField ? (currentComponent.textureMapKeys || {}) : null;
+      const kv = isFrameField ? (currentSpriteContext.keyValidation || {}) : null;
+
       for (const subSchema of schema.subFields) {
+        // Skip unconfigured channels for frame fields
+        if (isFrameField) {
+          const channelKey = tmKeys[subSchema.name] || '';
+          if (!channelKey) continue;
+        }
+
         const subValue = value ? value[subSchema.name] : undefined;
         const subPropertySchema = {
           ...subSchema,
           name: schema.name + '.' + subSchema.name,
         };
+
+        // Cap frame max to frameCount - 1
+        if (isFrameField && subSchema.type === 'number' && kv[subSchema.name]) {
+          const fc = kv[subSchema.name].frameCount;
+          if (fc > 0) {
+            subPropertySchema.max = fc - 1;
+          }
+        }
 
         switch (subSchema.type) {
           case 'string':
