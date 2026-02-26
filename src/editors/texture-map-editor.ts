@@ -174,31 +174,31 @@ function getFrameEditorHtml(_webview: vscode.Webview): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; color: #ccc; font-family: var(--vscode-font-family, sans-serif); font-size: 13px; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0d0a07; color: #c8bfb0; font-family: 'IBM Plex Mono', monospace; font-size: 13px; }
 
   #app { display: flex; flex-direction: column; height: 100%; }
 
   /* ── Toolbar ──────────────────────────────────────────────── */
   .toolbar {
     display: flex; align-items: center; gap: 8px;
-    padding: 6px 10px; background: #252526; border-bottom: 1px solid #3c3c3c;
+    padding: 6px 10px; background: #15110c; border-bottom: 1px solid #2e2518;
     flex-shrink: 0;
   }
-  .toolbar label { font-size: 12px; color: #999; }
+  .toolbar label { font-size: 12px; color: #7a7060; }
   .toolbar select, .toolbar button {
-    background: #3c3c3c; color: #ccc; border: 1px solid #555; border-radius: 3px;
-    padding: 3px 8px; font-size: 12px; cursor: pointer;
+    background: #1e1810; color: #c8bfb0; border: 1px solid #2e2518; border-radius: 3px;
+    padding: 3px 8px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; cursor: pointer;
   }
-  .toolbar select:focus, .toolbar button:focus { outline: 1px solid #007acc; }
-  .toolbar button:hover { background: #505050; }
-  .toolbar .key-label { color: #9cdcfe; font-weight: bold; margin-left: auto; }
+  .toolbar select:focus, .toolbar button:focus { outline: 1px solid #d4a843; }
+  .toolbar button:hover { background: #271f14; }
+  .toolbar .key-label { color: #d4a843; font-weight: bold; margin-left: auto; }
 
   /* ── Canvas ────────────────────────────────────────────────── */
   .canvas-wrap {
-    flex: 1; position: relative; overflow: hidden; background: #1a1a1a;
+    flex: 1; position: relative; overflow: hidden; background: #0d0a07;
     background-image:
-      linear-gradient(45deg, #222 25%, transparent 25%, transparent 75%, #222 75%),
-      linear-gradient(45deg, #222 25%, transparent 25%, transparent 75%, #222 75%);
+      linear-gradient(45deg, #181410 25%, transparent 25%, transparent 75%, #181410 75%),
+      linear-gradient(45deg, #181410 25%, transparent 25%, transparent 75%, #181410 75%);
     background-size: 16px 16px;
     background-position: 0 0, 8px 8px;
   }
@@ -207,40 +207,40 @@ function getFrameEditorHtml(_webview: vscode.Webview): string {
   /* ── Config Panel ──────────────────────────────────────────── */
   .config-panel {
     display: flex; align-items: center; gap: 10px;
-    padding: 6px 10px; background: #252526; border-top: 1px solid #3c3c3c;
+    padding: 6px 10px; background: #15110c; border-top: 1px solid #2e2518;
     flex-shrink: 0; flex-wrap: wrap;
   }
   .config-panel.hidden { display: none; }
-  .config-panel label { font-size: 12px; color: #999; }
+  .config-panel label { font-size: 12px; color: #7a7060; }
   .config-panel input[type="number"] {
-    width: 56px; background: #3c3c3c; color: #ccc; border: 1px solid #555;
-    border-radius: 3px; padding: 2px 4px; font-size: 12px; text-align: center;
+    width: 56px; background: #1e1810; color: #c8bfb0; border: 1px solid #2e2518;
+    border-radius: 3px; padding: 2px 4px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; text-align: center;
   }
-  .config-panel input:focus { outline: 1px solid #007acc; }
+  .config-panel input:focus { outline: 1px solid #d4a843; }
 
   /* ── Frame Strip ───────────────────────────────────────────── */
   .frame-strip {
-    display: flex; gap: 2px; padding: 6px 10px; background: #252526;
-    border-top: 1px solid #3c3c3c; overflow-x: auto; flex-shrink: 0;
+    display: flex; gap: 2px; padding: 6px 10px; background: #15110c;
+    border-top: 1px solid #2e2518; overflow-x: auto; flex-shrink: 0;
     min-height: 64px; align-items: center;
   }
   .frame-strip.hidden { display: none; }
   .frame-thumb {
-    flex-shrink: 0; width: 48px; height: 48px; border: 1px solid #555;
+    flex-shrink: 0; width: 48px; height: 48px; border: 1px solid #2e2518;
     border-radius: 3px; overflow: hidden; position: relative; cursor: pointer;
-    background: #1a1a1a;
+    background: #0d0a07;
   }
-  .frame-thumb.selected { border-color: #007acc; border-width: 2px; }
+  .frame-thumb.selected { border-color: #d4a843; border-width: 2px; }
   .frame-thumb canvas { width: 100%; height: 100%; }
   .frame-thumb .idx {
     position: absolute; bottom: 1px; right: 2px;
-    font-size: 9px; color: rgba(255,255,255,0.6);
+    font-size: 9px; color: rgba(200,191,176,0.6);
   }
 
   /* ── No Image Message ─────────────────────────────────────── */
   .no-image {
     flex: 1; display: flex; align-items: center; justify-content: center;
-    color: #666; font-size: 14px;
+    color: #7a7060; font-size: 14px;
   }
 </style>
 </head>
@@ -380,7 +380,7 @@ function getFrameEditorHtml(_webview: vscode.Webview): string {
     ctx.drawImage(img, dx, dy, dw, dh);
 
     // Draw image border
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.strokeStyle = 'rgba(200,191,176,0.3)';
     ctx.lineWidth = 1;
     ctx.strokeRect(dx, dy, dw, dh);
 
@@ -392,7 +392,7 @@ function getFrameEditorHtml(_webview: vscode.Webview): string {
 
     // Draw in-progress rectangle
     if (drawRect) {
-      ctx.strokeStyle = '#00ff88';
+      ctx.strokeStyle = '#8ebc3a';
       ctx.lineWidth = 2;
       ctx.setLineDash([4, 4]);
       var r = rectToScreen(drawRect);
@@ -406,7 +406,7 @@ function getFrameEditorHtml(_webview: vscode.Webview): string {
   function drawGridOverlay() {
     if (!img) return;
 
-    ctx.strokeStyle = 'rgba(0, 180, 255, 0.6)';
+    ctx.strokeStyle = 'rgba(74, 157, 187, 0.6)';
     ctx.lineWidth = 1;
 
     var cw = grid.cellW * cam.zoom;
@@ -425,8 +425,8 @@ function getFrameEditorHtml(_webview: vscode.Webview): string {
         ctx.strokeRect(sx, sy, cw, ch);
 
         // Frame index label
-        ctx.fillStyle = 'rgba(0, 180, 255, 0.8)';
-        ctx.font = Math.min(12, cw * 0.3) + 'px monospace';
+        ctx.fillStyle = '#d4a843';
+        ctx.font = Math.min(12, cw * 0.3) + "px 'IBM Plex Mono', monospace";
         ctx.fillText(String(idx), sx + 3, sy + Math.min(14, ch * 0.4));
         idx++;
       }
@@ -440,17 +440,17 @@ function getFrameEditorHtml(_webview: vscode.Webview): string {
       var isSelected = (i === selectedFrame);
 
       // Frame rectangle
-      ctx.strokeStyle = isSelected ? '#00ff88' : 'rgba(255, 180, 0, 0.7)';
+      ctx.strokeStyle = isSelected ? '#d4a843' : 'rgba(212, 168, 67, 0.5)';
       ctx.lineWidth = isSelected ? 2 : 1;
       ctx.strokeRect(r.x, r.y, r.w, r.h);
 
       // Fill with translucent color
-      ctx.fillStyle = isSelected ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 180, 0, 0.05)';
+      ctx.fillStyle = isSelected ? 'rgba(212, 168, 67, 0.1)' : 'rgba(212, 168, 67, 0.05)';
       ctx.fillRect(r.x, r.y, r.w, r.h);
 
       // Frame index label
-      ctx.fillStyle = isSelected ? '#00ff88' : 'rgba(255, 180, 0, 0.9)';
-      ctx.font = '11px monospace';
+      ctx.fillStyle = isSelected ? '#d4a843' : 'rgba(212, 168, 67, 0.9)';
+      ctx.font = "11px 'IBM Plex Mono', monospace";
       ctx.fillText(String(i), r.x + 3, r.y + 13);
 
       // Resize handles for selected frame
@@ -463,7 +463,7 @@ function getFrameEditorHtml(_webview: vscode.Webview): string {
   function drawResizeHandles(r) {
     var size = 6;
     var handles = getHandlePositions(r);
-    ctx.fillStyle = '#00ff88';
+    ctx.fillStyle = '#8ebc3a';
     for (var key in handles) {
       var h = handles[key];
       ctx.fillRect(h.x - size / 2, h.y - size / 2, size, size);

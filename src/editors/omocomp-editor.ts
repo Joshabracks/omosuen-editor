@@ -160,8 +160,8 @@ export class OmocompEditorProvider
   ): void {
     if (!data) {
       panel.webview.html = `<!DOCTYPE html>
-<html><body style="color: var(--vscode-foreground); font-family: var(--vscode-font-family); padding: 20px;">
-<h2>Invalid .omocomp file</h2>
+<html><body style="color: #c8bfb0; font-family: 'IBM Plex Mono', monospace; padding: 20px; background: #0d0a07;">
+<h2 style="color: #d4a843;">Invalid .omocomp file</h2>
 <p>This file could not be parsed as a valid Omosuen component.</p>
 </body></html>`;
       return;
@@ -171,15 +171,15 @@ export class OmocompEditorProvider
     const componentCount = isNexus ? countComponents(data.component) : 1;
 
     panel.webview.html = `<!DOCTYPE html>
-<html><body style="color: var(--vscode-foreground); font-family: var(--vscode-font-family); padding: 20px;">
-<h2>${escapeHtml(data.name)}</h2>
+<html><body style="color: #c8bfb0; font-family: 'IBM Plex Mono', monospace; padding: 20px; background: #0d0a07;">
+<h2 style="color: #d4a843;">${escapeHtml(data.name)}</h2>
 <table style="font-size: 13px; border-collapse: collapse;">
-  <tr><td style="padding: 2px 12px 2px 0; opacity: 0.7;">Format</td><td>omocomp v${data.omocomp}</td></tr>
-  <tr><td style="padding: 2px 12px 2px 0; opacity: 0.7;">Engine</td><td>${escapeHtml(data.engine)}</td></tr>
-  <tr><td style="padding: 2px 12px 2px 0; opacity: 0.7;">Type</td><td>${escapeHtml(data.component.type)}</td></tr>
-  ${isNexus ? `<tr><td style="padding: 2px 12px 2px 0; opacity: 0.7;">Components</td><td>${componentCount}</td></tr>` : ''}
+  <tr><td style="padding: 2px 12px 2px 0; color: #7a7060;">Format</td><td>omocomp v${data.omocomp}</td></tr>
+  <tr><td style="padding: 2px 12px 2px 0; color: #7a7060;">Engine</td><td>${escapeHtml(data.engine)}</td></tr>
+  <tr><td style="padding: 2px 12px 2px 0; color: #7a7060;">Type</td><td>${escapeHtml(data.component.type)}</td></tr>
+  ${isNexus ? `<tr><td style="padding: 2px 12px 2px 0; color: #7a7060;">Components</td><td>${componentCount}</td></tr>` : ''}
 </table>
-<p style="margin-top: 16px; opacity: 0.6; font-size: 12px;">
+<p style="margin-top: 16px; color: #4a3e30; font-size: 12px;">
   Properties are shown in the Inspector panel.
 </p>
 </body></html>`;

@@ -21,6 +21,13 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "themes": [
+      {
+        "label": "Omosuen Retro",
+        "uiTheme": "vs-dark",
+        "path": "./themes/omosuen-retro.json"
+      }
+    ],
     "customEditors": [
       {
         "viewType": "omosuen.omosceneEditor",

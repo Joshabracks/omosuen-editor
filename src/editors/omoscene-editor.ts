@@ -592,9 +592,9 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0d0a07; }
   canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
-  #info { position: absolute; top: 8px; left: 8px; color: rgba(255,255,255,0.4); font: 11px monospace; pointer-events: none; }
+  #info { position: absolute; top: 8px; left: 8px; color: rgba(200,191,176,0.5); font: 11px 'IBM Plex Mono', monospace; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -609,7 +609,7 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
   var GRID_CELLS = 20;
   var CELL_SIZE = 32;
   var GIZMO_LEN = 40;
-  var AXIS_COLORS = { x: '#FF4444', y: '#44FF44', z: '#4488FF' };
+  var AXIS_COLORS = { x: '#c45a4a', y: '#6abc5a', z: '#4a8ac4' };
 
   var canvas = document.getElementById('editor-canvas');
   var ctx = canvas.getContext('2d');
@@ -671,7 +671,7 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
       // Lines along X (varying Z)
       var a1 = worldToScreen(-extent, 0, w);
       var b1 = worldToScreen(extent, 0, w);
-      ctx.strokeStyle = (i === 0) ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.07)';
+      ctx.strokeStyle = (i === 0) ? 'rgba(212,168,67,0.15)' : 'rgba(212,168,67,0.04)';
       ctx.lineWidth = (i === 0) ? 1 : 0.5;
       ctx.beginPath(); ctx.moveTo(a1.x, a1.y); ctx.lineTo(b1.x, b1.y); ctx.stroke();
 
@@ -691,7 +691,7 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
     var xDir = { x: COS30, y: -SIN30 };
     ctx.strokeStyle = AXIS_COLORS.x; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + xDir.x * len, o.y + xDir.y * len); ctx.stroke();
-    ctx.fillStyle = AXIS_COLORS.x; ctx.font = 'bold 11px monospace';
+    ctx.fillStyle = AXIS_COLORS.x; ctx.font = "bold 11px 'IBM Plex Mono', monospace";
     ctx.fillText('X', o.x + xDir.x * (len + 6), o.y + xDir.y * (len + 6));
 
     // Y axis (straight up in screen space)
@@ -708,7 +708,7 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
     ctx.fillText('Z', o.x + zDir.x * (len + 6), o.y + zDir.y * (len + 6));
 
     // Origin dot
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = '#d4a843';
     ctx.beginPath(); ctx.arc(o.x, o.y, 3, 0, Math.PI * 2); ctx.fill();
   }
 
@@ -735,16 +735,16 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
     ctx.lineTo(p.x + zDir.x * len * 0.7, p.y + zDir.y * len * 0.7); ctx.stroke();
 
     // Center dot
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = '#c8bfb0';
     ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
 
     // Label
     var label = e.name + ' (' + e.position.x.toFixed(0) + ',' + e.position.y.toFixed(0) + ',' + e.position.z.toFixed(0) + ')';
-    ctx.font = '10px monospace';
+    ctx.font = "10px 'IBM Plex Mono', monospace";
     var m = ctx.measureText(label);
-    ctx.fillStyle = 'rgba(30, 30, 30, 0.8)';
+    ctx.fillStyle = 'rgba(13, 10, 7, 0.85)';
     ctx.fillRect(p.x - m.width / 2 - 3, p.y - len * 0.7 - 18, m.width + 6, 14);
-    ctx.fillStyle = '#ccc';
+    ctx.fillStyle = '#c8bfb0';
     ctx.fillText(label, p.x - m.width / 2, p.y - len * 0.7 - 7);
   }
 
@@ -838,7 +838,7 @@ function getEditorWebviewHtml(_webview: vscode.Webview): string {
 
     var isSelected = (e.id === selectedEntityId);
 
-    ctx.strokeStyle = isSelected ? 'rgba(255, 255, 255, 0.9)' : 'rgba(180, 180, 180, 0.4)';
+    ctx.strokeStyle = isSelected ? 'rgba(212, 168, 67, 0.9)' : 'rgba(212, 168, 67, 0.3)';
     ctx.lineWidth = isSelected ? 2 : 1;
     ctx.strokeRect(p.x - halfW, p.y - halfH, halfW * 2, halfH * 2);
   }
