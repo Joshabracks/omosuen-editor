@@ -491,16 +491,26 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
     tctx.closePath(); tctx.stroke();
   }
 
-  // ── Projection (matches engine vertex shader) ─────────────
+  // ── Projection (matches engine vertex shader + FBO pipeline) ──
   function screenToWorld(sx, sy, planeY) {
     var camX = cameraTransform.position.x;
     var camZ = cameraTransform.position.z;
+    var zoom = camera.zoom;
+    var pixelScale = camera.pixelScale;
+
+    // Snap camera position to match renderer (see snapCameraPosition)
+    if (pixelScale > 1) {
+      var snapSize = pixelScale / zoom;
+      camX = Math.floor(camX / snapSize) * snapSize;
+      camZ = Math.floor(camZ / snapSize) * snapSize;
+    }
+
     var vpW = viewport.width;
     var vpH = viewport.height;
-    var zoom = camera.zoom;
+    var zoomSq = zoom * zoom;
 
-    var isoX = (sx - vpW / 2) / zoom + camX;
-    var isoY = (sy - vpH / 2) / zoom + camZ;
+    var isoX = (sx - vpW / 2) / zoomSq + camX;
+    var isoY = (sy - vpH / 2) / zoomSq + camZ;
 
     // isoX = COS30 * (wx - wz)
     // isoY = SIN30 * (wx + wz) - planeY
@@ -513,15 +523,24 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
   function worldToScreen(wx, wy, wz) {
     var camX = cameraTransform.position.x;
     var camZ = cameraTransform.position.z;
+    var zoom = camera.zoom;
+    var pixelScale = camera.pixelScale;
+
+    if (pixelScale > 1) {
+      var snapSize = pixelScale / zoom;
+      camX = Math.floor(camX / snapSize) * snapSize;
+      camZ = Math.floor(camZ / snapSize) * snapSize;
+    }
+
     var vpW = viewport.width;
     var vpH = viewport.height;
-    var zoom = camera.zoom;
+    var zoomSq = zoom * zoom;
 
     var isoX = COS30 * wx - COS30 * wz;
     var isoY = SIN30 * wx - wy + SIN30 * wz;
     return {
-      x: (isoX - camX) * zoom + vpW / 2,
-      y: (isoY - camZ) * zoom + vpH / 2,
+      x: (isoX - camX) * zoomSq + vpW / 2,
+      y: (isoY - camZ) * zoomSq + vpH / 2,
     };
   }
 
@@ -795,7 +814,8 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
       lastMouseX = event.clientX;
       lastMouseY = event.clientY;
       var zoom = camera.zoom;
-      camera.pan(dx * -PAN_SENSITIVITY / zoom, dy * -PAN_SENSITIVITY / zoom);
+      var zoomSq = zoom * zoom;
+      camera.pan(dx * -PAN_SENSITIVITY / zoomSq, dy * -PAN_SENSITIVITY / zoomSq);
     });
     inputController.onAction('mouseWheel', function(event, deltaY) {
       zoomVelocity += -deltaY * ZOOM_ACCEL;
