@@ -24,7 +24,7 @@ import { registerBuildTasks } from './tasks/build';
 import { openFrameEditor } from './editors/texture-map-editor';
 import { openAnimationEditor } from './editors/animation-editor';
 import { openCellMapMaterialsEditor } from './editors/cellmap-materials-editor';
-import { openCellMapEditor } from './editors/cellmap-editor';
+import { openCellMapEditor, updateCellMapProperty } from './editors/cellmap-editor';
 import type {
   EditorMessage,
   ComponentSelectedPayload,
@@ -171,6 +171,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Inspector -> Document + Preview
   inspector.onPropertyChanged((componentId, property, value) => {
     omosceneEditor.updateComponentProperty(componentId, property, value);
+    updateCellMapProperty(property, value);
   });
 
   // ── Preview message handler ─────────────────────────────────────

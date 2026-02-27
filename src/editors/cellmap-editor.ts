@@ -41,6 +41,14 @@ interface TextureMapInfo {
 let activePanel: vscode.WebviewPanel | null = null;
 
 /**
+ * Forwards a property change to the cell-map editor webview (no-op if not open).
+ */
+export function updateCellMapProperty(property: string, value: unknown): void {
+  if (!activePanel) return;
+  void activePanel.webview.postMessage({ type: 'updateProperty', property, value });
+}
+
+/**
  * Opens (or focuses) the voxel map editor for a cell-map component.
  */
 export async function openCellMapEditor(
@@ -920,6 +928,18 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
         initStatus.textContent = 'Error: ' + err.message;
         console.error('[CellMap Editor] Scene creation failed:', err);
       });
+    } else if (msg.type === 'updateProperty' && engineReady && cellMap) {
+      if (msg.property === 'smoothing') {
+        cellMap.smoothing = msg.value;
+        for (var ci = 0; ci < cellMap.chunks.length; ci++) {
+          cellMap.chunks[ci].dirty = true;
+        }
+      } else if (msg.property === 'normalSmoothing') {
+        cellMap.normalSmoothing = msg.value;
+        for (var ci = 0; ci < cellMap.chunks.length; ci++) {
+          cellMap.chunks[ci].dirty = true;
+        }
+      }
     }
   });
 
