@@ -57,6 +57,30 @@ async function fetchReleases(): Promise<ReleaseOption[]> {
     }));
 }
 
+/**
+ * Downloads a file from a URL to a local path, following redirects.
+ * Exported for reuse by editors that need to fetch engine assets on-demand.
+ */
+export function httpsDownloadFile(url: string, destPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const follow = (reqUrl: string, depth: number) => {
+      if (depth > 5) { reject(new Error('Too many redirects')); return; }
+      https.get(reqUrl, { headers: { 'User-Agent': 'omosuen-editor' } }, (res) => {
+        if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+          follow(res.headers.location, depth + 1);
+          return;
+        }
+        if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode}`)); return; }
+        const out = fs.createWriteStream(destPath);
+        res.pipe(out);
+        out.on('finish', resolve);
+        out.on('error', reject);
+      }).on('error', reject);
+    };
+    follow(url, 0);
+  });
+}
+
 // ── Shell helpers ───────────────────────────────────────────────
 
 function runCommand(
@@ -319,6 +343,7 @@ start(60);
 function gitignore(): string {
   return `node_modules/
 dist/
+.omosuen_editor/
 *.log
 .DS_Store
 Thumbs.db
@@ -549,6 +574,16 @@ export function registerCreateProjectCommand(
               message: 'Installing dependencies (this may take a minute)...',
             });
             await runCommand('npm', ['install'], projectDir);
+
+            // Download engine UMD bundle for editor use
+            progress.report({ message: 'Downloading engine bundle...' });
+            const editorDir = path.join(projectDir, '.omosuen_editor');
+            fs.mkdirSync(editorDir, { recursive: true });
+            const bundleUrl = `https://github.com/Joshabracks/omosuen/releases/download/${tag}/omosuen.min.js`;
+            await httpsDownloadFile(
+              bundleUrl,
+              path.join(editorDir, 'omosuen.min.js')
+            );
           }
         );
       } catch (err) {

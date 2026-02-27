@@ -65,6 +65,11 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
         msg.animationControllerContext = this.computeAnimationControllerContext(component);
       }
 
+      // Compute cell-map info context
+      if (component && component.type === 'cell-map') {
+        msg.cellMapContext = this.computeCellMapContext(component);
+      }
+
       this.webviewView.webview.postMessage(msg);
     }
   }
@@ -130,6 +135,19 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
       }
     }
     return { hasSiblingSprite };
+  }
+
+  private computeCellMapContext(cm: SerializedComponent): {
+    materialCount: number;
+    mapDimensions: string;
+  } {
+    const comp = cm as Record<string, unknown>;
+    const materials = (comp.materials as unknown[]) || [];
+    const mapSize = comp.mapSize as { x?: number; y?: number; z?: number } | undefined;
+    const dims = mapSize
+      ? `${mapSize.x || 0}\u00d7${mapSize.y || 0}\u00d7${mapSize.z || 0}`
+      : '0\u00d70\u00d70';
+    return { materialCount: materials.length, mapDimensions: dims };
   }
 
   private findParentNexus(

@@ -23,6 +23,8 @@ import { registerExportCommand } from './commands/scene-export';
 import { registerBuildTasks } from './tasks/build';
 import { openFrameEditor } from './editors/texture-map-editor';
 import { openAnimationEditor } from './editors/animation-editor';
+import { openCellMapMaterialsEditor } from './editors/cellmap-materials-editor';
+import { openCellMapEditor } from './editors/cellmap-editor';
 import type {
   EditorMessage,
   ComponentSelectedPayload,
@@ -426,6 +428,40 @@ export function activate(context: vscode.ExtensionContext): void {
           return;
         }
         openAnimationEditor(context, component, omosceneEditor, inspector);
+      }
+    )
+  );
+
+  // ── Cell-Map Materials Editor command ─────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'omosuen.openCellMapMaterials',
+      (component?: SerializedComponent) => {
+        if (!component) {
+          vscode.window.showWarningMessage(
+            'Select a cell-map component first.'
+          );
+          return;
+        }
+        openCellMapMaterialsEditor(context, component, omosceneEditor, inspector);
+      }
+    )
+  );
+
+  // ── Cell-Map Voxel Editor command ───────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'omosuen.openCellMapEditor',
+      async (component?: SerializedComponent) => {
+        if (!component) {
+          vscode.window.showWarningMessage(
+            'Select a cell-map component first.'
+          );
+          return;
+        }
+        await openCellMapEditor(context, component, omosceneEditor, inspector);
       }
     )
   );

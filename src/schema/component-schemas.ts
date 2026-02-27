@@ -617,6 +617,18 @@ export const COMPONENT_SCHEMAS: Record<COMPONENT_TYPE, PropertySchema[]> = {
       label: 'Reveal Exempt',
       default: false,
     },
+    {
+      name: 'materials',
+      type: 'action',
+      label: 'Open Materials Editor',
+      command: 'omosuen.openCellMapMaterials',
+    },
+    {
+      name: 'packedData',
+      type: 'action',
+      label: 'Edit Map',
+      command: 'omosuen.openCellMapEditor',
+    },
   ],
 };
 

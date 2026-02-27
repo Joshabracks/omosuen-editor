@@ -18,6 +18,7 @@
   let currentSpriteContext = null;
   let currentCameraContext = null;
   let currentAnimationControllerContext = null;
+  let currentCellMapContext = null;
 
   // ── Message Handling ────────────────────────────────────────────
 
@@ -30,6 +31,7 @@
         currentSpriteContext = message.spriteContext || null;
         currentCameraContext = message.cameraContext || null;
         currentAnimationControllerContext = message.animationControllerContext || null;
+        currentCellMapContext = message.cellMapContext || null;
         render();
         break;
       case 'showMultiSelection':
@@ -68,6 +70,9 @@
     }
     if (currentAnimationControllerContext) {
       renderAnimationControllerWarnings(currentAnimationControllerContext);
+    }
+    if (currentCellMapContext) {
+      renderCellMapInfo(currentCellMapContext);
     }
 
     // Render schema-driven properties
@@ -163,6 +168,16 @@
       w.textContent = 'Missing sibling Sprite component';
       propertiesContainer.appendChild(w);
     }
+  }
+
+  function renderCellMapInfo(ctx) {
+    var info = document.createElement('div');
+    info.className = 'inspector-warning';
+    info.style.color = '#7a7060';
+    info.style.background = 'transparent';
+    info.style.borderLeftColor = '#2e2518';
+    info.textContent = ctx.materialCount + ' materials | Map: ' + ctx.mapDimensions;
+    propertiesContainer.appendChild(info);
   }
 
   function renderProperty(container, schema, data) {
