@@ -24,7 +24,7 @@ import { registerBuildTasks } from './tasks/build';
 import { openFrameEditor } from './editors/texture-map-editor';
 import { openAnimationEditor } from './editors/animation-editor';
 import { openCellMapMaterialsEditor } from './editors/cellmap-materials-editor';
-import { openCellMapEditor, updateCellMapProperty } from './editors/cellmap-editor';
+// cellmap-editor removed — cell-map editing is now integrated into the main editor viewport
 import type {
   EditorMessage,
   ComponentSelectedPayload,
@@ -147,6 +147,9 @@ export function activate(context: vscode.ExtensionContext): void {
       omosceneEditor.selectEntity(entityId);
     }
 
+    // Auto-activate cell-map editing when a cell-map component is selected
+    omosceneEditor.setCellEditMode(component.type === 'cell-map');
+
     // Notify preview of selection
     const server = getDevServer();
     if (server?.isRunning && component.id !== undefined) {
@@ -171,7 +174,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Inspector -> Document + Preview
   inspector.onPropertyChanged((componentId, property, value) => {
     omosceneEditor.updateComponentProperty(componentId, property, value);
-    updateCellMapProperty(property, value);
+    // Cell-map property updates now flow through the editor viewport automatically
   });
 
   // ── Preview message handler ─────────────────────────────────────
@@ -446,23 +449,6 @@ export function activate(context: vscode.ExtensionContext): void {
           return;
         }
         openCellMapMaterialsEditor(context, component, omosceneEditor, inspector);
-      }
-    )
-  );
-
-  // ── Cell-Map Voxel Editor command ───────────────────────
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      'omosuen.openCellMapEditor',
-      async (component?: SerializedComponent) => {
-        if (!component) {
-          vscode.window.showWarningMessage(
-            'Select a cell-map component first.'
-          );
-          return;
-        }
-        await openCellMapEditor(context, component, omosceneEditor, inspector);
       }
     )
   );

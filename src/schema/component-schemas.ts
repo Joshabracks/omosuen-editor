@@ -623,12 +623,7 @@ export const COMPONENT_SCHEMAS: Record<COMPONENT_TYPE, PropertySchema[]> = {
       label: 'Open Materials Editor',
       command: 'omosuen.openCellMapMaterials',
     },
-    {
-      name: 'packedData',
-      type: 'action',
-      label: 'Edit Map',
-      command: 'omosuen.openCellMapEditor',
-    },
+    // Cell-map editing is integrated into the main editor viewport (press T to toggle)
   ],
 };
 
