@@ -1060,10 +1060,9 @@ ${engineScript}
   var cellEditMode = false;
   var brushHeight = 0;
   var selectedMaterial = 0;
-  var materialColors = [];
+  var materialImages = [];   // Loaded Image objects per material index
+  var editorTextures = [];   // msg.textures (EditorTextureMap[]) for imageType lookups
   var brushTarget = null;
-  var cursorCell = null;
-  var hoverCell = null;  // { x, y, z } — cell under mouse at brushHeight
   var suppressNextUpdate = false;
 
   // ── Projection (matches engine zoom² pipeline) ──────────────
@@ -1308,34 +1307,22 @@ ${engineScript}
   }
 
   function drawCellHighlight() {
-    if (!cellMapData || !engineReady) return;
+    if (!cellMapData || !engineReady || !cellEditMode || !brushTarget) return;
     var cs = cellMapData.cellSize;
-
-    // Hover cell — always shown when cell-map exists
-    if (hoverCell) {
-      var hcx = (hoverCell.x + 0.5) * cs.x;
-      var hcy = (hoverCell.y + 0.5) * cs.y;
-      var hcz = (hoverCell.z + 0.5) * cs.z;
-      var isFilled = false;
-      if (cellMap) {
-        var cd = cellMap.getCellData(new Omosuen.Vector3D(hoverCell.x, hoverCell.y, hoverCell.z));
-        isFilled = cd && cd.shapeIndex !== 0;
-      }
-      if (isFilled) {
-        drawIsoBox(hcx, hcy, hcz, cs.x / 2, cs.y / 2, cs.z / 2, 'rgba(80,220,220,0.6)', 2);
-      } else {
-        ctx.setLineDash([4, 4]);
-        drawIsoBox(hcx, hcy, hcz, cs.x / 2, cs.y / 2, cs.z / 2, 'rgba(80,220,220,0.3)', 1);
-        ctx.setLineDash([]);
-      }
+    var bcx = (brushTarget.x + 0.5) * cs.x;
+    var bcy = (brushTarget.y + 0.5) * cs.y;
+    var bcz = (brushTarget.z + 0.5) * cs.z;
+    var isFilled = false;
+    if (cellMap) {
+      var cd = cellMap.getCellData(new Omosuen.Vector3D(brushTarget.x, brushTarget.y, brushTarget.z));
+      isFilled = cd && cd.shapeIndex !== 0;
     }
-
-    // Brush target — only in edit mode
-    if (cellEditMode && brushTarget) {
-      var bcx = (brushTarget.x + 0.5) * cs.x;
-      var bcy = (brushTarget.y + 0.5) * cs.y;
-      var bcz = (brushTarget.z + 0.5) * cs.z;
-      drawIsoBox(bcx, bcy, bcz, cs.x / 2, cs.y / 2, cs.z / 2, 'rgba(212,168,67,0.8)', 2);
+    if (isFilled) {
+      drawIsoBox(bcx, bcy, bcz, cs.x / 2, cs.y / 2, cs.z / 2, 'rgba(80,220,220,0.6)', 2);
+    } else {
+      ctx.setLineDash([4, 4]);
+      drawIsoBox(bcx, bcy, bcz, cs.x / 2, cs.y / 2, cs.z / 2, 'rgba(80,220,220,0.3)', 1);
+      ctx.setLineDash([]);
     }
   }
 
@@ -1614,8 +1601,27 @@ ${engineScript}
     // Cell-map updates
     if (cellMap && data.cellMap) {
       var cmd = data.cellMap;
+
+      // Detect mapSize change — requires full scene recreation
+      if (cellMapData && (
+        cmd.mapSize.x !== cellMapData.mapSize.x ||
+        cmd.mapSize.y !== cellMapData.mapSize.y ||
+        cmd.mapSize.z !== cellMapData.mapSize.z
+      )) {
+        engineReady = false;
+        cellMap = null;
+        cellMapData = cmd;
+        createEditorScene(data).catch(function(err) {
+          initStatus.textContent = 'Error: ' + err.message;
+          console.error('[Editor] Scene recreation failed:', err);
+        });
+        return;
+      }
+
+      // Patch live-updatable properties
       cellMap.smoothing = cmd.smoothing || 0;
       cellMap.normalSmoothing = cmd.normalSmoothing || 0;
+      cellMap.cellSize = new Omosuen.Vector3D(cmd.cellSize.x, cmd.cellSize.y, cmd.cellSize.z);
 
       // Update packed data → materialMap + shapeMap
       for (var idx = 0; idx < cmd.packedData.length; idx++) {
@@ -1623,7 +1629,14 @@ ${engineScript}
         cellMap.materialMap.indexSet(idx, cell.materialIndex);
         cellMap.shapeMap.indexSet(idx, cell.shapeIndex);
       }
-      cellMap.needsGPUUpdate = true;
+
+      // Mark ALL chunks dirty so rebuildDirtyChunks() regenerates meshes
+      for (var ci = 0; ci < cellMap.chunks.length; ci++) {
+        cellMap.chunks[ci].dirty = true;
+      }
+
+      // Update webview cellMapData to reflect latest inspector state
+      cellMapData = cmd;
     }
 
     // Entity transform updates
@@ -1644,21 +1657,6 @@ ${engineScript}
   }
 
   // ── Cell-Map Editing ───────────────────────────────────────
-  function generateMaterialColor(index) {
-    var hue = (index * 137.508) % 360;
-    var c = (1 - Math.abs(2 * 0.45 - 1)) * 0.5;
-    var x = c * (1 - Math.abs((hue / 60) % 2 - 1));
-    var m = 0.45 - c / 2;
-    var r, g, b;
-    if (hue < 60) { r = c; g = x; b = 0; }
-    else if (hue < 120) { r = x; g = c; b = 0; }
-    else if (hue < 180) { r = 0; g = c; b = x; }
-    else if (hue < 240) { r = 0; g = x; b = c; }
-    else if (hue < 300) { r = x; g = 0; b = c; }
-    else { r = c; g = 0; b = x; }
-    return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
-  }
-
   function buildPalette() {
     if (!cellMapData) return;
     paletteEl.innerHTML = '';
@@ -1667,7 +1665,7 @@ ${engineScript}
       item.className = 'palette-item' + (i === selectedMaterial ? ' selected' : '');
       var tc = document.createElement('canvas');
       tc.width = 48; tc.height = 48;
-      drawPaletteCube(tc.getContext('2d'), 48, 48, i);
+      drawPaletteSwatch(tc.getContext('2d'), 48, 48, i);
       item.appendChild(tc);
       var idx = document.createElement('span');
       idx.className = 'pal-idx'; idx.textContent = String(i);
@@ -1679,19 +1677,45 @@ ${engineScript}
     }
   }
 
-  function drawPaletteCube(tctx, w, h, matIdx) {
-    var color = matIdx < materialColors.length ? materialColors[matIdx] : { r: 128, g: 128, b: 128 };
-    var cx = w / 2, cy = h / 2, s = 14;
-    var cos30s = COS30 * s, sin30s = SIN30 * s;
-    function cStr(c2, a) { return 'rgba(' + c2.r + ',' + c2.g + ',' + c2.b + ',' + (a || 1) + ')'; }
-    function lighten(c2, f) { return { r: Math.min(255, Math.round(c2.r + (255 - c2.r) * f)), g: Math.min(255, Math.round(c2.g + (255 - c2.g) * f)), b: Math.min(255, Math.round(c2.b + (255 - c2.b) * f)) }; }
-    function darken(c2, f) { return { r: Math.round(c2.r * (1 - f)), g: Math.round(c2.g * (1 - f)), b: Math.round(c2.b * (1 - f)) }; }
-    tctx.fillStyle = cStr(lighten(color, 0.3));
-    tctx.beginPath(); tctx.moveTo(cx, cy - s); tctx.lineTo(cx + cos30s, cy - sin30s); tctx.lineTo(cx, cy); tctx.lineTo(cx - cos30s, cy - sin30s); tctx.closePath(); tctx.fill();
-    tctx.fillStyle = cStr(darken(color, 0.2));
-    tctx.beginPath(); tctx.moveTo(cx - cos30s, cy - sin30s); tctx.lineTo(cx, cy); tctx.lineTo(cx, cy + s); tctx.lineTo(cx - cos30s, cy + sin30s); tctx.closePath(); tctx.fill();
-    tctx.fillStyle = cStr(color);
-    tctx.beginPath(); tctx.moveTo(cx + cos30s, cy - sin30s); tctx.lineTo(cx, cy); tctx.lineTo(cx, cy + s); tctx.lineTo(cx + cos30s, cy + sin30s); tctx.closePath(); tctx.fill();
+  function drawPaletteSwatch(tctx, w, h, matIdx) {
+    var img = matIdx < materialImages.length ? materialImages[matIdx] : null;
+    if (!img) {
+      tctx.fillStyle = '#555';
+      tctx.fillRect(0, 0, w, h);
+      tctx.fillStyle = '#888';
+      tctx.font = "10px 'IBM Plex Mono', monospace";
+      tctx.textAlign = 'center';
+      tctx.fillText(String(matIdx), w / 2, h / 2 + 3);
+      return;
+    }
+
+    var mat = cellMapData.materials[matIdx];
+    var frameRect = null;
+    if (mat && mat.albedoTextureKey) {
+      for (var ti = 0; ti < editorTextures.length; ti++) {
+        if (editorTextures[ti].textureMapKey === mat.albedoTextureKey && editorTextures[ti].imageType) {
+          var it = editorTextures[ti].imageType;
+          if (it.mode === 'grid') {
+            var frame = mat.albedoFrame || 0;
+            var col = frame % it.cols;
+            var row = Math.floor(frame / it.cols);
+            frameRect = { x: col * it.cellWidth, y: row * it.cellHeight, w: it.cellWidth, h: it.cellHeight };
+          } else if (it.mode === 'framemap' && Array.isArray(it.frames)) {
+            var fi = mat.albedoFrame || 0;
+            if (fi < it.frames.length) {
+              frameRect = it.frames[fi];
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    if (frameRect) {
+      tctx.drawImage(img, frameRect.x, frameRect.y, frameRect.w, frameRect.h, 0, 0, w, h);
+    } else {
+      tctx.drawImage(img, 0, 0, w, h);
+    }
   }
 
   function updateBrushTarget(sx, sy) {
@@ -1699,47 +1723,27 @@ ${engineScript}
     var canvasEl = viewport.canvas;
     var rect = canvasEl.getBoundingClientRect();
     var mx = sx - rect.left, my = sy - rect.top;
-    brushTarget = null; cursorCell = null;
+    brushTarget = null;
     var cs = cellMapData.cellSize;
     var ms = cellMapData.mapSize;
-    for (var y = brushHeight; y >= 0; y--) {
-      var world = screenToWorld(mx, my, y * cs.y);
-      var cx = Math.floor(world.x / cs.x), cz = Math.floor(world.z / cs.z);
-      if (cx < 0 || cx >= ms.x || cz < 0 || cz >= ms.z) continue;
-      var cd = cellMap.getCellData(new Omosuen.Vector3D(cx, y, cz));
-      if (cd && cd.shapeIndex !== 0) {
-        cursorCell = { x: cx, y: y, z: cz };
-        var center = worldToScreen((cx + 0.5) * cs.x, (y + 0.5) * cs.y, (cz + 0.5) * cs.z);
-        if (my < center.y) {
-          if (y + 1 < ms.y) brushTarget = { x: cx, y: y + 1, z: cz };
-        } else if (mx < center.x) {
-          if (cz - 1 >= 0) brushTarget = { x: cx, y: y, z: cz - 1 };
-        } else {
-          if (cx + 1 < ms.x) brushTarget = { x: cx + 1, y: y, z: cz };
-        }
-        return;
-      }
+    var world = screenToWorld(mx, my, brushHeight * cs.y);
+    var cx = Math.floor(world.x / cs.x), cz = Math.floor(world.z / cs.z);
+    if (cx >= 0 && cx < ms.x && cz >= 0 && cz < ms.z) {
+      brushTarget = { x: cx, y: brushHeight, z: cz };
     }
-    var gw = screenToWorld(mx, my, brushHeight * cs.y);
-    var gx = Math.floor(gw.x / cs.x), gz = Math.floor(gw.z / cs.z);
-    if (gx >= 0 && gx < ms.x && gz >= 0 && gz < ms.z) brushTarget = { x: gx, y: brushHeight, z: gz };
   }
 
   function placeCell() {
     if (!brushTarget || !cellMap || !engineReady) return;
-    var existing = cellMap.getCellData(new Omosuen.Vector3D(brushTarget.x, brushTarget.y, brushTarget.z));
-    if (existing.shapeIndex === 0) {
-      cellMap.setCellData(new Omosuen.Vector3D(brushTarget.x, brushTarget.y, brushTarget.z),
-        { materialIndex: selectedMaterial, shapeIndex: 1, emissionIntensity: 0, visible: true });
-      emitMapChange();
-    }
+    cellMap.setCellData(new Omosuen.Vector3D(brushTarget.x, brushTarget.y, brushTarget.z),
+      { materialIndex: selectedMaterial, shapeIndex: 1, emissionIntensity: 0, visible: true });
+    emitMapChange();
   }
 
   function removeCell() {
-    if (!cursorCell || !cellMap || !engineReady) return;
-    cellMap.setCellData(new Omosuen.Vector3D(cursorCell.x, cursorCell.y, cursorCell.z),
+    if (!brushTarget || !cellMap || !engineReady) return;
+    cellMap.setCellData(new Omosuen.Vector3D(brushTarget.x, brushTarget.y, brushTarget.z),
       { materialIndex: 0, shapeIndex: 0, emissionIntensity: 0, visible: true });
-    brushTarget = null; cursorCell = null;
     emitMapChange();
   }
 
@@ -1763,30 +1767,14 @@ ${engineScript}
     if (!engineReady) return;
     if (e.target.closest('.control-bar') || e.target.closest('.palette')) return;
     if (cellEditMode) {
-      if (e.button === 0) { e.preventDefault(); updateBrushTarget(e.clientX, e.clientY); placeCell(); }
-      else if (e.button === 2) { e.preventDefault(); updateBrushTarget(e.clientX, e.clientY); removeCell(); }
+      if (e.button === 0) { e.preventDefault(); placeCell(); }
+      else if (e.button === 2) { e.preventDefault(); removeCell(); }
     }
   });
 
   gizmoCanvas.addEventListener('mousemove', function(e) {
     if (!engineReady) return;
-    // Always track hover cell when cell-map exists
-    if (cellMapData && cellMap) {
-      var canvasEl = viewport.canvas;
-      var rect = canvasEl.getBoundingClientRect();
-      var mx = e.clientX - rect.left, my = e.clientY - rect.top;
-      var cs = cellMapData.cellSize;
-      var ms = cellMapData.mapSize;
-      var world = screenToWorld(mx, my, brushHeight * cs.y);
-      var hx = Math.floor(world.x / cs.x), hz = Math.floor(world.z / cs.z);
-      if (hx >= 0 && hx < ms.x && hz >= 0 && hz < ms.z) {
-        hoverCell = { x: hx, y: brushHeight, z: hz };
-      } else {
-        hoverCell = null;
-      }
-    }
-    // Cell edit mode: also track brush target + cursor info
-    if (cellEditMode && (e.buttons === 0 || e.buttons === 1)) {
+    if (cellEditMode && cellMapData && cellMap) {
       updateBrushTarget(e.clientX, e.clientY);
       if (cursorInfoEl) {
         cursorInfoEl.textContent = brushTarget
@@ -1849,31 +1837,21 @@ ${engineScript}
           console.error('[Editor] Scene creation failed:', err);
         });
 
-        // Set up material palette colors
+        // Load material texture swatches
+        editorTextures = msg.textures || [];
         if (cellMapData) {
-          materialColors = [];
+          materialImages = [];
           for (var i = 0; i < cellMapData.materials.length; i++) {
             var dataUri = (cellMapData.materialImageDataUris && cellMapData.materialImageDataUris[i]) || null;
             if (dataUri) {
               (function(index, uri) {
                 var img = new Image();
                 img.onload = function() {
-                  var tc = document.createElement('canvas');
-                  tc.width = Math.min(img.width, 64); tc.height = Math.min(img.height, 64);
-                  var tctx = tc.getContext('2d');
-                  tctx.drawImage(img, 0, 0, tc.width, tc.height);
-                  var data2 = tctx.getImageData(0, 0, tc.width, tc.height).data;
-                  var r = 0, g = 0, b = 0, count = 0;
-                  for (var p = 0; p < data2.length; p += 16) {
-                    if (data2[p + 3] > 0) { r += data2[p]; g += data2[p+1]; b += data2[p+2]; count++; }
-                  }
-                  if (count > 0) { materialColors[index] = { r: Math.round(r/count), g: Math.round(g/count), b: Math.round(b/count) }; buildPalette(); }
+                  materialImages[index] = img;
+                  buildPalette();
                 };
                 img.src = uri;
               })(i, dataUri);
-              materialColors.push(generateMaterialColor(i));
-            } else {
-              materialColors.push(generateMaterialColor(i));
             }
           }
           buildPalette();
