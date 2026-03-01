@@ -567,6 +567,7 @@ interface EditorCollider {
   size: { x: number; y: number; z: number };
   radius: number;
   offset: { x: number; y: number; z: number };
+  colliderType: 'collider' | 'event-collider';
 }
 
 interface EditorLight {
@@ -761,7 +762,7 @@ function extractColliders(scene: SerializedComponent): EditorCollider[] {
 function walkForColliders(component: SerializedComponent, out: EditorCollider[]): void {
   if (!isSerializedNexus(component)) {return;}
   const transform = component.components.find((c) => c.type === 'transform');
-  const collider = component.components.find((c) => c.type === 'collider');
+  const collider = component.components.find((c) => c.type === 'collider' || c.type === 'event-collider');
   if (collider) {
     const t = transform as Record<string, unknown> | undefined;
     const c = collider as Record<string, unknown>;
@@ -776,6 +777,7 @@ function walkForColliders(component: SerializedComponent, out: EditorCollider[])
       size: sz ? { x: sz.x ?? 0.5, y: sz.y ?? 0.5, z: sz.z ?? 0.5 } : { x: 0.5, y: 0.5, z: 0.5 },
       radius: (c.radius as number) ?? 0.5,
       offset: off ? { x: off.x || 0, y: off.y || 0, z: off.z || 0 } : { x: 0, y: 0, z: 0 },
+      colliderType: (c.type as string) === 'event-collider' ? 'event-collider' : 'collider',
     });
   }
   for (const child of component.components) {
@@ -1218,7 +1220,7 @@ ${engineScript}
       worldToScreen(cx-hx, cy-hy, cz+hz), worldToScreen(cx+hx, cy-hy, cz+hz),
       worldToScreen(cx+hx, cy+hy, cz+hz), worldToScreen(cx-hx, cy+hy, cz+hz),
     ];
-    var edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+    var edges = [[1,2],[2,3],[4,5],[5,6],[6,7],[7,4],[1,5],[2,6],[3,7]];
     ctx.strokeStyle = color; ctx.lineWidth = lineWidth;
     ctx.beginPath();
     for (var i = 0; i < edges.length; i++) {
@@ -1230,7 +1232,10 @@ ${engineScript}
 
   function drawColliderGizmo(c) {
     var isSelected = (c.entityId === selectedEntityId);
-    var color = isSelected ? 'rgba(80,220,220,0.9)' : 'rgba(80,220,220,0.4)';
+    var isEvent = c.colliderType === 'event-collider';
+    var color = isEvent
+      ? (isSelected ? 'rgba(180,220,80,0.9)' : 'rgba(180,220,80,0.4)')
+      : (isSelected ? 'rgba(80,220,220,0.9)' : 'rgba(80,220,220,0.4)');
     var lw = isSelected ? 2 : 1;
     var cx = c.position.x + c.offset.x;
     var cy = c.position.y + c.offset.y;
@@ -1321,7 +1326,7 @@ ${engineScript}
       drawIsoBox(bcx, bcy, bcz, cs.x / 2, cs.y / 2, cs.z / 2, 'rgba(80,220,220,0.6)', 2);
     } else {
       ctx.setLineDash([4, 4]);
-      drawIsoBox(bcx, bcy, bcz, cs.x / 2, cs.y / 2, cs.z / 2, 'rgba(80,220,220,0.3)', 1);
+      drawIsoBox(bcx, bcy, bcz, cs.x / 2, cs.y / 2, cs.z / 2, 'rgba(80,220,220,1.0)', 1);
       ctx.setLineDash([]);
     }
   }
@@ -1652,6 +1657,26 @@ ${engineScript}
       if (eng && eng.sprite && se.sprite) {
         eng.sprite.opacity = se.sprite.opacity;
         eng.sprite.tint = new Omosuen.Vector4D(se.sprite.tint.x, se.sprite.tint.y, se.sprite.tint.z, se.sprite.tint.w);
+      }
+    }
+
+    // Light updates — mutate existing Vector3D properties in-place
+    // to avoid Proxy set overhead (get returns the live object, mutate directly)
+    var scLights = data.lights || [];
+    for (var li = 0; li < scLights.length && li < engineLights.length; li++) {
+      var sl = scLights[li];
+      var el = engineLights[li];
+      if (!el || !el.light) continue;
+      var lc = el.light.color;
+      lc.x = sl.color.x; lc.y = sl.color.y; lc.z = sl.color.z;
+      el.light.brightness = sl.brightness;
+      if (sl.lightType === 'point' || sl.lightType === 'spot') {
+        el.light.radius = sl.radius;
+        el.light.hardness = sl.hardness;
+      }
+      if (sl.lightType === 'directional') {
+        var ld = el.light.direction;
+        ld.x = sl.direction.x; ld.y = sl.direction.y; ld.z = sl.direction.z;
       }
     }
   }
