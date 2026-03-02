@@ -19,6 +19,7 @@
   let currentCameraContext = null;
   let currentAnimationControllerContext = null;
   let currentCellMapContext = null;
+  let currentTextureMapContext = null;
 
   // ── Message Handling ────────────────────────────────────────────
 
@@ -32,12 +33,16 @@
         currentCameraContext = message.cameraContext || null;
         currentAnimationControllerContext = message.animationControllerContext || null;
         currentCellMapContext = message.cellMapContext || null;
+        currentTextureMapContext = message.textureMapContext || null;
         render();
         break;
       case 'showMultiSelection':
         currentComponent = null;
         currentSchema = [];
         renderMultiSelection(message.count);
+        break;
+      case 'fileSelected':
+        handleFileSelected(message.property, message.value);
         break;
     }
   });
@@ -219,6 +224,9 @@
         break;
       case 'frameList':
         container.appendChild(renderFrameListField(schema, value));
+        break;
+      case 'filepath':
+        container.appendChild(renderFilepathField(schema, value));
         break;
     }
   }
@@ -645,6 +653,72 @@
     return group;
   }
 
+  function renderFilepathField(schema, value) {
+    const wrapper = document.createElement('div');
+
+    const row = document.createElement('div');
+    row.className = 'property-row';
+
+    const label = document.createElement('div');
+    label.className = 'property-label';
+    label.textContent = schema.label;
+    row.appendChild(label);
+
+    const valueDiv = document.createElement('div');
+    valueDiv.className = 'property-value';
+
+    const field = document.createElement('div');
+    field.className = 'filepath-field';
+    field.dataset.property = schema.name;
+
+    const textSpan = document.createElement('span');
+    textSpan.className = 'filepath-text';
+    const pathVal = value !== undefined ? String(value) : '';
+    if (pathVal) {
+      textSpan.textContent = pathVal;
+    } else {
+      textSpan.textContent = 'Click to select file...';
+      textSpan.classList.add('placeholder');
+    }
+    field.appendChild(textSpan);
+
+    // Trash / clear button (only show if there's a value)
+    if (pathVal) {
+      const clearBtn = document.createElement('button');
+      clearBtn.className = 'filepath-clear';
+      clearBtn.textContent = '\u{1F5D1}';
+      clearBtn.title = 'Clear file path';
+      clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sendPropertyChange(schema.name, '');
+      });
+      field.appendChild(clearBtn);
+    }
+
+    // Click the field to browse
+    field.addEventListener('click', () => {
+      vscode.postMessage({
+        command: 'browseFile',
+        property: schema.name,
+        acceptedTypes: schema.acceptedTypes || [],
+      });
+    });
+
+    valueDiv.appendChild(field);
+    row.appendChild(valueDiv);
+    wrapper.appendChild(row);
+
+    // File existence warning
+    if (pathVal && currentTextureMapContext && !currentTextureMapContext.fileExists) {
+      const warning = document.createElement('div');
+      warning.className = 'filepath-warning';
+      warning.textContent = 'File not found: ' + pathVal;
+      wrapper.appendChild(warning);
+    }
+
+    return wrapper;
+  }
+
   function renderObjectField(schema, value, parentData) {
     const group = document.createElement('div');
     group.className = 'property-group';
@@ -707,6 +781,23 @@
     }
 
     return group;
+  }
+
+  function handleFileSelected(property, value) {
+    // Update the filepath field in the DOM
+    const field = document.querySelector('.filepath-field[data-property="' + property + '"]');
+    if (field) {
+      const textSpan = field.querySelector('.filepath-text');
+      if (textSpan) {
+        textSpan.textContent = value || 'Click to select file...';
+        textSpan.classList.toggle('placeholder', !value);
+      }
+    }
+    // Update component data and send property change
+    if (currentComponent) {
+      currentComponent[property] = value;
+    }
+    sendPropertyChange(property, value);
   }
 
   // ── Helpers ─────────────────────────────────────────────────────

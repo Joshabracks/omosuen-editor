@@ -4,6 +4,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import type { SerializedComponent, COMPONENT_TYPE } from '../types/engine';
 import { isSerializedNexus } from '../types/engine';
 import { getSchemaForType, type PropertySchema } from '../schema/component-schemas';
@@ -68,6 +69,15 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
       // Compute cell-map info context
       if (component && component.type === 'cell-map') {
         msg.cellMapContext = this.computeCellMapContext(component);
+      }
+
+      // Compute texture-map file existence context (async)
+      if (component && component.type === 'texture-map') {
+        this.computeTextureMapContext(component).then((ctx) => {
+          msg.textureMapContext = ctx;
+          this.webviewView!.webview.postMessage(msg);
+        });
+        return;
       }
 
       this.webviewView.webview.postMessage(msg);
@@ -194,6 +204,77 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
     return 1;
   }
 
+  private async handleBrowseFile(
+    property: string,
+    acceptedTypes: string[]
+  ): Promise<void> {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {return;}
+
+    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+
+    const filters: Record<string, string[]> = {};
+    if (acceptedTypes.length > 0) {
+      filters['Accepted Files'] = acceptedTypes;
+    }
+    filters['All Files'] = ['*'];
+
+    const result = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters,
+      defaultUri: vscode.Uri.file(workspaceRoot),
+    });
+
+    if (!result || result.length === 0) {return;}
+
+    const selectedPath = result[0].fsPath;
+    const relativePath = path.relative(workspaceRoot, selectedPath).replace(/\\/g, '/');
+
+    // Send the selected path back to the webview
+    if (this.webviewView) {
+      this.webviewView.webview.postMessage({
+        command: 'fileSelected',
+        property,
+        value: relativePath,
+      });
+    }
+
+    // Also trigger property change to update the document
+    if (this._onPropertyChanged && this.currentComponent?.id !== undefined) {
+      this._onPropertyChanged(this.currentComponent.id, property, relativePath);
+    }
+  }
+
+  private async computeTextureMapContext(
+    component: SerializedComponent
+  ): Promise<{ fileExists: boolean }> {
+    const comp = component as Record<string, unknown>;
+    const filePath = (comp.filePath as string) || '';
+
+    if (!filePath) {
+      return { fileExists: true }; // empty path is not a warning
+    }
+
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+      return { fileExists: false };
+    }
+
+    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+    const absPath = path.isAbsolute(filePath)
+      ? filePath
+      : path.resolve(workspaceRoot, filePath);
+
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(absPath));
+      return { fileExists: true };
+    } catch {
+      return { fileExists: false };
+    }
+  }
+
   /**
    * Show a multi-selection summary instead of individual properties
    */
@@ -236,6 +317,11 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
         vscode.commands.executeCommand(
           message.vsCommand as string,
           this.currentComponent
+        );
+      } else if (message.command === 'browseFile') {
+        this.handleBrowseFile(
+          message.property as string,
+          (message.acceptedTypes as string[]) || []
         );
       }
     });

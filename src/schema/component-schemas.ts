@@ -18,7 +18,8 @@ export type PropertyType =
   | 'object'
   | 'readonly'
   | 'action'
-  | 'frameList';
+  | 'frameList'
+  | 'filepath';
 
 export interface PropertySchema {
   name: string;
@@ -33,6 +34,10 @@ export interface PropertySchema {
   subFields?: PropertySchema[];
   /** VS Code command to execute when an 'action' type button is clicked */
   command?: string;
+  /** Accepted file extensions for filepath type (e.g. ['png', 'jpg', 'gif']) */
+  acceptedTypes?: string[];
+  /** Optional regex (as string) to match against file contents for validation */
+  contentMatch?: string;
 }
 
 export const COMPONENT_SCHEMAS: Record<COMPONENT_TYPE, PropertySchema[]> = {
@@ -529,9 +534,10 @@ export const COMPONENT_SCHEMAS: Record<COMPONENT_TYPE, PropertySchema[]> = {
     },
     {
       name: 'filePath',
-      type: 'string',
+      type: 'filepath',
       label: 'File Path',
       default: '',
+      acceptedTypes: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'],
     },
     {
       name: 'imageType',

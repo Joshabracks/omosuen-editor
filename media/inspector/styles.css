@@ -327,6 +327,65 @@ body {
   color: var(--text-primary);
 }
 
+/* File path input */
+.filepath-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  cursor: pointer;
+  min-height: 24px;
+}
+
+.filepath-field:hover {
+  border-color: var(--accent-amber);
+  background: var(--bg-active);
+}
+
+.filepath-text {
+  flex: 1;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filepath-text.placeholder {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.filepath-clear {
+  flex: 0 0 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+}
+
+.filepath-clear:hover {
+  background: rgba(196, 90, 138, 0.15);
+  color: var(--accent-pink);
+}
+
+.filepath-warning {
+  font-size: 10px;
+  color: var(--accent-orange);
+  padding: 1px 4px;
+}
+
 /* Inspector warnings */
 .inspector-warning {
   padding: 4px 8px;
