@@ -159,11 +159,15 @@ export class OmosceneEditorProvider
       type: string;
       packedData?: number[];
       cellMapId?: number;
+      transformId?: number;
+      position?: { _vectorType: string; x: number; y: number; z: number };
     }) => {
       if (msg.type === 'ready') {
         this.postSceneData(webviewPanel, this.activeParsed);
       } else if (msg.type === 'mapChanged' && msg.cellMapId !== undefined && msg.packedData) {
         this.updateComponentProperty(msg.cellMapId, 'packedData', msg.packedData);
+      } else if (msg.type === 'transformChanged' && msg.transformId !== undefined && msg.position) {
+        this.updateComponentProperty(msg.transformId, 'position', msg.position);
       }
     });
 
@@ -532,6 +536,7 @@ export function escapeHtml(text: string): string {
 interface EditorEntity {
   name: string;
   id: number;
+  transformId?: number;
   position: { x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number };
   scale: { x: number; y: number; z: number };
@@ -630,6 +635,7 @@ function walkScene(
     const entity: EditorEntity = {
       name: component.name,
       id: component.id ?? -1,
+      transformId: transform?.id,
       position: pos ? { x: pos.x || 0, y: pos.y || 0, z: pos.z || 0 } : { x: 0, y: 0, z: 0 },
       rotation: rot ? { x: rot.x || 0, y: rot.y || 0, z: rot.z || 0 } : { x: 0, y: 0, z: 0 },
       scale: scl ? { x: scl.x ?? 1, y: scl.y ?? 1, z: scl.z ?? 1 } : { x: 1, y: 1, z: 1 },
@@ -1021,7 +1027,14 @@ ${engineScript}
   var COS30 = 0.8660254;
   var SIN30 = 0.5;
   var GIZMO_LEN = 40;
+  var GIZMO_HIT_DIST = 10;
   var AXIS_COLORS = { x: '#c45a4a', y: '#6abc5a', z: '#4a8ac4' };
+  var AXIS_HOVER_COLORS = { x: '#e07060', y: '#80d870', z: '#6aa0e0' };
+  var AXIS_DIRS = {
+    x: { x: COS30, y: SIN30 },
+    y: { x: 0, y: -1 },
+    z: { x: -COS30, y: SIN30 },
+  };
 
   // ── DOM refs ────────────────────────────────────────────────
   var gizmoCanvas = document.getElementById('gizmo-canvas');
@@ -1066,6 +1079,13 @@ ${engineScript}
   var editorTextures = [];   // msg.textures (EditorTextureMap[]) for imageType lookups
   var brushTarget = null;
   var suppressNextUpdate = false;
+
+  // Gizmo interaction
+  var hoveredAxis = null;
+  var draggingAxis = null;
+  var dragStartMouse = null;
+  var dragStartPosition = null;
+  var dragEntityId = null;
 
   // ── Projection (matches engine zoom² pipeline) ──────────────
   function worldToScreen(wx, wy, wz) {
@@ -1156,48 +1176,79 @@ ${engineScript}
   function drawOrigin() {
     var o = worldToScreen(0, 0, 0);
     var len = 60;
-    var xDir = { x: COS30, y: -SIN30 };
     ctx.strokeStyle = AXIS_COLORS.x; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + xDir.x * len, o.y + xDir.y * len); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + AXIS_DIRS.x.x * len, o.y + AXIS_DIRS.x.y * len); ctx.stroke();
     ctx.fillStyle = AXIS_COLORS.x; ctx.font = "bold 11px 'IBM Plex Mono', monospace";
-    ctx.fillText('X', o.x + xDir.x * (len + 6), o.y + xDir.y * (len + 6));
+    ctx.fillText('X', o.x + AXIS_DIRS.x.x * (len + 6), o.y + AXIS_DIRS.x.y * (len + 6));
 
     ctx.strokeStyle = AXIS_COLORS.y; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x, o.y - len); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x, o.y + AXIS_DIRS.y.y * len); ctx.stroke();
     ctx.fillStyle = AXIS_COLORS.y;
-    ctx.fillText('Y', o.x + 4, o.y - len - 4);
+    ctx.fillText('Y', o.x + 4, o.y + AXIS_DIRS.y.y * (len + 4));
 
-    var zDir = { x: -COS30, y: -SIN30 };
     ctx.strokeStyle = AXIS_COLORS.z; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + zDir.x * len, o.y + zDir.y * len); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + AXIS_DIRS.z.x * len, o.y + AXIS_DIRS.z.y * len); ctx.stroke();
     ctx.fillStyle = AXIS_COLORS.z;
-    ctx.fillText('Z', o.x + zDir.x * (len + 6), o.y + zDir.y * (len + 6));
+    ctx.fillText('Z', o.x + AXIS_DIRS.z.x * (len + 6), o.y + AXIS_DIRS.z.y * (len + 6));
 
     ctx.fillStyle = '#d4a843';
     ctx.beginPath(); ctx.arc(o.x, o.y, 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function hitTestEntityGizmo(mx, my, cx, cy) {
+    var axes = ['x', 'y', 'z'];
+    for (var i = 0; i < 3; i++) {
+      var axis = axes[i];
+      var dir = AXIS_DIRS[axis];
+      var adx = dir.x * GIZMO_LEN * 0.7, ady = dir.y * GIZMO_LEN * 0.7;
+      var dx = mx - cx, dy = my - cy;
+      var dot = dx * adx + dy * ady;
+      var lenSq = adx * adx + ady * ady;
+      var t = Math.max(0.1, Math.min(1, dot / lenSq));
+      var closestX = cx + t * adx, closestY = cy + t * ady;
+      var distSq = (mx - closestX) * (mx - closestX) + (my - closestY) * (my - closestY);
+      if (distSq < GIZMO_HIT_DIST * GIZMO_HIT_DIST) return axis;
+    }
+    return null;
   }
 
   function drawEntityGizmo(e) {
     var p = worldToScreen(e.position.x, e.position.y, e.position.z);
     var len = GIZMO_LEN;
     var isSelected = (e.id === selectedEntityId);
-    var lw = isSelected ? 2.5 : 1.5;
+    var isGizmoTarget = isSelected || e.id === dragEntityId;
+    var baseLw = isSelected ? 2.5 : 1.5;
     var alpha = isSelected ? 1.0 : 0.7;
 
     ctx.globalAlpha = alpha;
-    var xDir = { x: COS30, y: -SIN30 };
-    ctx.strokeStyle = AXIS_COLORS.x; ctx.lineWidth = lw;
-    ctx.beginPath(); ctx.moveTo(p.x - xDir.x * len * 0.3, p.y - xDir.y * len * 0.3);
-    ctx.lineTo(p.x + xDir.x * len * 0.7, p.y + xDir.y * len * 0.7); ctx.stroke();
 
-    ctx.strokeStyle = AXIS_COLORS.y;
-    ctx.beginPath(); ctx.moveTo(p.x, p.y + len * 0.3);
-    ctx.lineTo(p.x, p.y - len * 0.7); ctx.stroke();
+    // X axis
+    var xHover = isGizmoTarget && (hoveredAxis === 'x' || draggingAxis === 'x');
+    ctx.strokeStyle = xHover ? AXIS_HOVER_COLORS.x : AXIS_COLORS.x;
+    ctx.lineWidth = xHover ? baseLw + 1.5 : baseLw;
+    ctx.beginPath();
+    ctx.moveTo(p.x - AXIS_DIRS.x.x * len * 0.3, p.y - AXIS_DIRS.x.y * len * 0.3);
+    ctx.lineTo(p.x + AXIS_DIRS.x.x * len * 0.7, p.y + AXIS_DIRS.x.y * len * 0.7);
+    ctx.stroke();
 
-    var zDir = { x: -COS30, y: -SIN30 };
-    ctx.strokeStyle = AXIS_COLORS.z;
-    ctx.beginPath(); ctx.moveTo(p.x - zDir.x * len * 0.3, p.y - zDir.y * len * 0.3);
-    ctx.lineTo(p.x + zDir.x * len * 0.7, p.y + zDir.y * len * 0.7); ctx.stroke();
+    // Y axis
+    var yHover = isGizmoTarget && (hoveredAxis === 'y' || draggingAxis === 'y');
+    ctx.strokeStyle = yHover ? AXIS_HOVER_COLORS.y : AXIS_COLORS.y;
+    ctx.lineWidth = yHover ? baseLw + 1.5 : baseLw;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y - AXIS_DIRS.y.y * len * 0.3);
+    ctx.lineTo(p.x, p.y + AXIS_DIRS.y.y * len * 0.7);
+    ctx.stroke();
+
+    // Z axis
+    var zHover = isGizmoTarget && (hoveredAxis === 'z' || draggingAxis === 'z');
+    ctx.strokeStyle = zHover ? AXIS_HOVER_COLORS.z : AXIS_COLORS.z;
+    ctx.lineWidth = zHover ? baseLw + 1.5 : baseLw;
+    ctx.beginPath();
+    ctx.moveTo(p.x - AXIS_DIRS.z.x * len * 0.3, p.y - AXIS_DIRS.z.y * len * 0.3);
+    ctx.lineTo(p.x + AXIS_DIRS.z.x * len * 0.7, p.y + AXIS_DIRS.z.y * len * 0.7);
+    ctx.stroke();
+
     ctx.globalAlpha = 1;
 
     ctx.fillStyle = isSelected ? '#d4a843' : '#c8bfb0';
@@ -1272,8 +1323,6 @@ ${engineScript}
       ctx.lineTo(ox + (dx/mag) * 30, oy + (dy/mag) * 30); ctx.stroke();
       ctx.fillStyle = colorStr;
       ctx.beginPath(); ctx.arc(ox + (dx/mag) * 30, oy + (dy/mag) * 30, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.font = "9px 'IBM Plex Mono', monospace";
-      ctx.fillText(l.entityName, ox + 8, oy - 8);
       return;
     }
 
@@ -1293,9 +1342,6 @@ ${engineScript}
       ctx.setLineDash([]);
     }
 
-    ctx.font = "9px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = colorStr;
-    ctx.fillText(l.entityName, p.x + 10, p.y - 2);
   }
 
   function drawCameraRect(e) {
@@ -1472,12 +1518,12 @@ ${engineScript}
         lightOpts.radius = sl.radius;
         lightOpts.hardness = sl.hardness;
         var lNexus = await Omosuen.newComponent('nexus', { name: sl.entityName + '_lightNexus' }, scene);
-        await Omosuen.newComponent('transform', {
+        var lTransform = await Omosuen.newComponent('transform', {
           name: sl.entityName + '_lightTransform',
           position: new Omosuen.Vector3D(sl.position.x, sl.position.y, sl.position.z),
         }, lNexus);
         var engineLight = await Omosuen.newComponent('light', lightOpts, lNexus);
-        engineLights.push({ nexus: lNexus, light: engineLight });
+        engineLights.push({ nexus: lNexus, light: engineLight, transform: lTransform });
       } else {
         var engineLight2 = await Omosuen.newComponent('light', lightOpts, scene);
         engineLights.push({ light: engineLight2 });
@@ -1673,6 +1719,10 @@ ${engineScript}
       if (sl.lightType === 'point' || sl.lightType === 'spot') {
         el.light.radius = sl.radius;
         el.light.hardness = sl.hardness;
+        if (el.transform) {
+          var lp = el.transform.position;
+          lp.x = sl.position.x; lp.y = sl.position.y; lp.z = sl.position.z;
+        }
       }
       if (sl.lightType === 'directional') {
         var ld = el.light.direction;
@@ -1787,18 +1837,50 @@ ${engineScript}
     paletteEl.className = 'palette' + (cellEditMode ? ' visible' : '');
   }
 
+  // ── Helper: get current zoom² ─────────────────────────────
+  function getZoomSq() {
+    if (!camera) return 1;
+    return camera.zoom * camera.zoom;
+  }
+
   // ── Mouse Handlers ──────────────────────────────────────────
   gizmoCanvas.addEventListener('mousedown', function(e) {
     if (!engineReady) return;
     if (e.target.closest('.control-bar') || e.target.closest('.palette')) return;
+
+    // Cell edit mode takes priority
     if (cellEditMode) {
       if (e.button === 0) { e.preventDefault(); placeCell(); }
       else if (e.button === 2) { e.preventDefault(); removeCell(); }
+      return;
+    }
+
+    // Gizmo drag start — only for selected entity, left button
+    if (e.button === 0 && selectedEntityId >= 0) {
+      var rect = gizmoCanvas.getBoundingClientRect();
+      var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      for (var i = 0; i < entities.length; i++) {
+        var ent = entities[i];
+        if (ent.id !== selectedEntityId) continue;
+        var sp = worldToScreen(ent.position.x, ent.position.y, ent.position.z);
+        var hit = hitTestEntityGizmo(mx, my, sp.x, sp.y);
+        if (hit) {
+          e.preventDefault();
+          draggingAxis = hit;
+          dragStartMouse = { x: mx, y: my };
+          dragStartPosition = { x: ent.position.x, y: ent.position.y, z: ent.position.z };
+          dragEntityId = ent.id;
+          gizmoCanvas.style.cursor = 'grabbing';
+        }
+        break;
+      }
     }
   });
 
   gizmoCanvas.addEventListener('mousemove', function(e) {
     if (!engineReady) return;
+
+    // Cell edit mode brush tracking
     if (cellEditMode && cellMapData && cellMap) {
       updateBrushTarget(e.clientX, e.clientY);
       if (cursorInfoEl) {
@@ -1806,6 +1888,76 @@ ${engineScript}
           ? 'Cell: ' + brushTarget.x + ',' + brushTarget.y + ',' + brushTarget.z + ' | Mat: ' + selectedMaterial
           : '';
       }
+      return;
+    }
+
+    var rect = gizmoCanvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+
+    // Active drag — update position
+    if (draggingAxis && dragStartMouse && dragStartPosition && dragEntityId !== null) {
+      var dx = mx - dragStartMouse.x, dy = my - dragStartMouse.y;
+      var dir = AXIS_DIRS[draggingAxis];
+      var projected = dx * dir.x + dy * dir.y;
+      var worldDelta = projected / getZoomSq();
+
+      // Find and update the entity position
+      for (var i = 0; i < entities.length; i++) {
+        if (entities[i].id !== dragEntityId) continue;
+        entities[i].position.x = dragStartPosition.x + (draggingAxis === 'x' ? worldDelta : 0);
+        entities[i].position.y = dragStartPosition.y + (draggingAxis === 'y' ? worldDelta : 0);
+        entities[i].position.z = dragStartPosition.z + (draggingAxis === 'z' ? worldDelta : 0);
+
+        // Live engine feedback — mutate transform position in-place
+        var ee = engineEntities[dragEntityId];
+        if (ee && ee.transform) {
+          var tp = ee.transform.position;
+          tp.x = entities[i].position.x;
+          tp.y = entities[i].position.y;
+          tp.z = entities[i].position.z;
+        }
+        break;
+      }
+      return;
+    }
+
+    // Hover detection — only for selected entity
+    if (selectedEntityId >= 0 && !cellEditMode) {
+      for (var i = 0; i < entities.length; i++) {
+        var ent = entities[i];
+        if (ent.id !== selectedEntityId) continue;
+        var sp = worldToScreen(ent.position.x, ent.position.y, ent.position.z);
+        var hit = hitTestEntityGizmo(mx, my, sp.x, sp.y);
+        if (hit !== hoveredAxis) {
+          hoveredAxis = hit;
+          gizmoCanvas.style.cursor = hit ? 'pointer' : 'default';
+        }
+        break;
+      }
+    }
+  });
+
+  gizmoCanvas.addEventListener('mouseup', function(e) {
+    if (draggingAxis && dragEntityId !== null) {
+      // Find the entity to get final position + transformId
+      for (var i = 0; i < entities.length; i++) {
+        if (entities[i].id !== dragEntityId) continue;
+        var ent = entities[i];
+        if (ent.transformId !== undefined) {
+          suppressNextUpdate = true;
+          vscode.postMessage({
+            type: 'transformChanged',
+            transformId: ent.transformId,
+            position: { _vectorType: 'Vector3D', x: ent.position.x, y: ent.position.y, z: ent.position.z },
+          });
+        }
+        break;
+      }
+      draggingAxis = null;
+      dragStartMouse = null;
+      dragStartPosition = null;
+      dragEntityId = null;
+      gizmoCanvas.style.cursor = hoveredAxis ? 'pointer' : 'default';
     }
   });
 
