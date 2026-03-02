@@ -87,6 +87,7 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
   private computeSpriteContext(sprite: SerializedComponent): {
     hasSiblingTransform: boolean;
     keyValidation: Record<string, { exists: boolean; frameCount: number }>;
+    availableKeys: string[];
   } {
     const comp = sprite as Record<string, unknown>;
     const tmKeys = (comp.textureMapKeys as Record<string, string>) || {};
@@ -118,7 +119,13 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    return { hasSiblingTransform, keyValidation };
+    // Collect all available texture-map keys in the scene
+    const availableKeys: string[] = [];
+    if (this.sceneRoot) {
+      this.collectTextureMapKeys(this.sceneRoot, availableKeys);
+    }
+
+    return { hasSiblingTransform, keyValidation, availableKeys };
   }
 
   private computeCameraContext(camera: SerializedComponent): {
@@ -190,6 +197,23 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
       }
     }
     return null;
+  }
+
+  private collectTextureMapKeys(
+    component: SerializedComponent,
+    out: string[]
+  ): void {
+    if (component.type === 'texture-map') {
+      const key = (component as Record<string, unknown>).textureMapKey as string;
+      if (key && !out.includes(key)) {
+        out.push(key);
+      }
+    }
+    if (isSerializedNexus(component)) {
+      for (const child of component.components) {
+        this.collectTextureMapKeys(child, out);
+      }
+    }
   }
 
   private computeFrameCount(tm: Record<string, unknown>): number {

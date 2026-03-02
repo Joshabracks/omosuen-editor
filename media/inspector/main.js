@@ -719,6 +719,45 @@
     return wrapper;
   }
 
+  function renderTextureMapKeySelect(schema, value, keys) {
+    const row = document.createElement('div');
+    row.className = 'property-row';
+
+    const label = document.createElement('div');
+    label.className = 'property-label';
+    label.textContent = schema.label;
+    row.appendChild(label);
+
+    const valueDiv = document.createElement('div');
+    valueDiv.className = 'property-value';
+
+    const select = document.createElement('select');
+    select.className = 'enum-select';
+
+    // (none) option
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '(none)';
+    if (!value) noneOpt.selected = true;
+    select.appendChild(noneOpt);
+
+    for (var k = 0; k < keys.length; k++) {
+      const opt = document.createElement('option');
+      opt.value = keys[k];
+      opt.textContent = keys[k];
+      if (value === keys[k]) opt.selected = true;
+      select.appendChild(opt);
+    }
+
+    select.addEventListener('change', () => {
+      sendPropertyChange(schema.name, select.value);
+    });
+
+    valueDiv.appendChild(select);
+    row.appendChild(valueDiv);
+    return row;
+  }
+
   function renderObjectField(schema, value, parentData) {
     const group = document.createElement('div');
     group.className = 'property-group';
@@ -736,6 +775,10 @@
       const isFrameField = schema.name === 'frame' && currentSpriteContext;
       const tmKeys = isFrameField ? (currentComponent.textureMapKeys || {}) : null;
       const kv = isFrameField ? (currentSpriteContext.keyValidation || {}) : null;
+
+      // For the sprite 'textureMapKeys' object, use dropdowns instead of text inputs
+      const isTextureMapKeysField = schema.name === 'textureMapKeys' && currentSpriteContext;
+      const availableKeys = isTextureMapKeysField ? (currentSpriteContext.availableKeys || []) : null;
 
       for (const subSchema of schema.subFields) {
         // Skip unconfigured channels for frame fields
@@ -756,6 +799,12 @@
           if (fc > 0) {
             subPropertySchema.max = fc - 1;
           }
+        }
+
+        // Texture map key fields render as dropdowns
+        if (isTextureMapKeysField && subSchema.type === 'string') {
+          subContainer.appendChild(renderTextureMapKeySelect(subPropertySchema, subValue, availableKeys));
+          continue;
         }
 
         switch (subSchema.type) {
