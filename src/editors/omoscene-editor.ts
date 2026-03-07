@@ -1093,8 +1093,12 @@ ${engineScript}
       // Fallback: simple isometric (no engine)
       return { x: gizmoCanvas.width / 2, y: gizmoCanvas.height / 2 };
     }
-    var camX = cameraTransform.position.x;
-    var camZ = cameraTransform.position.z;
+    // Project camera 3D world position to 2D isometric space (matches engine)
+    var rawX = cameraTransform.position.x;
+    var rawY = cameraTransform.position.y;
+    var rawZ = cameraTransform.position.z;
+    var camX = COS30 * rawX - COS30 * rawZ;
+    var camZ = SIN30 * rawX - rawY + SIN30 * rawZ;
     var zoom = camera.zoom;
     var pixelScale = camera.pixelScale;
 
@@ -1118,8 +1122,12 @@ ${engineScript}
 
   function screenToWorld(sx, sy, planeY) {
     if (!camera || !cameraTransform || !viewport) return { x: 0, y: 0, z: 0 };
-    var camX = cameraTransform.position.x;
-    var camZ = cameraTransform.position.z;
+    // Project camera 3D world position to 2D isometric space (matches engine)
+    var rawX = cameraTransform.position.x;
+    var rawY = cameraTransform.position.y;
+    var rawZ = cameraTransform.position.z;
+    var camX = COS30 * rawX - COS30 * rawZ;
+    var camZ = SIN30 * rawX - rawY + SIN30 * rawZ;
     var zoom = camera.zoom;
     var pixelScale = camera.pixelScale;
     if (pixelScale > 1) {

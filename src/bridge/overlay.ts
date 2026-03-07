@@ -183,8 +183,10 @@ export function getOverlayScript(wsPort: number): string {
     var viewport = camera.parent && camera.parent.getComponentByType
       ? camera.parent.getComponentByType('viewport') : null;
     return {
-      panX: transform && transform.position ? transform.position.x : 0,
-      panY: transform && transform.position ? transform.position.y : 0,
+      panX: transform && transform.position
+        ? COS30 * transform.position.x - COS30 * transform.position.z : 0,
+      panY: transform && transform.position
+        ? SIN30 * transform.position.x - transform.position.y + SIN30 * transform.position.z : 0,
       zoom: camera.zoom !== undefined ? camera.zoom : 1,
       vpW: viewport ? viewport.width : 800,
       vpH: viewport ? viewport.height : 600,
@@ -895,8 +897,11 @@ export function getOverlayScript(wsPort: number): string {
       var camera = getEditorCamera();
       var transform = getCameraTransform(camera);
       if (transform && transform.position) {
-        if (pressedKeys['KeyA'] || pressedKeys['ArrowLeft'])  transform.position.x -= PAN_SPEED * dt;
-        if (pressedKeys['KeyD'] || pressedKeys['ArrowRight']) transform.position.x += PAN_SPEED * dt;
+        // Horizontal pan: inverse-project screen X offset to world X/Z
+        var hDelta = PAN_SPEED * dt / (2 * COS30);
+        if (pressedKeys['KeyA'] || pressedKeys['ArrowLeft'])  { transform.position.x -= hDelta; transform.position.z += hDelta; }
+        if (pressedKeys['KeyD'] || pressedKeys['ArrowRight']) { transform.position.x += hDelta; transform.position.z -= hDelta; }
+        // Vertical pan: changing Y (height) only affects isoY
         if (pressedKeys['KeyW'] || pressedKeys['ArrowUp'])    transform.position.y -= PAN_SPEED * dt;
         if (pressedKeys['KeyS'] || pressedKeys['ArrowDown'])  transform.position.y += PAN_SPEED * dt;
         sendMessage('editor:cameraState', {

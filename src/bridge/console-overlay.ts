@@ -31,16 +31,42 @@ export function getConsoleOverlayScript(wsPort: number): string {
   var recentMessages = {};
   var DEDUP_WINDOW = 2000;
 
+  function safeStringify(val, depth) {
+    if (val === null) return 'null';
+    if (val === undefined) return 'undefined';
+    if (typeof val === 'string') return val;
+    if (typeof val !== 'object') return String(val);
+    if (depth <= 0) return '{...}';
+    var seen = [];
+    function ser(v, d) {
+      if (v === null) return 'null';
+      if (v === undefined) return 'undefined';
+      if (typeof v !== 'object') return JSON.stringify(v);
+      if (d <= 0) return '{...}';
+      if (seen.indexOf(v) !== -1) return '[Circular]';
+      seen.push(v);
+      if (Array.isArray(v)) {
+        return '[' + v.map(function(i) { return ser(i, d - 1); }).join(', ') + ']';
+      }
+      var keys;
+      try { keys = Object.keys(v); } catch(e) { return String(v); }
+      var parts = keys.map(function(k) {
+        var pval;
+        try { pval = v[k]; } catch(e) { return JSON.stringify(k) + ': [error]'; }
+        return JSON.stringify(k) + ': ' + ser(pval, d - 1);
+      });
+      return '{' + parts.join(', ') + '}';
+    }
+    return ser(val, depth);
+  }
+
   function interceptConsole() {
     ['log', 'info', 'warn', 'error'].forEach(function(level) {
       console[level] = function() {
         originalConsole[level].apply(console, arguments);
         var message = Array.prototype.slice.call(arguments)
           .map(function(arg) {
-            if (typeof arg === 'object') {
-              try { return JSON.stringify(arg); } catch(e) { return String(arg); }
-            }
-            return String(arg);
+            return safeStringify(arg, 3);
           }).join(' ');
         var tag = undefined;
         var tagMatch = message.match(/^\\[([^\\]]+)\\]/);

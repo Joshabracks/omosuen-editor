@@ -48,6 +48,12 @@ export const COMPONENT_SCHEMAS: Record<COMPONENT_TYPE, PropertySchema[]> = {
       label: 'Paused',
       default: false,
     },
+    {
+      name: 'script',
+      type: 'filepath',
+      label: 'Script',
+      acceptedTypes: ['ts', 'js'],
+    },
   ],
 
   transform: [

@@ -493,12 +493,16 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
 
   // ── Projection (matches engine vertex shader + FBO pipeline) ──
   function screenToWorld(sx, sy, planeY) {
-    var camX = cameraTransform.position.x;
-    var camZ = cameraTransform.position.z;
+    // Project camera 3D world position to 2D isometric space (matches engine)
+    var rawX = cameraTransform.position.x;
+    var rawY = cameraTransform.position.y;
+    var rawZ = cameraTransform.position.z;
+    var camX = COS30 * rawX - COS30 * rawZ;
+    var camZ = SIN30 * rawX - rawY + SIN30 * rawZ;
     var zoom = camera.zoom;
     var pixelScale = camera.pixelScale;
 
-    // Snap camera position to match renderer (see snapCameraPosition)
+    // Snap projected camera position to match renderer (see snapCameraPosition)
     if (pixelScale > 1) {
       var snapSize = pixelScale / zoom;
       camX = Math.floor(camX / snapSize) * snapSize;
@@ -521,8 +525,12 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
   }
 
   function worldToScreen(wx, wy, wz) {
-    var camX = cameraTransform.position.x;
-    var camZ = cameraTransform.position.z;
+    // Project camera 3D world position to 2D isometric space (matches engine)
+    var rawX = cameraTransform.position.x;
+    var rawY = cameraTransform.position.y;
+    var rawZ = cameraTransform.position.z;
+    var camX = COS30 * rawX - COS30 * rawZ;
+    var camZ = SIN30 * rawX - rawY + SIN30 * rawZ;
     var zoom = camera.zoom;
     var pixelScale = camera.pixelScale;
 

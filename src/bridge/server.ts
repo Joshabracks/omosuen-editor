@@ -47,6 +47,12 @@ export class OmosuenDevServer {
       res.send(getConsoleOverlayScript(this.port));
     });
 
+    // Serve the omosuen shim module for dynamic script imports
+    this.app.get('/__omosuen_module.js', (_req, res) => {
+      res.type('application/javascript');
+      res.send(getOmosuenShimScript());
+    });
+
     // Serve index.html with overlay injection
     this.app.get('/', (req, res, next) => {
       this.serveInjectedHtml(req, res, next, 'index.html');
@@ -160,6 +166,14 @@ export class OmosuenDevServer {
 
     let html = fs.readFileSync(filePath, 'utf8');
 
+    // Import map so dynamically-loaded .omo.js scripts can use
+    // bare "omosuen" specifiers (type-only imports that survive compilation)
+    const importMap =
+      '<script type="importmap">{"imports":{"omosuen":"/__omosuen_module.js"}}</script>';
+    if (html.includes('</head>')) {
+      html = html.replace('</head>', `${importMap}\n</head>`);
+    }
+
     const overlayTag =
       '<script src="/__omosuen_editor_overlay.js"></script>';
     if (html.includes('</body>')) {
@@ -170,4 +184,19 @@ export class OmosuenDevServer {
 
     res.type('text/html').send(html);
   }
+}
+
+/**
+ * Returns an ES module that re-exports omosuen runtime values
+ * from the globalThis bridge set by the engine's init().
+ */
+function getOmosuenShimScript(): string {
+  const names = [
+    'Vector2D', 'Vector3D', 'Vector4D',
+    'Array2D', 'Array3D', 'Array3Dc', 'Array3Di', 'Array3Dic',
+    'lerp', 'ComponentUnique', 'ALL_MESSAGES', 'ANY_MESSAGES',
+    'createDefaultCellData', 'packCell', 'unpackCell',
+  ];
+  const lines = names.map((n) => `export const ${n} = e.${n};`);
+  return `const e = globalThis.__omosuen_exports;\n${lines.join('\n')}\n`;
 }

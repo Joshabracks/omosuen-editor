@@ -686,11 +686,11 @@
     if (pathVal) {
       const clearBtn = document.createElement('button');
       clearBtn.className = 'filepath-clear';
-      clearBtn.textContent = '\u{1F5D1}';
+      clearBtn.textContent = '×';
       clearBtn.title = 'Clear file path';
       clearBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        sendPropertyChange(schema.name, '');
+        handleFileSelected(schema.name, '');
       });
       field.appendChild(clearBtn);
     }
@@ -705,6 +705,25 @@
     });
 
     valueDiv.appendChild(field);
+
+    // "+ New" button for script fields (empty value, accepts .ts)
+    if (!pathVal && schema.acceptedTypes && schema.acceptedTypes.includes('ts')) {
+      const newBtn = document.createElement('button');
+      newBtn.className = 'action-button';
+      newBtn.textContent = '+ New';
+      newBtn.style.flex = '0 0 auto';
+      newBtn.style.width = 'auto';
+      newBtn.style.marginLeft = '4px';
+      newBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        vscode.postMessage({
+          command: 'newScript',
+          property: schema.name,
+        });
+      });
+      valueDiv.appendChild(newBtn);
+    }
+
     row.appendChild(valueDiv);
     wrapper.appendChild(row);
 
@@ -833,20 +852,13 @@
   }
 
   function handleFileSelected(property, value) {
-    // Update the filepath field in the DOM
-    const field = document.querySelector('.filepath-field[data-property="' + property + '"]');
-    if (field) {
-      const textSpan = field.querySelector('.filepath-text');
-      if (textSpan) {
-        textSpan.textContent = value || 'Click to select file...';
-        textSpan.classList.toggle('placeholder', !value);
-      }
-    }
     // Update component data and send property change
     if (currentComponent) {
       currentComponent[property] = value;
     }
     sendPropertyChange(property, value);
+    // Re-render to update button state (clear/new buttons)
+    render();
   }
 
   // ── Helpers ─────────────────────────────────────────────────────

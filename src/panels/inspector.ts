@@ -271,6 +271,69 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async handleNewScript(property: string): Promise<void> {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {return;}
+    if (!this.currentComponent) {return;}
+
+    const workspaceRoot = workspaceFolders[0].uri.fsPath;
+
+    // Derive filename from the component name
+    const compName = (this.currentComponent as Record<string, unknown>).name as string || 'Untitled';
+    const sanitized = compName
+      .replace(/[^a-zA-Z0-9\s]/g, '')
+      .split(/\s+/)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join('');
+    const fileName = `${sanitized}.omo.ts`;
+
+    const scriptsDir = path.join(workspaceRoot, 'src', 'scripts');
+    const filePath = path.join(scriptsDir, fileName);
+    const fileUri = vscode.Uri.file(filePath);
+
+    try {
+      // Check if file already exists
+      await vscode.workspace.fs.stat(fileUri);
+      // File exists — just open it
+      const doc = await vscode.workspace.openTextDocument(fileUri);
+      await vscode.window.showTextDocument(doc);
+    } catch {
+      // File does not exist — create it with template
+      const template = `import type { nexus } from "omosuen";
+
+export async function init(n: nexus) {
+
+}
+
+export async function update(n: nexus, deltaTime: number) {
+
+}
+`;
+      // Ensure src/scripts directory exists
+      const scriptsDirUri = vscode.Uri.file(scriptsDir);
+      await vscode.workspace.fs.createDirectory(scriptsDirUri);
+
+      await vscode.workspace.fs.writeFile(fileUri, Buffer.from(template, 'utf-8'));
+      const doc = await vscode.workspace.openTextDocument(fileUri);
+      await vscode.window.showTextDocument(doc);
+    }
+
+    // Set the script property on the component
+    const relativePath = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
+
+    if (this.webviewView) {
+      this.webviewView.webview.postMessage({
+        command: 'fileSelected',
+        property,
+        value: relativePath,
+      });
+    }
+
+    if (this._onPropertyChanged && this.currentComponent?.id !== undefined) {
+      this._onPropertyChanged(this.currentComponent.id, property, relativePath);
+    }
+  }
+
   private async computeTextureMapContext(
     component: SerializedComponent
   ): Promise<{ fileExists: boolean }> {
@@ -347,6 +410,8 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
           message.property as string,
           (message.acceptedTypes as string[]) || []
         );
+      } else if (message.command === 'newScript') {
+        this.handleNewScript(message.property as string);
       }
     });
 

@@ -196,6 +196,36 @@ export function registerPreviewCommands(
         }
       }
 
+      // Compile .omo.ts scripts to .omo.js for runtime dynamic import
+      const scriptPattern = new vscode.RelativePattern(
+        workspaceFolders[0],
+        '**/*.omo.ts'
+      );
+      const scriptFiles = await vscode.workspace.findFiles(scriptPattern);
+      if (scriptFiles.length > 0) {
+        try {
+          const relativePaths = scriptFiles.map(f =>
+            vscode.workspace.asRelativePath(f, false)
+          );
+          await runCommand(
+            'npx',
+            ['esbuild', ...relativePaths, '--outdir=.', '--outbase=.', '--format=esm'],
+            projectRoot
+          );
+          console.info(`Compiled ${scriptFiles.length} script(s)`);
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : String(err);
+          console.error(`Script compilation failed: ${message}`);
+          vscode.window.showErrorMessage(
+            `Script compilation failed: ${message}`
+          );
+          return;
+        }
+      } else {
+        console.info('No .omo.ts scripts found to compile');
+      }
+
       const port = vscode.workspace
         .getConfiguration('omosuen')
         .get<number>('previewPort', 9421);
