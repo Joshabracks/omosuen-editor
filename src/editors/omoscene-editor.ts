@@ -161,6 +161,9 @@ export class OmosceneEditorProvider
       cellMapId?: number;
       transformId?: number;
       position?: { _vectorType: string; x: number; y: number; z: number };
+      cameraId?: number;
+      property?: string;
+      value?: unknown;
     }) => {
       if (msg.type === 'ready') {
         this.postSceneData(webviewPanel, this.activeParsed);
@@ -168,6 +171,8 @@ export class OmosceneEditorProvider
         this.updateComponentProperty(msg.cellMapId, 'packedData', msg.packedData);
       } else if (msg.type === 'transformChanged' && msg.transformId !== undefined && msg.position) {
         this.updateComponentProperty(msg.transformId, 'position', msg.position);
+      } else if (msg.type === 'cameraPropertyChanged' && msg.cameraId !== undefined && msg.property) {
+        this.updateComponentProperty(msg.cameraId, msg.property, msg.value);
       }
     });
 
@@ -550,7 +555,11 @@ interface EditorEntity {
     silhouetteColor: { x: number; y: number; z: number; w: number };
   };
   camera?: {
+    id: number;
+    name: string;
     zoom: number;
+    pixelScale: number;
+    axonometricAngle: number;
     viewportWidth: number;
     viewportHeight: number;
   };
@@ -676,7 +685,11 @@ function walkScene(
       }
 
       entity.camera = {
+        id: camera.id ?? -1,
+        name: (cam.name as string) ?? 'Camera',
         zoom: cameraZoom,
+        pixelScale: (cam.pixelScale as number) ?? 2,
+        axonometricAngle: (cam.axonometricAngle as number) ?? 30,
         viewportWidth: vpWidth,
         viewportHeight: vpHeight,
       };
@@ -998,6 +1011,39 @@ function getEditorWebviewHtml(webview: vscode.Webview, engineUri: string | null)
     position: absolute; bottom: 1px; right: 3px;
     font-size: 9px; color: rgba(200,191,176,0.6);
   }
+
+  /* Camera toolbar */
+  .camera-toolbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px; background: rgba(21,17,12,0.92);
+    border-bottom: 1px solid #2e2518; font-size: 12px;
+  }
+  .camera-toolbar select {
+    background: #1e1810; color: #c8bfb0; border: 1px solid #2e2518;
+    border-radius: 3px; padding: 3px 6px; font-family: inherit; font-size: 12px;
+    cursor: pointer; min-width: 140px;
+  }
+  .camera-toolbar select option.editor-cam { color: #d4a843; }
+  .camera-toolbar label { color: #7a7060; font-size: 11px; }
+  .camera-toolbar input[type="number"] {
+    background: #1e1810; color: #c8bfb0; border: 1px solid #2e2518;
+    border-radius: 3px; padding: 2px 4px; font-family: inherit; font-size: 12px;
+    width: 52px;
+  }
+  .camera-toolbar input[type="number"]:focus { border-color: #d4a843; outline: none; }
+  .camera-toolbar .pos-input { width: 56px; }
+  .camera-toolbar .toolbar-sep {
+    width: 1px; height: 16px; background: #2e2518; margin: 0 4px;
+  }
+  .camera-toolbar .lock-btn {
+    background: #1e1810; border: 1px solid #2e2518; border-radius: 3px;
+    color: #c8bfb0; cursor: pointer; padding: 3px 5px; display: flex;
+    align-items: center;
+  }
+  .camera-toolbar .lock-btn:hover { border-color: #d4a843; }
+  .camera-toolbar .lock-btn.unlocked { color: #d4a843; }
+  .toolbar-fields { display: flex; align-items: center; gap: 6px; }
 </style>
 </head>
 <body>
@@ -1015,6 +1061,38 @@ function getEditorWebviewHtml(webview: vscode.Webview, engineUri: string | null)
 </div>
 <div class="palette" id="palette"></div>
 
+<!-- Camera toolbar -->
+<div class="camera-toolbar" id="camera-toolbar">
+  <select id="camera-select">
+    <option value="editor" class="editor-cam">Editor Camera</option>
+  </select>
+  <div class="toolbar-fields" id="editor-cam-fields">
+    <label>Pixel Scale</label>
+    <input type="number" id="ed-pixel-scale" min="1" max="8" step="1" value="2">
+    <label>Angle</label>
+    <input type="number" id="ed-axo-angle" min="0" max="90" step="1" value="30">
+  </div>
+  <div class="toolbar-fields" id="scene-cam-fields" style="display:none">
+    <button id="camera-lock" class="lock-btn" title="Unlock pan and zoom">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="11" width="18" height="11" rx="2"/>
+        <path id="lock-shackle" d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+    </button>
+    <label>Zoom</label>
+    <input type="number" id="sc-zoom" min="0.1" max="10" step="0.1">
+    <label>Pixel Scale</label>
+    <input type="number" id="sc-pixel-scale" min="1" max="8" step="1">
+    <label>Angle</label>
+    <input type="number" id="sc-axo-angle" min="0" max="90" step="1">
+    <span class="toolbar-sep"></span>
+    <label>Pos</label>
+    <input type="number" id="sc-pos-x" step="0.5" class="pos-input" placeholder="X">
+    <input type="number" id="sc-pos-y" step="0.5" class="pos-input" placeholder="Y">
+    <input type="number" id="sc-pos-z" step="0.5" class="pos-input" placeholder="Z">
+  </div>
+</div>
+
 ${engineScript}
 <script nonce="${nonce}">
 (function() {
@@ -1024,17 +1102,25 @@ ${engineScript}
   var hasEngine = typeof Omosuen !== 'undefined';
 
   // ── Constants ──────────────────────────────────────────────
-  var COS30 = 0.8660254;
-  var SIN30 = 0.5;
   var GIZMO_LEN = 40;
   var GIZMO_HIT_DIST = 10;
   var AXIS_COLORS = { x: '#c45a4a', y: '#6abc5a', z: '#4a8ac4' };
   var AXIS_HOVER_COLORS = { x: '#e07060', y: '#80d870', z: '#6aa0e0' };
-  var AXIS_DIRS = {
-    x: { x: COS30, y: SIN30 },
-    y: { x: 0, y: -1 },
-    z: { x: -COS30, y: SIN30 },
-  };
+
+  function getAngleValues() {
+    var angle = (camera && camera.axonometricAngle !== undefined) ? camera.axonometricAngle : 30;
+    angle = Math.max(0, Math.min(90, angle));
+    var rad = angle * Math.PI / 180;
+    return { cos: 0.8660254, sin: Math.sin(rad), hs: Math.cos(rad) * 1.1547005 };
+  }
+
+  function getAxisDirs(av) {
+    return {
+      x: { x: av.cos, y: av.sin },
+      y: { x: 0, y: -av.hs },
+      z: { x: -av.cos, y: av.sin },
+    };
+  }
 
   // ── DOM refs ────────────────────────────────────────────────
   var gizmoCanvas = document.getElementById('gizmo-canvas');
@@ -1047,6 +1133,9 @@ ${engineScript}
   var heightDown = document.getElementById('height-down');
   var heightUp = document.getElementById('height-up');
   var cursorInfoEl = document.getElementById('cursor-info');
+  var cameraSelect = document.getElementById('camera-select');
+  var editorCamFields = document.getElementById('editor-cam-fields');
+  var sceneCamFields = document.getElementById('scene-cam-fields');
 
   // ── State ──────────────────────────────────────────────────
   var entities = [];
@@ -1087,18 +1176,156 @@ ${engineScript}
   var dragStartPosition = null;
   var dragEntityId = null;
 
+  // Camera toolbar state
+  var viewingSceneCamera = false;
+  var sceneCameraEntity = null;
+  var sceneCameraRef = null;
+  var sceneCameraTransformRef = null;
+  var cameraLocked = true;
+  var savedEditorZoom = 0.5;
+  var savedEditorPos = { x: 0, y: 0, z: 0 };
+  var savedEditorPixelScale = 2;
+  var savedEditorAngle = 30;
+
+  // ── Camera Toolbar ──────────────────────────────────────────
+  function populateCameraDropdown() {
+    var currentVal = cameraSelect.value;
+    while (cameraSelect.options.length > 1) cameraSelect.remove(1);
+    for (var i = 0; i < entities.length; i++) {
+      if (!entities[i].camera) continue;
+      var opt = document.createElement('option');
+      opt.value = '' + entities[i].id;
+      opt.textContent = entities[i].name;
+      cameraSelect.add(opt);
+    }
+    cameraSelect.value = currentVal;
+    if (cameraSelect.selectedIndex === -1) {
+      cameraSelect.value = 'editor';
+      if (viewingSceneCamera) switchToEditorCamera();
+    }
+  }
+
+  function switchToEditorCamera() {
+    viewingSceneCamera = false;
+    sceneCameraEntity = null;
+    sceneCameraRef = null;
+    sceneCameraTransformRef = null;
+    cameraLocked = true;
+    if (camera) {
+      camera.zoom = savedEditorZoom;
+      camera.pixelScale = savedEditorPixelScale;
+      camera.axonometricAngle = savedEditorAngle;
+    }
+    if (cameraTransform) {
+      cameraTransform.position = new Omosuen.Vector3D(
+        savedEditorPos.x, savedEditorPos.y, savedEditorPos.z
+      );
+    }
+    editorCamFields.style.display = 'flex';
+    sceneCamFields.style.display = 'none';
+  }
+
+  function switchToSceneCamera(entityId) {
+    if (!camera || !cameraTransform) return;
+    // Save editor camera state
+    savedEditorZoom = camera.zoom;
+    savedEditorPos = {
+      x: cameraTransform.position.x,
+      y: cameraTransform.position.y,
+      z: cameraTransform.position.z,
+    };
+    savedEditorPixelScale = camera.pixelScale;
+    savedEditorAngle = camera.axonometricAngle;
+
+    var entity = null;
+    for (var i = 0; i < entities.length; i++) {
+      if (entities[i].id === entityId && entities[i].camera) {
+        entity = entities[i]; break;
+      }
+    }
+    if (!entity) return;
+
+    viewingSceneCamera = true;
+    sceneCameraEntity = entity;
+    cameraLocked = true;
+    sceneCameraRef = null;
+    sceneCameraTransformRef = null;
+
+    // Find live engine components
+    var activeScene = Omosuen.getActiveScene();
+    if (activeScene) {
+      sceneCameraRef = activeScene.getComponentByName(entity.camera.name, true);
+      if (sceneCameraRef && sceneCameraRef.parent) {
+        sceneCameraTransformRef = sceneCameraRef.parent.getComponentByType('transform', false);
+      }
+    }
+
+    syncSceneCameraToEditor();
+    editorCamFields.style.display = 'none';
+    sceneCamFields.style.display = 'flex';
+    updateSceneCameraFields();
+    updateLockButton();
+  }
+
+  function syncSceneCameraToEditor() {
+    if (!sceneCameraEntity || !camera || !cameraTransform) return;
+    camera.zoom = sceneCameraEntity.camera.zoom;
+    camera.pixelScale = sceneCameraEntity.camera.pixelScale;
+    camera.axonometricAngle = sceneCameraEntity.camera.axonometricAngle;
+    cameraTransform.position = new Omosuen.Vector3D(
+      sceneCameraEntity.position.x,
+      sceneCameraEntity.position.y,
+      sceneCameraEntity.position.z
+    );
+  }
+
+  function updateSceneCameraFields() {
+    if (!sceneCameraEntity) return;
+    document.getElementById('sc-zoom').value = sceneCameraEntity.camera.zoom;
+    document.getElementById('sc-pixel-scale').value = sceneCameraEntity.camera.pixelScale;
+    document.getElementById('sc-axo-angle').value = sceneCameraEntity.camera.axonometricAngle;
+    document.getElementById('sc-pos-x').value = sceneCameraEntity.position.x;
+    document.getElementById('sc-pos-y').value = sceneCameraEntity.position.y;
+    document.getElementById('sc-pos-z').value = sceneCameraEntity.position.z;
+  }
+
+  function updateLockButton() {
+    var btn = document.getElementById('camera-lock');
+    var shackle = document.getElementById('lock-shackle');
+    if (cameraLocked) {
+      btn.classList.remove('unlocked');
+      btn.title = 'Unlock pan and zoom';
+      shackle.setAttribute('d', 'M7 11V7a5 5 0 0 1 10 0v4');
+    } else {
+      btn.classList.add('unlocked');
+      btn.title = 'Lock pan and zoom';
+      shackle.setAttribute('d', 'M7 11V7a5 5 0 0 1 10 0');
+    }
+  }
+
+  function postCameraPropertyChange(property, value) {
+    if (!sceneCameraEntity) return;
+    vscode.postMessage({
+      type: 'cameraPropertyChanged',
+      cameraId: sceneCameraEntity.camera.id,
+      property: property,
+      value: value,
+    });
+  }
+
   // ── Projection (matches engine zoom² pipeline) ──────────────
   function worldToScreen(wx, wy, wz) {
     if (!engineReady || !camera || !cameraTransform || !viewport) {
       // Fallback: simple isometric (no engine)
       return { x: gizmoCanvas.width / 2, y: gizmoCanvas.height / 2 };
     }
+    var av = getAngleValues();
     // Project camera 3D world position to 2D isometric space (matches engine)
     var rawX = cameraTransform.position.x;
     var rawY = cameraTransform.position.y;
     var rawZ = cameraTransform.position.z;
-    var camX = COS30 * rawX - COS30 * rawZ;
-    var camZ = SIN30 * rawX - rawY + SIN30 * rawZ;
+    var camX = av.cos * rawX - av.cos * rawZ;
+    var camZ = av.sin * rawX - av.hs * rawY + av.sin * rawZ;
     var zoom = camera.zoom;
     var pixelScale = camera.pixelScale;
 
@@ -1112,8 +1339,8 @@ ${engineScript}
     var vpH = viewport.height;
     var zoomSq = zoom * zoom;
 
-    var isoX = COS30 * wx - COS30 * wz;
-    var isoY = SIN30 * wx - wy + SIN30 * wz;
+    var isoX = av.cos * wx - av.cos * wz;
+    var isoY = av.sin * wx - av.hs * wy + av.sin * wz;
     return {
       x: (isoX - camX) * zoomSq + vpW / 2,
       y: (isoY - camZ) * zoomSq + vpH / 2,
@@ -1122,12 +1349,13 @@ ${engineScript}
 
   function screenToWorld(sx, sy, planeY) {
     if (!camera || !cameraTransform || !viewport) return { x: 0, y: 0, z: 0 };
+    var av = getAngleValues();
     // Project camera 3D world position to 2D isometric space (matches engine)
     var rawX = cameraTransform.position.x;
     var rawY = cameraTransform.position.y;
     var rawZ = cameraTransform.position.z;
-    var camX = COS30 * rawX - COS30 * rawZ;
-    var camZ = SIN30 * rawX - rawY + SIN30 * rawZ;
+    var camX = av.cos * rawX - av.cos * rawZ;
+    var camZ = av.sin * rawX - av.hs * rawY + av.sin * rawZ;
     var zoom = camera.zoom;
     var pixelScale = camera.pixelScale;
     if (pixelScale > 1) {
@@ -1140,9 +1368,14 @@ ${engineScript}
     var zoomSq = zoom * zoom;
     var isoX = (sx - vpW / 2) / zoomSq + camX;
     var isoY = (sy - vpH / 2) / zoomSq + camZ;
-    var adjustedIsoY = isoY + planeY;
-    var u = adjustedIsoY / SIN30;
-    var v = isoX / COS30;
+    if (av.sin < 0.01) {
+      // Near top-down: isoY encodes -hs*wy, cannot solve for wx+wz from isoY
+      var v = isoX / av.cos;
+      return { x: v / 2, y: planeY, z: -v / 2 };
+    }
+    var adjustedIsoY = isoY + av.hs * planeY;
+    var u = adjustedIsoY / av.sin;
+    var v = isoX / av.cos;
     return { x: (u + v) / 2, y: planeY, z: (u - v) / 2 };
   }
 
@@ -1184,30 +1417,32 @@ ${engineScript}
   function drawOrigin() {
     var o = worldToScreen(0, 0, 0);
     var len = 60;
+    var ad = getAxisDirs(getAngleValues());
     ctx.strokeStyle = AXIS_COLORS.x; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + AXIS_DIRS.x.x * len, o.y + AXIS_DIRS.x.y * len); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + ad.x.x * len, o.y + ad.x.y * len); ctx.stroke();
     ctx.fillStyle = AXIS_COLORS.x; ctx.font = "bold 11px 'IBM Plex Mono', monospace";
-    ctx.fillText('X', o.x + AXIS_DIRS.x.x * (len + 6), o.y + AXIS_DIRS.x.y * (len + 6));
+    ctx.fillText('X', o.x + ad.x.x * (len + 6), o.y + ad.x.y * (len + 6));
 
     ctx.strokeStyle = AXIS_COLORS.y; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x, o.y + AXIS_DIRS.y.y * len); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x, o.y + ad.y.y * len); ctx.stroke();
     ctx.fillStyle = AXIS_COLORS.y;
-    ctx.fillText('Y', o.x + 4, o.y + AXIS_DIRS.y.y * (len + 4));
+    ctx.fillText('Y', o.x + 4, o.y + ad.y.y * (len + 4));
 
     ctx.strokeStyle = AXIS_COLORS.z; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + AXIS_DIRS.z.x * len, o.y + AXIS_DIRS.z.y * len); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + ad.z.x * len, o.y + ad.z.y * len); ctx.stroke();
     ctx.fillStyle = AXIS_COLORS.z;
-    ctx.fillText('Z', o.x + AXIS_DIRS.z.x * (len + 6), o.y + AXIS_DIRS.z.y * (len + 6));
+    ctx.fillText('Z', o.x + ad.z.x * (len + 6), o.y + ad.z.y * (len + 6));
 
     ctx.fillStyle = '#d4a843';
     ctx.beginPath(); ctx.arc(o.x, o.y, 3, 0, Math.PI * 2); ctx.fill();
   }
 
   function hitTestEntityGizmo(mx, my, cx, cy) {
+    var ad = getAxisDirs(getAngleValues());
     var axes = ['x', 'y', 'z'];
     for (var i = 0; i < 3; i++) {
       var axis = axes[i];
-      var dir = AXIS_DIRS[axis];
+      var dir = ad[axis];
       var adx = dir.x * GIZMO_LEN * 0.7, ady = dir.y * GIZMO_LEN * 0.7;
       var dx = mx - cx, dy = my - cy;
       var dot = dx * adx + dy * ady;
@@ -1223,6 +1458,7 @@ ${engineScript}
   function drawEntityGizmo(e) {
     var p = worldToScreen(e.position.x, e.position.y, e.position.z);
     var len = GIZMO_LEN;
+    var ad = getAxisDirs(getAngleValues());
     var isSelected = (e.id === selectedEntityId);
     var isGizmoTarget = isSelected || e.id === dragEntityId;
     var baseLw = isSelected ? 2.5 : 1.5;
@@ -1235,8 +1471,8 @@ ${engineScript}
     ctx.strokeStyle = xHover ? AXIS_HOVER_COLORS.x : AXIS_COLORS.x;
     ctx.lineWidth = xHover ? baseLw + 1.5 : baseLw;
     ctx.beginPath();
-    ctx.moveTo(p.x - AXIS_DIRS.x.x * len * 0.3, p.y - AXIS_DIRS.x.y * len * 0.3);
-    ctx.lineTo(p.x + AXIS_DIRS.x.x * len * 0.7, p.y + AXIS_DIRS.x.y * len * 0.7);
+    ctx.moveTo(p.x - ad.x.x * len * 0.3, p.y - ad.x.y * len * 0.3);
+    ctx.lineTo(p.x + ad.x.x * len * 0.7, p.y + ad.x.y * len * 0.7);
     ctx.stroke();
 
     // Y axis
@@ -1244,8 +1480,8 @@ ${engineScript}
     ctx.strokeStyle = yHover ? AXIS_HOVER_COLORS.y : AXIS_COLORS.y;
     ctx.lineWidth = yHover ? baseLw + 1.5 : baseLw;
     ctx.beginPath();
-    ctx.moveTo(p.x, p.y - AXIS_DIRS.y.y * len * 0.3);
-    ctx.lineTo(p.x, p.y + AXIS_DIRS.y.y * len * 0.7);
+    ctx.moveTo(p.x, p.y - ad.y.y * len * 0.3);
+    ctx.lineTo(p.x, p.y + ad.y.y * len * 0.7);
     ctx.stroke();
 
     // Z axis
@@ -1253,8 +1489,8 @@ ${engineScript}
     ctx.strokeStyle = zHover ? AXIS_HOVER_COLORS.z : AXIS_COLORS.z;
     ctx.lineWidth = zHover ? baseLw + 1.5 : baseLw;
     ctx.beginPath();
-    ctx.moveTo(p.x - AXIS_DIRS.z.x * len * 0.3, p.y - AXIS_DIRS.z.y * len * 0.3);
-    ctx.lineTo(p.x + AXIS_DIRS.z.x * len * 0.7, p.y + AXIS_DIRS.z.y * len * 0.7);
+    ctx.moveTo(p.x - ad.z.x * len * 0.3, p.y - ad.z.y * len * 0.3);
+    ctx.lineTo(p.x + ad.z.x * len * 0.7, p.y + ad.z.y * len * 0.7);
     ctx.stroke();
 
     ctx.globalAlpha = 1;
@@ -1352,18 +1588,6 @@ ${engineScript}
 
   }
 
-  function drawCameraRect(e) {
-    if (!e.camera) return;
-    var p = worldToScreen(e.position.x, e.position.y, e.position.z);
-    var zoom = camera ? camera.zoom : 1;
-    var zoomSq = zoom * zoom;
-    var halfW = (e.camera.viewportWidth / (2 * e.camera.zoom)) * zoomSq;
-    var halfH = (e.camera.viewportHeight / (2 * e.camera.zoom)) * zoomSq;
-    var isSelected = (e.id === selectedEntityId);
-    ctx.strokeStyle = isSelected ? 'rgba(212, 168, 67, 0.9)' : 'rgba(212, 168, 67, 0.3)';
-    ctx.lineWidth = isSelected ? 2 : 1;
-    ctx.strokeRect(p.x - halfW, p.y - halfH, halfW * 2, halfH * 2);
-  }
 
   function drawCellHighlight() {
     if (!cellMapData || !engineReady || !cellEditMode || !brushTarget) return;
@@ -1404,11 +1628,6 @@ ${engineScript}
     // Light indicators
     for (var li = 0; li < lights.length; li++) {
       drawLightGizmo(lights[li]);
-    }
-
-    // Camera view rects
-    for (var k = 0; k < entities.length; k++) {
-      if (entities[k].camera) drawCameraRect(entities[k]);
     }
 
     // Entity axis gizmos + labels
@@ -1576,6 +1795,7 @@ ${engineScript}
     var zoomVelocity = 0, scrollActive = false;
 
     inputController.onAction('middleMouseDown', function(event) {
+      if (viewingSceneCamera && cameraLocked) return;
       isPanning = true; lastMouseX = event.clientX; lastMouseY = event.clientY;
     });
     inputController.onAction('middleMouseUp', function() { isPanning = false; });
@@ -1585,8 +1805,20 @@ ${engineScript}
       lastMouseX = event.clientX; lastMouseY = event.clientY;
       var zoomSq = camera.zoom * camera.zoom;
       camera.pan(dx * -PAN_SENSITIVITY / zoomSq, dy * -PAN_SENSITIVITY / zoomSq);
+      if (viewingSceneCamera && sceneCameraEntity) {
+        if (sceneCameraTransformRef) {
+          sceneCameraTransformRef.position = new Omosuen.Vector3D(
+            cameraTransform.position.x, cameraTransform.position.y, cameraTransform.position.z
+          );
+        }
+        sceneCameraEntity.position.x = cameraTransform.position.x;
+        sceneCameraEntity.position.y = cameraTransform.position.y;
+        sceneCameraEntity.position.z = cameraTransform.position.z;
+        updateSceneCameraFields();
+      }
     });
     inputController.onAction('mouseWheel', function(event, deltaY) {
+      if (viewingSceneCamera && cameraLocked) return;
       zoomVelocity += -deltaY * ZOOM_ACCEL;
       scrollActive = true;
       camera.setZoomTarget(event.clientX - viewport.offsetX, event.clientY - viewport.offsetY);
@@ -1605,6 +1837,11 @@ ${engineScript}
       if (zoomVelocity !== 0) {
         var newZoom = Math.max(0.1, Math.min(3.0, camera.zoom + zoomVelocity * dt));
         camera.setZoom(newZoom);
+        if (viewingSceneCamera && sceneCameraEntity && sceneCameraRef) {
+          sceneCameraRef.zoom = camera.zoom;
+          sceneCameraEntity.camera.zoom = camera.zoom;
+          updateSceneCameraFields();
+        }
         if (!scrollActive) {
           var decay = Math.sign(zoomVelocity) * ZOOM_ENTROPY * Math.abs(zoomVelocity) * dt;
           zoomVelocity -= decay;
@@ -1905,7 +2142,7 @@ ${engineScript}
     // Active drag — update position
     if (draggingAxis && dragStartMouse && dragStartPosition && dragEntityId !== null) {
       var dx = mx - dragStartMouse.x, dy = my - dragStartMouse.y;
-      var dir = AXIS_DIRS[draggingAxis];
+      var dir = getAxisDirs(getAngleValues())[draggingAxis];
       var projected = dx * dir.x + dy * dir.y;
       var worldDelta = projected / getZoomSq();
 
@@ -2015,6 +2252,8 @@ ${engineScript}
         ? sceneName + ' \\u2014 ' + entities.length + ' entities'
         : 'Editor Preview';
 
+      populateCameraDropdown();
+
       if (!engineReady && hasEngine) {
         // First load — create engine scene
         createEditorScene(msg).catch(function(err) {
@@ -2061,6 +2300,85 @@ ${engineScript}
       }
     }
   });
+
+  // ── Camera Toolbar Events ────────────────────────────────────
+  cameraSelect.addEventListener('change', function() {
+    if (this.value === 'editor') {
+      switchToEditorCamera();
+    } else {
+      switchToSceneCamera(parseInt(this.value, 10));
+    }
+  });
+
+  document.getElementById('camera-lock').addEventListener('click', function() {
+    cameraLocked = !cameraLocked;
+    updateLockButton();
+  });
+
+  document.getElementById('ed-pixel-scale').addEventListener('change', function() {
+    if (!camera) return;
+    var val = parseFloat(this.value);
+    camera.pixelScale = (isNaN(val) || val < 1) ? 2 : val;
+    savedEditorPixelScale = camera.pixelScale;
+  });
+  document.getElementById('ed-axo-angle').addEventListener('change', function() {
+    if (!camera) return;
+    var val = parseFloat(this.value);
+    camera.axonometricAngle = isNaN(val) ? 30 : val;
+    savedEditorAngle = camera.axonometricAngle;
+  });
+
+  document.getElementById('sc-zoom').addEventListener('change', function() {
+    if (!sceneCameraEntity || !camera) return;
+    var val = parseFloat(this.value);
+    if (isNaN(val) || val <= 0) val = 1;
+    sceneCameraEntity.camera.zoom = val;
+    camera.zoom = val;
+    if (sceneCameraRef) sceneCameraRef.zoom = val;
+    postCameraPropertyChange('zoom', val);
+  });
+  document.getElementById('sc-pixel-scale').addEventListener('change', function() {
+    if (!sceneCameraEntity || !camera) return;
+    var val = parseFloat(this.value);
+    if (isNaN(val) || val < 1) val = 2;
+    sceneCameraEntity.camera.pixelScale = val;
+    camera.pixelScale = val;
+    if (sceneCameraRef) sceneCameraRef.pixelScale = val;
+    postCameraPropertyChange('pixelScale', val);
+  });
+  document.getElementById('sc-axo-angle').addEventListener('change', function() {
+    if (!sceneCameraEntity || !camera) return;
+    var val = parseFloat(this.value);
+    if (isNaN(val)) val = 30;
+    sceneCameraEntity.camera.axonometricAngle = val;
+    camera.axonometricAngle = val;
+    if (sceneCameraRef) sceneCameraRef.axonometricAngle = val;
+    postCameraPropertyChange('axonometricAngle', val);
+  });
+
+  function handlePositionFieldChange() {
+    if (!sceneCameraEntity || !cameraTransform) return;
+    var px = parseFloat(document.getElementById('sc-pos-x').value) || 0;
+    var py = parseFloat(document.getElementById('sc-pos-y').value) || 0;
+    var pz = parseFloat(document.getElementById('sc-pos-z').value) || 0;
+    sceneCameraEntity.position.x = px;
+    sceneCameraEntity.position.y = py;
+    sceneCameraEntity.position.z = pz;
+    cameraTransform.position = new Omosuen.Vector3D(px, py, pz);
+    if (sceneCameraTransformRef) {
+      sceneCameraTransformRef.position = new Omosuen.Vector3D(px, py, pz);
+    }
+    if (sceneCameraEntity.transformId !== undefined) {
+      vscode.postMessage({
+        type: 'transformChanged',
+        transformId: sceneCameraEntity.transformId,
+        position: { _vectorType: 'Vector3D', x: px, y: py, z: pz },
+      });
+    }
+  }
+  document.getElementById('sc-pos-x').addEventListener('change', handlePositionFieldChange);
+  document.getElementById('sc-pos-y').addEventListener('change', handlePositionFieldChange);
+  document.getElementById('sc-pos-z').addEventListener('change', handlePositionFieldChange);
 
   // Signal ready
   vscode.postMessage({ type: 'ready' });

@@ -382,9 +382,12 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
   var cameraTransform = null;
   var viewport = null;
 
-  // Projection constants
-  var COS30 = 0.8660254;
-  var SIN30 = 0.5;
+  function getAngleValues() {
+    var angle = (camera && camera.axonometricAngle !== undefined) ? camera.axonometricAngle : 30;
+    angle = Math.max(0, Math.min(90, angle));
+    var rad = angle * Math.PI / 180;
+    return { cos: 0.8660254, sin: Math.sin(rad), hs: Math.cos(rad) * 1.1547005 };
+  }
 
   // ── Color generation for palette ──────────────────────────
   function generateMaterialColor(index) {
@@ -463,7 +466,7 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
   function drawPaletteCube(tctx, w, h, matIdx) {
     var color = matIdx < materialColors.length ? materialColors[matIdx] : { r: 128, g: 128, b: 128 };
     var cx = w / 2, cy = h / 2, s = 14;
-    var cos30s = COS30 * s, sin30s = SIN30 * s;
+    var cos30s = 0.8660254 * s, sin30s = 0.5 * s;
 
     tctx.fillStyle = colorStr(lighten(color, 0.3));
     tctx.beginPath();
@@ -493,12 +496,13 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
 
   // ── Projection (matches engine vertex shader + FBO pipeline) ──
   function screenToWorld(sx, sy, planeY) {
+    var av = getAngleValues();
     // Project camera 3D world position to 2D isometric space (matches engine)
     var rawX = cameraTransform.position.x;
     var rawY = cameraTransform.position.y;
     var rawZ = cameraTransform.position.z;
-    var camX = COS30 * rawX - COS30 * rawZ;
-    var camZ = SIN30 * rawX - rawY + SIN30 * rawZ;
+    var camX = av.cos * rawX - av.cos * rawZ;
+    var camZ = av.sin * rawX - av.hs * rawY + av.sin * rawZ;
     var zoom = camera.zoom;
     var pixelScale = camera.pixelScale;
 
@@ -516,21 +520,27 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
     var isoX = (sx - vpW / 2) / zoomSq + camX;
     var isoY = (sy - vpH / 2) / zoomSq + camZ;
 
-    // isoX = COS30 * (wx - wz)
-    // isoY = SIN30 * (wx + wz) - planeY
-    var adjustedIsoY = isoY + planeY;
-    var u = adjustedIsoY / SIN30; // wx + wz
-    var v = isoX / COS30;         // wx - wz
+    // isoX = cosA * (wx - wz)
+    // isoY = sinA * (wx + wz) - heightScale * planeY
+    if (av.sin < 0.01) {
+      // Near top-down: isoY encodes -hs*wy, cannot solve for wx+wz from isoY
+      var v = isoX / av.cos; // wx - wz
+      return { x: v / 2, y: planeY, z: -v / 2 };
+    }
+    var adjustedIsoY = isoY + av.hs * planeY;
+    var u = adjustedIsoY / av.sin; // wx + wz
+    var v = isoX / av.cos;         // wx - wz
     return { x: (u + v) / 2, y: planeY, z: (u - v) / 2 };
   }
 
   function worldToScreen(wx, wy, wz) {
+    var av = getAngleValues();
     // Project camera 3D world position to 2D isometric space (matches engine)
     var rawX = cameraTransform.position.x;
     var rawY = cameraTransform.position.y;
     var rawZ = cameraTransform.position.z;
-    var camX = COS30 * rawX - COS30 * rawZ;
-    var camZ = SIN30 * rawX - rawY + SIN30 * rawZ;
+    var camX = av.cos * rawX - av.cos * rawZ;
+    var camZ = av.sin * rawX - av.hs * rawY + av.sin * rawZ;
     var zoom = camera.zoom;
     var pixelScale = camera.pixelScale;
 
@@ -544,8 +554,8 @@ function getCellMapEditorHtml(webview: vscode.Webview, enginePath: string): stri
     var vpH = viewport.height;
     var zoomSq = zoom * zoom;
 
-    var isoX = COS30 * wx - COS30 * wz;
-    var isoY = SIN30 * wx - wy + SIN30 * wz;
+    var isoX = av.cos * wx - av.cos * wz;
+    var isoY = av.sin * wx - av.hs * wy + av.sin * wz;
     return {
       x: (isoX - camX) * zoomSq + vpW / 2,
       y: (isoY - camZ) * zoomSq + vpH / 2,

@@ -12,18 +12,26 @@ export function getOverlayScript(wsPort: number): string {
   // ── Constants ──────────────────────────────────────────────────
   var PROTOCOL = 'omosuen-editor/v1';
   var WS_URL = 'ws://localhost:${wsPort}/editor';
-  var COS30 = 0.8660254;
-  var SIN30 = 0.5;
   var GIZMO_LENGTH = 80;
   var GIZMO_HIT_DIST = 12;
   var DEFAULT_HIT_RADIUS = 16;
   var AXIS_COLORS = { x: '#FF4444', y: '#44FF44', z: '#4488FF' };
   var AXIS_HOVER = { x: '#FF8888', y: '#88FF88', z: '#88BBFF' };
-  var AXIS_DIRS = {
-    x: { x: COS30, y: -SIN30 },
-    y: { x: 0, y: 1 },
-    z: { x: -COS30, y: -SIN30 },
-  };
+
+  function getAngleValues(cam) {
+    var angle = (cam && cam.angle !== undefined) ? cam.angle : 30;
+    angle = Math.max(0, Math.min(90, angle));
+    var rad = angle * Math.PI / 180;
+    return { cos: 0.8660254, sin: Math.sin(rad), hs: Math.cos(rad) * 1.1547005 };
+  }
+
+  function getAxisDirs(av) {
+    return {
+      x: { x: av.cos, y: -av.sin },
+      y: { x: 0, y: -av.hs },
+      z: { x: -av.cos, y: -av.sin },
+    };
+  }
 
   // ── State ──────────────────────────────────────────────────────
   var ws = null;
@@ -182,22 +190,30 @@ export function getOverlayScript(wsPort: number): string {
       ? camera.parent.getComponentByType('transform') : null;
     var viewport = camera.parent && camera.parent.getComponentByType
       ? camera.parent.getComponentByType('viewport') : null;
+    var angle = camera.axonometricAngle !== undefined ? camera.axonometricAngle : 30;
+    angle = Math.max(0, Math.min(90, angle));
+    var rad = angle * Math.PI / 180;
+    var sinA = Math.sin(rad);
+    var heightScale = Math.cos(rad) * 1.1547005;
+    var ISO_H = 0.8660254; // cos(30deg) — constant horizontal spread
     return {
       panX: transform && transform.position
-        ? COS30 * transform.position.x - COS30 * transform.position.z : 0,
+        ? ISO_H * transform.position.x - ISO_H * transform.position.z : 0,
       panY: transform && transform.position
-        ? SIN30 * transform.position.x - transform.position.y + SIN30 * transform.position.z : 0,
+        ? sinA * transform.position.x - heightScale * transform.position.y + sinA * transform.position.z : 0,
       zoom: camera.zoom !== undefined ? camera.zoom : 1,
       vpW: viewport ? viewport.width : 800,
       vpH: viewport ? viewport.height : 600,
       vpOffX: viewport ? (viewport.offsetX || 0) : 0,
       vpOffY: viewport ? (viewport.offsetY || 0) : 0,
+      angle: angle,
     };
   }
 
   function worldToScreen(wx, wy, wz, cam) {
-    var isoX = COS30 * wx - COS30 * wz;
-    var isoY = SIN30 * wx - wy + SIN30 * wz;
+    var av = getAngleValues(cam);
+    var isoX = av.cos * wx - av.cos * wz;
+    var isoY = av.sin * wx - av.hs * wy + av.sin * wz;
     return {
       x: (isoX - cam.panX) * cam.zoom + cam.vpW / 2,
       y: cam.vpH / 2 - (isoY - cam.panY) * cam.zoom,
@@ -206,10 +222,15 @@ export function getOverlayScript(wsPort: number): string {
 
   function screenToWorld(sx, sy, cam, planeY) {
     planeY = planeY || 0;
+    var av = getAngleValues(cam);
     var isoX = (sx - cam.vpW / 2) / cam.zoom + cam.panX;
     var isoY = -((sy - cam.vpH / 2) / cam.zoom) + cam.panY;
-    var u = (isoY + planeY) / SIN30;
-    var v = isoX / COS30;
+    var adjustedIsoY = isoY + av.hs * planeY;
+    if (av.sin < 0.01) {
+      return { x: adjustedIsoY, y: planeY, z: adjustedIsoY - isoX / av.cos };
+    }
+    var u = adjustedIsoY / av.sin;
+    var v = isoX / av.cos;
     return { x: (u + v) / 2, y: planeY, z: (u - v) / 2 };
   }
 
@@ -470,15 +491,16 @@ export function getOverlayScript(wsPort: number): string {
 
   function drawGizmo(ctx, sp, cam) {
     var cx = sp.x, cy = sp.y;
-    if (gizmoMode === 'translate') drawTranslateGizmo(ctx, cx, cy);
+    if (gizmoMode === 'translate') drawTranslateGizmo(ctx, cx, cy, cam);
     else if (gizmoMode === 'rotate') drawRotateGizmo(ctx, cx, cy, cam);
-    else if (gizmoMode === 'scale') drawScaleGizmo(ctx, cx, cy);
+    else if (gizmoMode === 'scale') drawScaleGizmo(ctx, cx, cy, cam);
     ctx.font = '10px monospace'; ctx.fillStyle = '#fff';
     ctx.fillText(gizmoMode.charAt(0).toUpperCase(), cx + 6, cy + 18);
   }
 
-  function drawAxisLine(ctx, cx, cy, axis, endShape) {
-    var dir = AXIS_DIRS[axis];
+  function drawAxisLine(ctx, cx, cy, axis, endShape, cam) {
+    var axisDirs = getAxisDirs(getAngleValues(cam));
+    var dir = axisDirs[axis];
     var color = (hoveredAxis === axis || draggingAxis === axis) ? AXIS_HOVER[axis] : AXIS_COLORS[axis];
     var lw = (hoveredAxis === axis || draggingAxis === axis) ? 3 : 2;
     var ex = cx + dir.x * GIZMO_LENGTH, ey = cy + dir.y * GIZMO_LENGTH;
@@ -498,17 +520,17 @@ export function getOverlayScript(wsPort: number): string {
     ctx.fillText(axis.toUpperCase(), ex + dir.x*8, ey + dir.y*8);
   }
 
-  function drawTranslateGizmo(ctx, cx, cy) {
-    drawAxisLine(ctx,cx,cy,'x','arrow');
-    drawAxisLine(ctx,cx,cy,'y','arrow');
-    drawAxisLine(ctx,cx,cy,'z','arrow');
+  function drawTranslateGizmo(ctx, cx, cy, cam) {
+    drawAxisLine(ctx,cx,cy,'x','arrow',cam);
+    drawAxisLine(ctx,cx,cy,'y','arrow',cam);
+    drawAxisLine(ctx,cx,cy,'z','arrow',cam);
     ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.fill();
   }
 
-  function drawScaleGizmo(ctx, cx, cy) {
-    drawAxisLine(ctx,cx,cy,'x','square');
-    drawAxisLine(ctx,cx,cy,'y','square');
-    drawAxisLine(ctx,cx,cy,'z','square');
+  function drawScaleGizmo(ctx, cx, cy, cam) {
+    drawAxisLine(ctx,cx,cy,'x','square',cam);
+    drawAxisLine(ctx,cx,cy,'y','square',cam);
+    drawAxisLine(ctx,cx,cy,'z','square',cam);
     ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.fill();
   }
 
@@ -527,8 +549,9 @@ export function getOverlayScript(wsPort: number): string {
         if (axis==='x') { wy=Math.cos(a)*arcR/cam.zoom; wz=Math.sin(a)*arcR/cam.zoom; }
         else if (axis==='y') { wx=Math.cos(a)*arcR/cam.zoom; wz=Math.sin(a)*arcR/cam.zoom; }
         else { wx=Math.cos(a)*arcR/cam.zoom; wy=Math.sin(a)*arcR/cam.zoom; }
-        var ix = COS30*wx - COS30*wz;
-        var iy = SIN30*wx - wy + SIN30*wz;
+        var av = getAngleValues(cam);
+        var ix = av.cos*wx - av.cos*wz;
+        var iy = av.sin*wx - wy + av.sin*wz;
         var px = cx + ix*cam.zoom, py = cy - iy*cam.zoom;
         if (s===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
       }
@@ -545,6 +568,7 @@ export function getOverlayScript(wsPort: number): string {
       // Hit test rotation arcs
       var cam = getCameraInfo();
       if (!cam) return null;
+      var av = getAngleValues(cam);
       var arcR = 50;
       for (var i=0;i<3;i++) {
         var axis = axes[i];
@@ -556,7 +580,7 @@ export function getOverlayScript(wsPort: number): string {
             if (axis==='x') { wy=Math.cos(a)*arcR/cam.zoom; wz=Math.sin(a)*arcR/cam.zoom; }
             else if (axis==='y') { wx=Math.cos(a)*arcR/cam.zoom; wz=Math.sin(a)*arcR/cam.zoom; }
             else { wx=Math.cos(a)*arcR/cam.zoom; wy=Math.sin(a)*arcR/cam.zoom; }
-            var ix=COS30*wx-COS30*wz, iy=SIN30*wx-wy+SIN30*wz;
+            var ix=av.cos*wx-av.cos*wz, iy=av.sin*wx-wy+av.sin*wz;
             var px=cx+ix*cam.zoom, py=cy-iy*cam.zoom;
             var dd=(mx-px)*(mx-px)+(my-py)*(my-py);
             if (dd < GIZMO_HIT_DIST*GIZMO_HIT_DIST) return axis;
@@ -566,9 +590,11 @@ export function getOverlayScript(wsPort: number): string {
       return null;
     }
     // Hit test lines (translate/scale)
+    var cam2 = getCameraInfo();
+    var axisDirs = getAxisDirs(getAngleValues(cam2));
     for (var i=0;i<3;i++) {
       var axis = axes[i];
-      var dir = AXIS_DIRS[axis];
+      var dir = axisDirs[axis];
       var adx = dir.x*GIZMO_LENGTH, ady = dir.y*GIZMO_LENGTH;
       var dot = (mx-cx)*adx + (my-cy)*ady;
       var lenSq = adx*adx + ady*ady;
@@ -608,8 +634,11 @@ export function getOverlayScript(wsPort: number): string {
 
     var dx = mx - dragStartMouse.x, dy = my - dragStartMouse.y;
 
+    var dragAv = getAngleValues(cam);
+    var dragAxisDirs = getAxisDirs(dragAv);
+
     if (gizmoMode === 'translate') {
-      var dir = AXIS_DIRS[draggingAxis];
+      var dir = dragAxisDirs[draggingAxis];
       var projected = dx*dir.x + dy*dir.y;
       var worldDelta = projected / cam.zoom;
       if (draggingAxis === 'x') transform.position.x = dragStartValue.x + worldDelta;
@@ -629,7 +658,7 @@ export function getOverlayScript(wsPort: number): string {
         value: { _vectorType:'Vector3D', x:transform.rotation.x, y:transform.rotation.y, z:transform.rotation.z },
       });
     } else if (gizmoMode === 'scale') {
-      var dir = AXIS_DIRS[draggingAxis];
+      var dir = dragAxisDirs[draggingAxis];
       var projected = dx*dir.x + dy*dir.y;
       var scaleFactor = Math.max(0.01, 1 + projected / 100);
       if (draggingAxis === 'x') transform.scale.x = dragStartValue.scaleX * scaleFactor;
@@ -898,7 +927,7 @@ export function getOverlayScript(wsPort: number): string {
       var transform = getCameraTransform(camera);
       if (transform && transform.position) {
         // Horizontal pan: inverse-project screen X offset to world X/Z
-        var hDelta = PAN_SPEED * dt / (2 * COS30);
+        var hDelta = PAN_SPEED * dt / (2 * 0.8660254);
         if (pressedKeys['KeyA'] || pressedKeys['ArrowLeft'])  { transform.position.x -= hDelta; transform.position.z += hDelta; }
         if (pressedKeys['KeyD'] || pressedKeys['ArrowRight']) { transform.position.x += hDelta; transform.position.z -= hDelta; }
         // Vertical pan: changing Y (height) only affects isoY
