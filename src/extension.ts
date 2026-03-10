@@ -144,7 +144,7 @@ export function activate(context: vscode.ExtensionContext): void {
           }
         }
       }
-      omosceneEditor.selectEntity(entityId);
+      omosceneEditor.selectEntity(entityId, component.type);
     }
 
     // Auto-activate cell-map editing when a cell-map component is selected
@@ -168,6 +168,9 @@ export function activate(context: vscode.ExtensionContext): void {
       sceneTree.selectItem(items[0]);
     } else if (items.length > 1) {
       inspector.showMultiSelection(items.length);
+    } else {
+      // Deselected — reset webview selection so camera toolbar reappears
+      omosceneEditor.selectEntity(-1);
     }
   });
 

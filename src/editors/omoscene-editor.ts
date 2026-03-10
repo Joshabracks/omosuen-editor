@@ -382,11 +382,12 @@ export class OmosceneEditorProvider
   /**
    * Notify the editor canvas webview of the currently selected entity
    */
-  selectEntity(entityId: number): void {
+  selectEntity(entityId: number, componentType?: string): void {
     if (this.activePanel) {
       this.activePanel.webview.postMessage({
         type: 'selection:changed',
         selectedId: entityId,
+        componentType: componentType,
       });
     }
   }
@@ -2291,6 +2292,9 @@ ${engineScript}
     }
     if (msg.type === 'selection:changed') {
       selectedEntityId = msg.selectedId !== undefined ? msg.selectedId : -1;
+      var ct = msg.componentType;
+      var showCameraBar = !ct || ct === 'nexus' || ct === 'viewport' || ct === 'camera';
+      document.getElementById('camera-toolbar').style.display = showCameraBar ? 'flex' : 'none';
     }
     if (msg.type === 'cellmap:editMode') {
       if (msg.enabled && cellMapData && !cellEditMode) {
