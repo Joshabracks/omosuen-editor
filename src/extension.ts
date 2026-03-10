@@ -18,6 +18,7 @@ import {
   getDevServer,
 } from './commands/preview';
 import { registerCreateProjectCommand } from './commands/create-project';
+import { registerChangeVersionCommand } from './commands/change-version';
 import { registerCrudCommands, reassignIds, ALL_COMPONENT_TYPES, createDefaultComponent, computeGlobalUniquenessFlags } from './commands/component-crud';
 import { registerExportCommand } from './commands/scene-export';
 import { registerBuildTasks } from './tasks/build';
@@ -265,6 +266,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // ── Create Project command ────────────────────────────────────
 
   registerCreateProjectCommand(context);
+
+  // ── Change Engine Version command ──────────────────────────────
+
+  registerChangeVersionCommand(context);
 
   // ── CRUD commands (add / delete / duplicate / rename) ─────────
 

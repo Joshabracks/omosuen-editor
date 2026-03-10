@@ -104,6 +104,11 @@
         "icon": "$(new-folder)"
       },
       {
+        "command": "omosuen.changeVersion",
+        "title": "Omosuen: Change Engine Version",
+        "icon": "$(versions)"
+      },
+      {
         "command": "omosuen.addComponent.nexus",
         "title": "Nexus",
         "category": "Omosuen: Add"

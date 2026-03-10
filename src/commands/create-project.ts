@@ -19,7 +19,7 @@ interface GitHubRelease {
   draft: boolean;
 }
 
-interface ReleaseOption {
+export interface ReleaseOption {
   tag: string;
   label: string;
 }
@@ -39,7 +39,7 @@ function httpsGet(url: string): Promise<{ statusCode: number; body: string }> {
   });
 }
 
-async function fetchReleases(): Promise<ReleaseOption[]> {
+export async function fetchReleases(): Promise<ReleaseOption[]> {
   const res = await httpsGet(
     'https://api.github.com/repos/Joshabracks/omosuen/releases'
   );
@@ -83,7 +83,7 @@ export function httpsDownloadFile(url: string, destPath: string): Promise<void> 
 
 // ── Shell helpers ───────────────────────────────────────────────
 
-function runCommand(
+export function runCommand(
   command: string,
   args: string[],
   cwd: string
