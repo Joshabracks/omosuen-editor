@@ -15,7 +15,7 @@ const ICON_TYPES = new Set([
   'nexus', 'transform', 'sprite', 'camera', 'viewport', 'light',
   'collider', 'event-collider', 'timer', 'input-controller',
   'animation-controller', 'cell-map', 'texture-map', 'atlas-manager',
-  'audio-manager', 'audio-controller', 'ui-overlay', 'data-layer',
+  'audio-track', 'audio-player', 'audio-effect', 'ui-overlay', 'data-layer',
   'flag-manager', 'messenger',
 ]);
 

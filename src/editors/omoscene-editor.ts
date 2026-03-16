@@ -84,6 +84,8 @@ export class OmosceneEditorProvider
   private activeDocument: vscode.TextDocument | null = null;
   private activeParsed: OmosceneFile | null = null;
   private activePanel: vscode.WebviewPanel | null = null;
+  private _inAudioEditor = false;
+  private _audioEffectId: number | undefined;
 
   constructor(
     private readonly sceneTree: SceneTreeProvider,
@@ -164,6 +166,7 @@ export class OmosceneEditorProvider
       cameraId?: number;
       property?: string;
       value?: unknown;
+      effectId?: number;
     }) => {
       if (msg.type === 'ready') {
         this.postSceneData(webviewPanel, this.activeParsed);
@@ -173,6 +176,15 @@ export class OmosceneEditorProvider
         this.updateComponentProperty(msg.transformId, 'position', msg.position);
       } else if (msg.type === 'cameraPropertyChanged' && msg.cameraId !== undefined && msg.property) {
         this.updateComponentProperty(msg.cameraId, msg.property, msg.value);
+      } else if (msg.type === 'audioEffectChanged' && msg.effectId !== undefined && msg.property) {
+        this.updateComponentProperty(msg.effectId, msg.property, msg.value);
+        // Also update the inspector if it's showing this component
+        if (this.activeParsed) {
+          const comp = findComponentById(this.activeParsed.scene, msg.effectId);
+          if (comp) {
+            this.inspector.showComponent(comp);
+          }
+        }
       }
     });
 
@@ -361,6 +373,11 @@ export class OmosceneEditorProvider
         value,
       });
     }
+
+    // Forward to audio editor if this is the active effect component
+    if (this._inAudioEditor && componentId === this._audioEffectId) {
+      this.forwardAudioEditorUpdate(property, value);
+    }
   }
 
   /**
@@ -401,6 +418,90 @@ export class OmosceneEditorProvider
         type: 'cellmap:editMode',
         enabled,
       });
+    }
+  }
+
+  /**
+   * Switch the editor webview to the audio editor scene
+   */
+  enterAudioEditor(effectComponent: SerializedComponent): void {
+    if (!this.activePanel || !this.activeParsed) {return;}
+    if (this._inAudioEditor && this._audioEffectId === effectComponent.id) {return;}
+
+    this._inAudioEditor = true;
+    this._audioEffectId = effectComponent.id;
+
+    const tracks = this.collectAudioTrackUris();
+
+    this.activePanel.webview.postMessage({
+      type: 'audioEditor:enter',
+      effectData: effectComponent,
+      effectId: effectComponent.id,
+      tracks,
+    });
+  }
+
+  /**
+   * Switch back from audio editor to the normal editor scene
+   */
+  exitAudioEditor(): void {
+    if (!this._inAudioEditor) {return;}
+    this._inAudioEditor = false;
+    this._audioEffectId = undefined;
+
+    if (this.activePanel) {
+      this.activePanel.webview.postMessage({
+        type: 'audioEditor:exit',
+      });
+    }
+  }
+
+  /**
+   * Forward a property update to the audio editor overlay if active
+   */
+  forwardAudioEditorUpdate(property: string, value: unknown): void {
+    if (!this._inAudioEditor || !this.activePanel) {return;}
+    this.activePanel.webview.postMessage({
+      type: 'audioEditor:propertyUpdate',
+      property,
+      value,
+    });
+  }
+
+  /**
+   * Collect audio-track file URIs from the scene (follows collectTextureMapUris pattern)
+   */
+  private collectAudioTrackUris(): { name: string; fileUri: string; trackId: number }[] {
+    if (!this.activeParsed || !this.activePanel) {return [];}
+    const result: { name: string; fileUri: string; trackId: number }[] = [];
+    this.walkForAudioTracks(this.activeParsed.scene, result);
+    return result;
+  }
+
+  private walkForAudioTracks(
+    component: SerializedComponent,
+    out: { name: string; fileUri: string; trackId: number }[]
+  ): void {
+    if (component.type === 'audio-track') {
+      const at = component as Record<string, unknown>;
+      const filePath = (at.filePath as string) || '';
+      let fileUri = '';
+      if (filePath && this.activePanel) {
+        const absPath = resolveFilePath(filePath);
+        if (absPath && fs.existsSync(absPath)) {
+          fileUri = this.activePanel.webview.asWebviewUri(vscode.Uri.file(absPath)).toString();
+        }
+      }
+      out.push({
+        name: component.name || 'Untitled',
+        fileUri,
+        trackId: component.id ?? 0,
+      });
+    }
+    if (isSerializedNexus(component)) {
+      for (const child of component.components) {
+        this.walkForAudioTracks(child, out);
+      }
     }
   }
 
@@ -966,7 +1067,7 @@ function getEditorWebviewHtml(webview: vscode.Webview, engineUri: string | null)
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'${cspSrc};">
+  content="default-src 'none'; img-src ${webview.cspSource} data:; media-src ${webview.cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'${cspSrc} blob:; worker-src blob:; connect-src ${webview.cspSource};">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1045,6 +1146,59 @@ function getEditorWebviewHtml(webview: vscode.Webview, engineUri: string | null)
   .camera-toolbar .lock-btn:hover { border-color: #d4a843; }
   .camera-toolbar .lock-btn.unlocked { color: #d4a843; }
   .toolbar-fields { display: flex; align-items: center; gap: 6px; }
+
+  /* Audio editor overlay */
+  .audio-editor {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 200;
+    display: none; flex-direction: column; gap: 12px;
+    padding: 16px 20px; background: #0d0a07; overflow-y: auto;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .audio-editor.visible { display: flex; }
+  .audio-editor h2 { color: #d4a843; font-size: 14px; font-weight: 600; margin: 0; }
+  .audio-editor .ae-section {
+    background: rgba(30,24,16,0.8); border: 1px solid #2e2518; border-radius: 4px;
+    padding: 10px 12px;
+  }
+  .audio-editor .ae-section-title { color: #7a7060; font-size: 11px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .audio-editor .ae-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .audio-editor .ae-row:last-child { margin-bottom: 0; }
+  .audio-editor .ae-label { color: #7a7060; font-size: 12px; min-width: 60px; }
+  .audio-editor .ae-value { color: #d4a843; font-size: 12px; min-width: 50px; text-align: right; }
+  .audio-editor select {
+    background: #1e1810; color: #c8bfb0; border: 1px solid #2e2518; border-radius: 3px;
+    padding: 4px 8px; font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  .audio-editor select:focus { border-color: #d4a843; outline: none; }
+  .audio-editor button {
+    background: #1e1810; color: #c8bfb0; border: 1px solid #2e2518; border-radius: 3px;
+    padding: 4px 12px; font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  .audio-editor button:hover { background: #271f14; border-color: #d4a843; }
+  .audio-editor button.active { background: #271f14; border-color: #d4a843; color: #d4a843; }
+  .audio-editor input[type="range"] {
+    flex: 1; accent-color: #d4a843; height: 4px; cursor: pointer;
+  }
+  .audio-editor .ae-transport { display: flex; align-items: center; gap: 8px; }
+  .audio-editor .ae-status { color: #d4a843; font-size: 12px; margin-left: 8px; }
+  .audio-editor .ae-timer { display: flex; align-items: center; gap: 8px; }
+  .audio-editor .ae-timer span { font-size: 11px; color: #7a7060; min-width: 36px; }
+  .audio-editor .ae-eq-wrap { display: flex; align-items: flex-end; height: 100px; }
+  .audio-editor .ae-eq-band {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 0 10px;
+  }
+  .audio-editor .ae-eq-band input[type="range"] {
+    writing-mode: vertical-lr; direction: rtl; width: 24px; height: 80px;
+    -webkit-appearance: slider-vertical; flex: none;
+  }
+  .audio-editor .ae-eq-band span { font-size: 9px; color: #7a7060; }
+  .audio-editor .ae-spatial-wrap { display: flex; align-items: center; gap: 16px; }
+  .audio-editor .hex-svg { cursor: crosshair; }
+  .audio-editor .hex-outline { fill: none; stroke: #2e2518; stroke-width: 1.5; }
+  .audio-editor .hex-dot { fill: #d4a843; cursor: grab; }
+  .audio-editor .hex-label { fill: #7a7060; font-size: 10px; }
+  .audio-editor .ae-spatial-readout { color: #7a7060; font-size: 11px; }
+  .audio-editor .ae-spatial-readout span { color: #c8bfb0; }
 </style>
 </head>
 <body>
@@ -1091,6 +1245,89 @@ function getEditorWebviewHtml(webview: vscode.Webview, engineUri: string | null)
     <input type="number" id="sc-pos-x" step="0.5" class="pos-input" placeholder="X">
     <input type="number" id="sc-pos-y" step="0.5" class="pos-input" placeholder="Y">
     <input type="number" id="sc-pos-z" step="0.5" class="pos-input" placeholder="Z">
+  </div>
+</div>
+
+<!-- Audio editor overlay (hidden by default) -->
+<div class="audio-editor" id="audio-editor">
+  <h2>Audio Effect Editor</h2>
+
+  <div class="ae-section">
+    <div class="ae-transport">
+      <select id="ae-track-select"><option value="">No tracks</option></select>
+      <button id="ae-play">&#9654; PLAY</button>
+      <button id="ae-pause">&#9208; PAUSE</button>
+      <button id="ae-stop">&#9209; STOP</button>
+      <span class="ae-status" id="ae-status">STOPPED</span>
+    </div>
+    <div class="ae-timer">
+      <span id="ae-time">00:00</span>
+      <input type="range" id="ae-seek" min="0" max="1000" value="0">
+      <span id="ae-length">00:00</span>
+    </div>
+  </div>
+
+  <div class="ae-section">
+    <div class="ae-section-title">LEVELS</div>
+    <div class="ae-row">
+      <span class="ae-label">Volume</span>
+      <input type="range" id="ae-volume" min="0" max="100" value="100">
+      <span class="ae-value" id="ae-volume-val">1.00</span>
+    </div>
+    <div class="ae-section-title" style="margin-top:8px">EQ</div>
+    <div class="ae-eq-wrap" id="ae-eq-wrap"></div>
+  </div>
+
+  <div class="ae-section">
+    <div class="ae-section-title">PANNING</div>
+    <div class="ae-row">
+      <button id="ae-stereo" class="active">STEREO</button>
+      <button id="ae-surround">SURROUND</button>
+    </div>
+    <div id="ae-stereo-panel">
+      <div class="ae-row">
+        <span class="ae-label">Pan</span>
+        <input type="range" id="ae-pan" min="-100" max="100" value="0">
+        <span class="ae-value" id="ae-pan-val">0.00</span>
+      </div>
+    </div>
+    <div id="ae-surround-panel" style="display:none">
+      <div class="ae-spatial-wrap">
+        <svg id="ae-hex-svg" class="hex-svg" viewBox="0 0 200 200" width="160" height="160">
+          <polygon id="ae-hex-poly" class="hex-outline"/>
+          <circle id="ae-hex-dot" cx="100" cy="100" r="7" class="hex-dot"/>
+        </svg>
+        <div class="ae-spatial-readout">
+          <div>X: <span id="ae-spatial-x">0.00</span></div>
+          <div>Y: <span id="ae-spatial-y">0.00</span></div>
+          <div>Z: <span id="ae-spatial-z">0.00</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ae-section">
+    <div class="ae-section-title">EFFECTS</div>
+    <div class="ae-row">
+      <span class="ae-label">Pitch</span>
+      <input type="range" id="ae-pitch" min="-240" max="240" value="0">
+      <span class="ae-value" id="ae-pitch-val">0.0 st</span>
+    </div>
+    <div class="ae-row">
+      <span class="ae-label">Speed</span>
+      <input type="range" id="ae-speed" min="10" max="400" value="100">
+      <span class="ae-value" id="ae-speed-val">1.00x</span>
+    </div>
+    <div class="ae-row">
+      <span class="ae-label">Reverb</span>
+      <input type="range" id="ae-reverb" min="0" max="100" value="0">
+      <span class="ae-value" id="ae-reverb-val">0.00</span>
+    </div>
+    <div class="ae-row">
+      <span class="ae-label">Trans. Buf</span>
+      <input type="range" id="ae-transition" min="0" max="5000" value="0" step="25">
+      <span class="ae-value" id="ae-transition-val">0 ms</span>
+    </div>
   </div>
 </div>
 
@@ -1176,6 +1413,22 @@ ${engineScript}
   var dragStartMouse = null;
   var dragStartPosition = null;
   var dragEntityId = null;
+
+  // Audio editor state
+  var audioEditorActive = false;
+  var audioEditorScene = null;
+  var audioTrackController = null;
+  var audioPlayer = null;
+  var audioEffect = null;
+  var audioTracks = []; // { name, fileUri, engineTrack }
+  var audioEffectId = null;
+  var audioTimerInterval = null;
+  var audioIsSeeking = false;
+  var audioIsSurround = false;
+  var AE_EQ_BANDS = 10;
+  var AE_HEX_RADIUS = 70;
+  var AE_HEX_CX = 100;
+  var AE_HEX_CY = 100;
 
   // Camera toolbar state
   var viewingSceneCamera = false;
@@ -2303,6 +2556,15 @@ ${engineScript}
         toggleCellEditMode();
       }
     }
+    if (msg.type === 'audioEditor:enter') {
+      enterAudioEditorScene(msg.effectData, msg.effectId, msg.tracks || []);
+    }
+    if (msg.type === 'audioEditor:exit') {
+      exitAudioEditorScene();
+    }
+    if (msg.type === 'audioEditor:propertyUpdate' && audioEditorActive) {
+      updateAudioEditorSlider(msg.property, msg.value);
+    }
   });
 
   // ── Camera Toolbar Events ────────────────────────────────────
@@ -2383,6 +2645,549 @@ ${engineScript}
   document.getElementById('sc-pos-x').addEventListener('change', handlePositionFieldChange);
   document.getElementById('sc-pos-y').addEventListener('change', handlePositionFieldChange);
   document.getElementById('sc-pos-z').addEventListener('change', handlePositionFieldChange);
+
+  // ── Audio Editor ────────────────────────────────────────────
+  var aeOverlay = document.getElementById('audio-editor');
+  var aeTrackSelect = document.getElementById('ae-track-select');
+  var aeStatusEl = document.getElementById('ae-status');
+  var aeTimeEl = document.getElementById('ae-time');
+  var aeLengthEl = document.getElementById('ae-length');
+  var aeSeekSlider = document.getElementById('ae-seek');
+  var aeEqWrap = document.getElementById('ae-eq-wrap');
+
+  function aeFormatTime(ms) {
+    var totalSec = Math.floor(ms / 1000);
+    var min = Math.floor(totalSec / 60);
+    var sec = totalSec % 60;
+    return String(min).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+  }
+
+  // Hexagon helpers
+  function aeHexVertex(index) {
+    var angle = (Math.PI / 2) + (index * Math.PI / 3);
+    return {
+      x: AE_HEX_CX + AE_HEX_RADIUS * Math.cos(angle),
+      y: AE_HEX_CY - AE_HEX_RADIUS * Math.sin(angle)
+    };
+  }
+
+  function aeHexPoints() {
+    return Array.from({ length: 6 }, function(_, i) {
+      var v = aeHexVertex(i);
+      return v.x + ',' + v.y;
+    }).join(' ');
+  }
+
+  function aePointInHexagon(px, py) {
+    var verts = Array.from({ length: 6 }, function(_, i) { return aeHexVertex(i); });
+    var inside = false;
+    for (var i = 0, j = 5; i < 6; j = i++) {
+      var xi = verts[i].x, yi = verts[i].y;
+      var xj = verts[j].x, yj = verts[j].y;
+      if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  function aeClampToHexagon(px, py) {
+    if (aePointInHexagon(px, py)) return { x: px, y: py };
+    var verts = Array.from({ length: 6 }, function(_, i) { return aeHexVertex(i); });
+    var bestX = AE_HEX_CX, bestY = AE_HEX_CY, bestDist = Infinity;
+    for (var i = 0; i < 6; i++) {
+      var a = verts[i], b = verts[(i + 1) % 6];
+      var dx = b.x - a.x, dy = b.y - a.y;
+      var len2 = dx * dx + dy * dy;
+      var t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / len2));
+      var cx = a.x + t * dx, cy = a.y + t * dy;
+      var d = (cx - px) * (cx - px) + (cy - py) * (cy - py);
+      if (d < bestDist) { bestDist = d; bestX = cx; bestY = cy; }
+    }
+    return { x: bestX, y: bestY };
+  }
+
+  // Build EQ bands
+  function aeBuildEqBands(mixValues) {
+    aeEqWrap.innerHTML = '';
+    for (var i = 0; i < AE_EQ_BANDS; i++) {
+      var band = document.createElement('div');
+      band.className = 'ae-eq-band';
+      var slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '-100';
+      slider.max = '100';
+      slider.value = String(Math.round((mixValues[i] || 0) * 100));
+      slider.dataset.bandIndex = String(i);
+      slider.addEventListener('input', function(e) {
+        var idx = parseInt(e.target.dataset.bandIndex, 10);
+        var val = parseInt(e.target.value, 10) / 100;
+        if (audioTrackController) {
+          audioTrackController.setMixBand(idx, val);
+        }
+        aeNotifyChange('mix.' + idx, val);
+      });
+      var label = document.createElement('span');
+      label.textContent = String(i + 1);
+      band.appendChild(slider);
+      band.appendChild(label);
+      aeEqWrap.appendChild(band);
+    }
+  }
+
+  // Set hex polygon points
+  function aeInitHex() {
+    var poly = document.getElementById('ae-hex-poly');
+    if (poly) poly.setAttribute('points', aeHexPoints());
+    // Add hex labels
+    var svg = document.getElementById('ae-hex-svg');
+    if (!svg) return;
+    var labels = ['FC', 'FR', 'RR', 'RC', 'RL', 'FL'];
+    for (var i = 0; i < 6; i++) {
+      var v = aeHexVertex(i);
+      var offsetX = (i === 0 || i === 3) ? 0 : (i < 3 ? 12 : -12);
+      var offsetY = i === 0 ? -10 : (i === 3 ? 15 : 0);
+      var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', String(v.x + offsetX));
+      text.setAttribute('y', String(v.y + offsetY));
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('dominant-baseline', 'middle');
+      text.setAttribute('class', 'hex-label');
+      text.textContent = labels[i];
+      svg.appendChild(text);
+    }
+  }
+
+  function aeNotifyChange(property, value) {
+    vscode.postMessage({
+      type: 'audioEffectChanged',
+      effectId: audioEffectId,
+      property: property,
+      value: value,
+    });
+  }
+
+  function aeUpdateTransportStatus(status) {
+    if (aeStatusEl) aeStatusEl.textContent = status;
+  }
+
+  async function enterAudioEditorScene(effectData, effectId, tracks) {
+    if (!hasEngine || audioEditorActive) return;
+    audioEditorActive = true;
+    audioEffectId = effectId;
+
+    // Show overlay, hide other UI
+    aeOverlay.classList.add('visible');
+    document.getElementById('camera-toolbar').style.display = 'none';
+    if (cellEditMode) toggleCellEditMode();
+    gizmoCanvas.style.display = 'none';
+
+    // Create audio editor scene
+    var scene = await Omosuen.newComponent('nexus', { name: 'AudioEditorScene' });
+    audioEditorScene = scene;
+
+    // Audio player (GLOBAL unique)
+    audioPlayer = await Omosuen.newComponent('audio-player', {
+      name: 'EditorAudioPlayer',
+      masterVolume: 1.0,
+      muted: false,
+    }, scene);
+
+    // Audio effect
+    audioEffect = await Omosuen.newComponent('audio-effect', {
+      name: effectData.name || 'EditorEffect',
+      pitchShift: effectData.pitchShift || 0,
+      speedShift: effectData.speedShift || 1.0,
+      reverb: effectData.reverb || 0,
+      mix: effectData.mix ? effectData.mix.slice() : [],
+      volume: effectData.volume !== undefined ? effectData.volume : 1.0,
+      pan: effectData.pan || 0,
+      spatial: !!effectData.spatial,
+      spatialX: effectData.spatialX || 0,
+      spatialY: effectData.spatialY || 0,
+      spatialZ: effectData.spatialZ || 0,
+      transitionBuffer: effectData.transitionBuffer ?? 150,
+    }, scene);
+
+    // Audio tracks
+    audioTracks = [];
+    for (var i = 0; i < tracks.length; i++) {
+      var t = tracks[i];
+      var engineTrack = await Omosuen.newComponent('audio-track', {
+        name: t.name,
+        filePath: t.fileUri,
+      }, scene);
+      audioTracks.push({ name: t.name, fileUri: t.fileUri, engineTrack: engineTrack });
+    }
+
+    // Register and switch scene
+    Omosuen.registerScene('audio-editor', scene);
+    await Omosuen.switchScene('audio-editor');
+
+    // Populate track dropdown
+    aeTrackSelect.innerHTML = '';
+    if (audioTracks.length === 0) {
+      var opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No tracks available';
+      aeTrackSelect.appendChild(opt);
+    } else {
+      for (var j = 0; j < audioTracks.length; j++) {
+        var opt2 = document.createElement('option');
+        opt2.value = String(j);
+        opt2.textContent = audioTracks[j].name;
+        aeTrackSelect.appendChild(opt2);
+      }
+    }
+
+    // Wait for audio-player init (AudioContext creation) before creating TrackController
+    var aeInitPoll = setInterval(function() {
+      var qLen = Omosuen.getInitQueueLength();
+      if (qLen === -1) {
+        clearInterval(aeInitPoll);
+        aeCreateTrackController();
+      }
+    }, 100);
+
+    // Set up sliders from effect data
+    aeSetSliders(effectData);
+
+    // Build EQ
+    var mix = effectData.mix || [];
+    while (mix.length < AE_EQ_BANDS) mix.push(0);
+    aeBuildEqBands(mix);
+
+    // Init hex
+    aeInitHex();
+    aeUpdateHexDot(effectData.spatialX || 0, effectData.spatialZ || 0);
+
+    // Set mode
+    audioIsSurround = !!effectData.spatial;
+    aeUpdateModeUI();
+
+    // Start position timer
+    aeUpdateTransportStatus('STOPPED');
+    audioTimerInterval = setInterval(function() {
+      if (!audioTrackController || audioIsSeeking) return;
+      var pos = audioTrackController.trackPosition();
+      var len = audioTrackController.trackLength();
+      if (aeTimeEl) aeTimeEl.textContent = aeFormatTime(pos);
+      if (len > 0 && aeSeekSlider) {
+        aeSeekSlider.value = String(Math.round(pos / len * 1000));
+      }
+    }, 200);
+  }
+
+  function aeCreateTrackController() {
+    audioTrackController = null;
+    var idx = parseInt(aeTrackSelect.value, 10);
+    if (isNaN(idx) || idx < 0 || idx >= audioTracks.length) return;
+    var track = audioTracks[idx];
+    audioTrackController = new Omosuen.TrackController(
+      audioPlayer, track.engineTrack, audioEffect, true
+    );
+    // Update length display
+    setTimeout(function() {
+      if (audioTrackController) {
+        var len = audioTrackController.trackLength();
+        if (aeLengthEl) aeLengthEl.textContent = aeFormatTime(len);
+      }
+    }, 500);
+  }
+
+  function exitAudioEditorScene() {
+    if (!audioEditorActive) return;
+    audioEditorActive = false;
+
+    // Stop playback
+    if (audioTrackController) {
+      try { audioTrackController.stop(); } catch(e) {}
+      audioTrackController = null;
+    }
+
+    // Clear timer
+    if (audioTimerInterval) {
+      clearInterval(audioTimerInterval);
+      audioTimerInterval = null;
+    }
+
+    // Switch back to editor scene
+    if (hasEngine && engineReady) {
+      Omosuen.unregisterScene('audio-editor');
+      Omosuen.switchScene('editor').catch(function() {});
+    }
+
+    // Clean up
+    audioPlayer = null;
+    audioEffect = null;
+    audioTracks = [];
+    audioEditorScene = null;
+    audioEffectId = null;
+
+    // Hide overlay, restore UI
+    aeOverlay.classList.remove('visible');
+    gizmoCanvas.style.display = '';
+    document.getElementById('camera-toolbar').style.display = 'flex';
+    aeUpdateTransportStatus('STOPPED');
+    if (aeTimeEl) aeTimeEl.textContent = '00:00';
+    if (aeLengthEl) aeLengthEl.textContent = '00:00';
+    if (aeSeekSlider) aeSeekSlider.value = '0';
+  }
+
+  function aeSetSliders(data) {
+    var pitch = document.getElementById('ae-pitch');
+    var speed = document.getElementById('ae-speed');
+    var reverb = document.getElementById('ae-reverb');
+    var volume = document.getElementById('ae-volume');
+    var pan = document.getElementById('ae-pan');
+    var transition = document.getElementById('ae-transition');
+
+    if (pitch) { pitch.value = String(Math.round((data.pitchShift || 0) * 10)); }
+    if (speed) { speed.value = String(Math.round((data.speedShift || 1) * 100)); }
+    if (reverb) { reverb.value = String(Math.round((data.reverb || 0) * 100)); }
+    if (volume) { volume.value = String(Math.round((data.volume !== undefined ? data.volume : 1) * 100)); }
+    if (pan) { pan.value = String(Math.round((data.pan || 0) * 100)); }
+    if (transition) { transition.value = String(data.transitionBuffer ?? 150); }
+
+    aeUpdateSliderDisplays(data);
+  }
+
+  function aeUpdateSliderDisplays(data) {
+    var pitchVal = document.getElementById('ae-pitch-val');
+    var speedVal = document.getElementById('ae-speed-val');
+    var reverbVal = document.getElementById('ae-reverb-val');
+    var volumeVal = document.getElementById('ae-volume-val');
+    var panVal = document.getElementById('ae-pan-val');
+    var transitionVal = document.getElementById('ae-transition-val');
+
+    if (pitchVal) pitchVal.textContent = (data.pitchShift || 0).toFixed(1) + ' st';
+    if (speedVal) speedVal.textContent = (data.speedShift || 1).toFixed(2) + 'x';
+    if (reverbVal) reverbVal.textContent = (data.reverb || 0).toFixed(2);
+    if (volumeVal) volumeVal.textContent = (data.volume !== undefined ? data.volume : 1).toFixed(2);
+    if (panVal) panVal.textContent = (data.pan || 0).toFixed(2);
+    if (transitionVal) transitionVal.textContent = (data.transitionBuffer ?? 150) + ' ms';
+
+    // Spatial readout
+    var sx = document.getElementById('ae-spatial-x');
+    var sy = document.getElementById('ae-spatial-y');
+    var sz = document.getElementById('ae-spatial-z');
+    if (sx) sx.textContent = (data.spatialX || 0).toFixed(2);
+    if (sy) sy.textContent = (data.spatialY || 0).toFixed(2);
+    if (sz) sz.textContent = (data.spatialZ || 0).toFixed(2);
+  }
+
+  function updateAudioEditorSlider(property, value) {
+    // Called when inspector changes a property — update slider to match
+    var data = {};
+    data[property] = value;
+    switch (property) {
+      case 'pitchShift':
+        var pitch = document.getElementById('ae-pitch');
+        if (pitch) pitch.value = String(Math.round(value * 10));
+        if (audioTrackController) audioTrackController.pitchShift = value;
+        break;
+      case 'speedShift':
+        var speed = document.getElementById('ae-speed');
+        if (speed) speed.value = String(Math.round(value * 100));
+        if (audioTrackController) audioTrackController.speedShift = value;
+        break;
+      case 'reverb':
+        var rev = document.getElementById('ae-reverb');
+        if (rev) rev.value = String(Math.round(value * 100));
+        if (audioTrackController) audioTrackController.reverb = value;
+        break;
+      case 'volume':
+        var vol = document.getElementById('ae-volume');
+        if (vol) vol.value = String(Math.round(value * 100));
+        if (audioTrackController) audioTrackController.volume = value;
+        break;
+      case 'pan':
+        var panSlider = document.getElementById('ae-pan');
+        if (panSlider) panSlider.value = String(Math.round(value * 100));
+        if (audioTrackController) audioTrackController.pan = value;
+        break;
+      case 'spatial':
+        audioIsSurround = !!value;
+        aeUpdateModeUI();
+        if (audioTrackController) audioTrackController.spatial = !!value;
+        break;
+      case 'transitionBuffer':
+        var tb = document.getElementById('ae-transition');
+        if (tb) tb.value = String(value);
+        break;
+    }
+    aeUpdateSliderDisplays(data);
+  }
+
+  function aeUpdateHexDot(sx, sz) {
+    var dot = document.getElementById('ae-hex-dot');
+    if (!dot) return;
+    dot.setAttribute('cx', String(AE_HEX_CX + sx * AE_HEX_RADIUS));
+    dot.setAttribute('cy', String(AE_HEX_CY - sz * AE_HEX_RADIUS));
+  }
+
+  function aeUpdateModeUI() {
+    var stereoBtn = document.getElementById('ae-stereo');
+    var surroundBtn = document.getElementById('ae-surround');
+    var stereoPanel = document.getElementById('ae-stereo-panel');
+    var surroundPanel = document.getElementById('ae-surround-panel');
+    if (audioIsSurround) {
+      if (stereoBtn) stereoBtn.classList.remove('active');
+      if (surroundBtn) surroundBtn.classList.add('active');
+      if (stereoPanel) stereoPanel.style.display = 'none';
+      if (surroundPanel) surroundPanel.style.display = '';
+    } else {
+      if (stereoBtn) stereoBtn.classList.add('active');
+      if (surroundBtn) surroundBtn.classList.remove('active');
+      if (stereoPanel) stereoPanel.style.display = '';
+      if (surroundPanel) surroundPanel.style.display = 'none';
+    }
+  }
+
+  // ── Audio Editor Event Wiring ──────────────────────────────────
+  document.getElementById('ae-play').addEventListener('click', function() {
+    if (!audioTrackController) return;
+    audioTrackController.play();
+    aeUpdateTransportStatus('PLAYING');
+  });
+
+  document.getElementById('ae-pause').addEventListener('click', function() {
+    if (!audioTrackController) return;
+    audioTrackController.pause();
+    aeUpdateTransportStatus('PAUSED');
+  });
+
+  document.getElementById('ae-stop').addEventListener('click', function() {
+    if (!audioTrackController) return;
+    audioTrackController.stop();
+    aeUpdateTransportStatus('STOPPED');
+  });
+
+  aeTrackSelect.addEventListener('change', function() {
+    if (audioTrackController) {
+      try { audioTrackController.stop(); } catch(e) {}
+    }
+    aeCreateTrackController();
+    aeUpdateTransportStatus('STOPPED');
+  });
+
+  aeSeekSlider.addEventListener('mousedown', function() { audioIsSeeking = true; });
+  aeSeekSlider.addEventListener('mouseup', function() {
+    audioIsSeeking = false;
+    if (!audioTrackController) return;
+    var ratio = parseInt(aeSeekSlider.value, 10) / 1000;
+    var len = audioTrackController.trackLength();
+    audioTrackController.setTrackPosition(ratio * len);
+  });
+
+  document.getElementById('ae-pitch').addEventListener('input', function() {
+    var val = parseInt(this.value, 10) / 10;
+    if (audioTrackController) audioTrackController.pitchShift = val;
+    document.getElementById('ae-pitch-val').textContent = val.toFixed(1) + ' st';
+    aeNotifyChange('pitchShift', val);
+  });
+
+  document.getElementById('ae-speed').addEventListener('input', function() {
+    var val = parseInt(this.value, 10) / 100;
+    if (audioTrackController) audioTrackController.speedShift = val;
+    document.getElementById('ae-speed-val').textContent = val.toFixed(2) + 'x';
+    aeNotifyChange('speedShift', val);
+  });
+
+  document.getElementById('ae-reverb').addEventListener('input', function() {
+    var val = parseInt(this.value, 10) / 100;
+    if (audioTrackController) audioTrackController.reverb = val;
+    document.getElementById('ae-reverb-val').textContent = val.toFixed(2);
+    aeNotifyChange('reverb', val);
+  });
+
+  document.getElementById('ae-volume').addEventListener('input', function() {
+    var val = parseInt(this.value, 10) / 100;
+    if (audioTrackController) audioTrackController.volume = val;
+    document.getElementById('ae-volume-val').textContent = val.toFixed(2);
+    aeNotifyChange('volume', val);
+  });
+
+  document.getElementById('ae-pan').addEventListener('input', function() {
+    var val = parseInt(this.value, 10) / 100;
+    if (audioTrackController) audioTrackController.pan = val;
+    document.getElementById('ae-pan-val').textContent = val.toFixed(2);
+    aeNotifyChange('pan', val);
+  });
+
+  document.getElementById('ae-transition').addEventListener('input', function() {
+    var val = parseInt(this.value, 10);
+    document.getElementById('ae-transition-val').textContent = val + ' ms';
+    aeNotifyChange('transitionBuffer', val);
+  });
+
+  document.getElementById('ae-stereo').addEventListener('click', function() {
+    audioIsSurround = false;
+    aeUpdateModeUI();
+    if (audioTrackController) audioTrackController.spatial = false;
+    aeNotifyChange('spatial', false);
+  });
+
+  document.getElementById('ae-surround').addEventListener('click', function() {
+    audioIsSurround = true;
+    aeUpdateModeUI();
+    if (audioTrackController) audioTrackController.spatial = true;
+    aeNotifyChange('spatial', true);
+  });
+
+  // Hex spatial drag
+  (function() {
+    var hexSvg = document.getElementById('ae-hex-svg');
+    var hexDot = document.getElementById('ae-hex-dot');
+    var dragging = false;
+
+    function getHexPos(e) {
+      var rect = hexSvg.getBoundingClientRect();
+      var scaleX = 200 / rect.width;
+      var scaleY = 200 / rect.height;
+      return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+      };
+    }
+
+    function updateSpatial(e) {
+      var pos = getHexPos(e);
+      var clamped = aeClampToHexagon(pos.x, pos.y);
+      var sx = (clamped.x - AE_HEX_CX) / AE_HEX_RADIUS;
+      var sz = -(clamped.y - AE_HEX_CY) / AE_HEX_RADIUS;
+      sx = Math.max(-1, Math.min(1, sx));
+      sz = Math.max(-1, Math.min(1, sz));
+
+      hexDot.setAttribute('cx', String(clamped.x));
+      hexDot.setAttribute('cy', String(clamped.y));
+
+      if (audioTrackController) {
+        audioTrackController.setSpatialPosition(sx, 0, sz);
+      }
+
+      var sxEl = document.getElementById('ae-spatial-x');
+      var szEl = document.getElementById('ae-spatial-z');
+      if (sxEl) sxEl.textContent = sx.toFixed(2);
+      if (szEl) szEl.textContent = sz.toFixed(2);
+
+      aeNotifyChange('spatialX', sx);
+      aeNotifyChange('spatialZ', sz);
+    }
+
+    if (hexSvg) {
+      hexSvg.addEventListener('mousedown', function(e) {
+        dragging = true;
+        updateSpatial(e);
+      });
+      document.addEventListener('mousemove', function(e) {
+        if (dragging) updateSpatial(e);
+      });
+      document.addEventListener('mouseup', function() {
+        dragging = false;
+      });
+    }
+  })();
 
   // Signal ready
   vscode.postMessage({ type: 'ready' });

@@ -151,6 +151,13 @@ export function activate(context: vscode.ExtensionContext): void {
     // Auto-activate cell-map editing when a cell-map component is selected
     omosceneEditor.setCellEditMode(component.type === 'cell-map');
 
+    // Auto-activate audio editor when an audio-effect component is selected
+    if (component.type === 'audio-effect') {
+      omosceneEditor.enterAudioEditor(component);
+    } else {
+      omosceneEditor.exitAudioEditor();
+    }
+
     // Notify preview of selection
     const server = getDevServer();
     if (server?.isRunning && component.id !== undefined) {
@@ -440,6 +447,23 @@ export function activate(context: vscode.ExtensionContext): void {
           return;
         }
         openAnimationEditor(context, component, omosceneEditor, inspector);
+      }
+    )
+  );
+
+  // ── Audio Editor command ──────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'omosuen.openAudioEditor',
+      (component?: SerializedComponent) => {
+        if (!component) {
+          vscode.window.showWarningMessage(
+            'Select an audio-effect component first.'
+          );
+          return;
+        }
+        omosceneEditor.enterAudioEditor(component);
       }
     )
   );

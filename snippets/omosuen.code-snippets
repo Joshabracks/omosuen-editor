@@ -2,7 +2,7 @@
   "New Component": {
     "prefix": "omo-component",
     "body": [
-      "const ${1:component} = await newComponent('${2|nexus,transform,sprite,camera,viewport,collider,event-collider,light,timer,messenger,input-controller,audio-manager,audio-controller,animation-controller,ui-overlay,data-layer,flag-manager,texture-map,atlas-manager,cell-map|}', {",
+      "const ${1:component} = await newComponent('${2|nexus,transform,sprite,camera,viewport,collider,event-collider,light,timer,messenger,input-controller,audio-track,audio-player,audio-effect,animation-controller,ui-overlay,data-layer,flag-manager,texture-map,atlas-manager,cell-map|}', {",
       "\tname: '${3:${1}}',",
       "\t$0",
       "}, ${4:parent});"

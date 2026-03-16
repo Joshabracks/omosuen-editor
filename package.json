@@ -164,13 +164,18 @@
         "category": "Omosuen: Add"
       },
       {
-        "command": "omosuen.addComponent.audio-manager",
-        "title": "Audio Manager",
+        "command": "omosuen.addComponent.audio-track",
+        "title": "Audio Track",
         "category": "Omosuen: Add"
       },
       {
-        "command": "omosuen.addComponent.audio-controller",
-        "title": "Audio Controller",
+        "command": "omosuen.addComponent.audio-player",
+        "title": "Audio Player",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.audio-effect",
+        "title": "Audio Effect",
         "category": "Omosuen: Add"
       },
       {
@@ -256,6 +261,11 @@
         "command": "omosuen.openFrameEditor",
         "title": "Omosuen: Edit Texture Frames",
         "icon": "$(symbol-array)"
+      },
+      {
+        "command": "omosuen.openAudioEditor",
+        "title": "Omosuen: Open Audio Editor",
+        "icon": "$(waveform)"
       },
       {
         "command": "omosuen.searchSceneTree",
@@ -451,9 +461,10 @@
         { "command": "omosuen.addComponent.timer",                "group": "3_behavior@1" },
         { "command": "omosuen.addComponent.messenger",            "group": "3_behavior@2" },
         { "command": "omosuen.addComponent.input-controller",     "group": "3_behavior@3" },
-        { "command": "omosuen.addComponent.audio-manager",        "group": "4_media@1", "when": "!omosuen.exists.audio-manager" },
-        { "command": "omosuen.addComponent.audio-controller",     "group": "4_media@2" },
-        { "command": "omosuen.addComponent.animation-controller", "group": "4_media@3" },
+        { "command": "omosuen.addComponent.audio-track",            "group": "4_media@1" },
+        { "command": "omosuen.addComponent.audio-player",         "group": "4_media@2", "when": "!omosuen.exists.audio-player" },
+        { "command": "omosuen.addComponent.audio-effect",         "group": "4_media@3" },
+        { "command": "omosuen.addComponent.animation-controller", "group": "4_media@4" },
         { "command": "omosuen.addComponent.ui-overlay",           "group": "5_system@1" },
         { "command": "omosuen.addComponent.data-layer",           "group": "5_system@2" },
         { "command": "omosuen.addComponent.flag-manager",         "group": "5_system@3", "when": "!omosuen.exists.flag-manager" },

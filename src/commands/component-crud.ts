@@ -27,8 +27,9 @@ const COMPONENT_UNIQUENESS: Record<COMPONENT_TYPE, ComponentUnique> = {
   'timer': ComponentUnique.FALSE,
   'messenger': ComponentUnique.FALSE,
   'input-controller': ComponentUnique.FALSE,
-  'audio-manager': ComponentUnique.GLOBAL,
-  'audio-controller': ComponentUnique.FALSE,
+  'audio-track': ComponentUnique.FALSE,
+  'audio-player': ComponentUnique.GLOBAL,
+  'audio-effect': ComponentUnique.FALSE,
   'animation-controller': ComponentUnique.FALSE,
   'ui-overlay': ComponentUnique.FALSE,
   'data-layer': ComponentUnique.FALSE,
@@ -41,7 +42,7 @@ const COMPONENT_UNIQUENESS: Record<COMPONENT_TYPE, ComponentUnique> = {
 export const ALL_COMPONENT_TYPES: COMPONENT_TYPE[] = [
   'nexus', 'transform', 'sprite', 'camera', 'viewport',
   'collider', 'event-collider', 'light', 'timer', 'messenger',
-  'input-controller', 'audio-manager', 'audio-controller',
+  'input-controller', 'audio-track', 'audio-player', 'audio-effect',
   'animation-controller', 'ui-overlay', 'data-layer',
   'flag-manager', 'texture-map', 'atlas-manager', 'cell-map',
 ];

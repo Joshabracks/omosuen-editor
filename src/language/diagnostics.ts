@@ -18,7 +18,7 @@ import type { WorkspaceDiscovery } from './discovery';
 
 const COMPONENT_UNIQUENESS: Partial<Record<COMPONENT_TYPE, ComponentUnique>> = {
   'camera': ComponentUnique.LOCAL,
-  'audio-manager': ComponentUnique.GLOBAL,
+  'audio-player': ComponentUnique.GLOBAL,
   'flag-manager': ComponentUnique.GLOBAL,
   'atlas-manager': ComponentUnique.GLOBAL,
 };

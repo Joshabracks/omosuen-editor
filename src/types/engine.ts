@@ -23,13 +23,15 @@ export type COMPONENT_TYPE =
   | 'event-collider'
   | 'timer'
   | 'light'
-  | 'audio-manager'
-  | 'audio-controller';
+  | 'audio-track'
+  | 'audio-player'
+  | 'audio-effect';
 
 export enum ComponentUnique {
   FALSE = 0,
   LOCAL = 1,
   GLOBAL = 2,
+  NAME = 3,
 }
 
 /**
