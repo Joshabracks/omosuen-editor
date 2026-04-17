@@ -143,6 +143,7 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
 
   private computeAnimationControllerContext(ac: SerializedComponent): {
     hasSiblingSprite: boolean;
+    availableAnimations: string[];
   } {
     let hasSiblingSprite = false;
     if (this.sceneRoot && ac.id !== undefined) {
@@ -151,7 +152,14 @@ export class InspectorProvider implements vscode.WebviewViewProvider {
         hasSiblingSprite = parent.components.some((c) => c.type === 'sprite');
       }
     }
-    return { hasSiblingSprite };
+
+    const comp = ac as Record<string, unknown>;
+    const anims = (comp.animations as Array<{ name?: unknown }> | undefined) ?? [];
+    const availableAnimations = anims
+      .map((a) => (typeof a?.name === 'string' ? a.name : ''))
+      .filter((n) => n.length > 0);
+
+    return { hasSiblingSprite, availableAnimations };
   }
 
   private computeCellMapContext(cm: SerializedComponent): {

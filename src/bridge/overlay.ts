@@ -784,6 +784,20 @@ export function getOverlayScript(wsPort: number): string {
     if (!scene) return;
     var comp = scene.getComponentById(payload.componentId, true);
     if (!comp) return;
+
+    // currentAnimation is an imperative field: writing it has no visible effect.
+    // Dispatch through play()/stop() so the sprite frame updates this tick.
+    if (comp.type === 'animation-controller' && payload.property === 'currentAnimation') {
+      var name = reconstructValue(payload.value);
+      if (typeof name === 'string' && name.length > 0) {
+        if (typeof comp.play === 'function') comp.play(name, true);
+      } else {
+        if (typeof comp.stop === 'function') comp.stop();
+        comp.currentAnimation = null;
+      }
+      return;
+    }
+
     setNestedProperty(comp, payload.property, reconstructValue(payload.value));
   }
 

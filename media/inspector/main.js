@@ -188,6 +188,16 @@
   function renderProperty(container, schema, data) {
     const value = getNestedValue(data, schema.name);
 
+    // Animation-controller: currentAnimation becomes a dropdown of available names
+    if (
+      schema.name === 'currentAnimation' &&
+      currentAnimationControllerContext
+    ) {
+      const names = currentAnimationControllerContext.availableAnimations || [];
+      container.appendChild(renderAnimationNameSelect(schema, value, names));
+      return;
+    }
+
     switch (schema.type) {
       case 'string':
         container.appendChild(renderStringField(schema, value));
@@ -770,6 +780,58 @@
 
     select.addEventListener('change', () => {
       sendPropertyChange(schema.name, select.value);
+    });
+
+    valueDiv.appendChild(select);
+    row.appendChild(valueDiv);
+    return row;
+  }
+
+  function renderAnimationNameSelect(schema, value, names) {
+    const row = document.createElement('div');
+    row.className = 'property-row';
+
+    const label = document.createElement('div');
+    label.className = 'property-label';
+    label.textContent = schema.label;
+    row.appendChild(label);
+
+    const valueDiv = document.createElement('div');
+    valueDiv.className = 'property-value';
+
+    const select = document.createElement('select');
+    select.className = 'enum-select';
+
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '(none)';
+    if (!value) noneOpt.selected = true;
+    select.appendChild(noneOpt);
+
+    let matched = !value;
+    for (let i = 0; i < names.length; i++) {
+      const opt = document.createElement('option');
+      opt.value = names[i];
+      opt.textContent = names[i];
+      if (value === names[i]) {
+        opt.selected = true;
+        matched = true;
+      }
+      select.appendChild(opt);
+    }
+
+    // Preserve visibility of a stale name that no longer exists
+    if (!matched && typeof value === 'string' && value.length > 0) {
+      const stale = document.createElement('option');
+      stale.value = value;
+      stale.textContent = value + ' (missing)';
+      stale.selected = true;
+      stale.disabled = true;
+      select.appendChild(stale);
+    }
+
+    select.addEventListener('change', () => {
+      sendPropertyChange(schema.name, select.value ? select.value : null);
     });
 
     valueDiv.appendChild(select);

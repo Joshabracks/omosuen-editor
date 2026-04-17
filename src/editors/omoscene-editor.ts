@@ -665,6 +665,20 @@ interface EditorEntity {
     viewportWidth: number;
     viewportHeight: number;
   };
+  animationController?: {
+    id: number;
+    animations: Array<{
+      name: string;
+      frames: number[];
+      frameRate: number;
+      loop: boolean;
+      onComplete?: string;
+    }>;
+    currentAnimation: string | null;
+    state: 'playing' | 'paused' | 'stopped';
+    speed: number;
+    channels: string[];
+  };
 }
 
 interface EditorTextureMap {
@@ -733,6 +747,9 @@ function walkScene(
   const transform = component.components.find((c) => c.type === 'transform');
   const sprite = component.components.find((c) => c.type === 'sprite');
   const camera = component.components.find((c) => c.type === 'camera');
+  const animCtrl = component.components.find(
+    (c) => c.type === 'animation-controller'
+  );
 
   // Only create an entity if there's a transform, sprite, or camera
   if (transform || sprite || camera) {
@@ -767,6 +784,30 @@ function walkScene(
         opacity: (s.opacity as number) ?? 1,
         showSilhouette: (s.showSilhouette as boolean) ?? false,
         silhouetteColor: { x: silCol?.x ?? 0.2, y: silCol?.y ?? 0.4, z: silCol?.z ?? 0.8, w: silCol?.w ?? 0.5 },
+      };
+    }
+
+    if (animCtrl) {
+      const ac = animCtrl as Record<string, unknown>;
+      const rawAnims =
+        (ac.animations as Array<Record<string, unknown>> | undefined) ?? [];
+      const animations = rawAnims.map((a) => ({
+        name: (a.name as string) ?? '',
+        frames: Array.isArray(a.frames) ? (a.frames as number[]) : [],
+        frameRate: (a.frameRate as number) ?? 12,
+        loop: (a.loop as boolean) ?? true,
+        onComplete: (a.onComplete as string | undefined) ?? undefined,
+      }));
+      const state = (ac.state as 'playing' | 'paused' | 'stopped') ?? 'stopped';
+      entity.animationController = {
+        id: animCtrl.id ?? -1,
+        animations,
+        currentAnimation: (ac.currentAnimation as string | null) ?? null,
+        state,
+        speed: (ac.speed as number) ?? 1.0,
+        channels: Array.isArray(ac.channels)
+          ? (ac.channels as string[])
+          : ['albedo'],
       };
     }
 
@@ -2034,7 +2075,40 @@ ${engineScript}
         opacity: se.sprite.opacity,
       };
       var eSprite = await Omosuen.newComponent('sprite', spriteOpts, eNexus);
-      engineEntities[se.id] = { nexus: eNexus, transform: eTransform, sprite: eSprite };
+
+      var eAC = null;
+      var acPrev = null;
+      if (se.animationController && se.animationController.animations.length > 0) {
+        var acData = se.animationController;
+        eAC = await Omosuen.newComponent('animation-controller', {
+          name: se.name + '_editorAnimCtrl',
+          animations: acData.animations.map(function(a) {
+            return {
+              name: a.name, frames: a.frames.slice(),
+              frameRate: a.frameRate, loop: a.loop, onComplete: a.onComplete,
+            };
+          }),
+          channels: acData.channels.slice(),
+          speed: acData.speed,
+        }, eNexus);
+
+        if (acData.currentAnimation) {
+          eAC.play(acData.currentAnimation);
+          if (acData.state === 'paused') eAC.pause();
+          else if (acData.state === 'stopped') eAC.stop();
+        }
+
+        acPrev = {
+          currentAnimation: acData.currentAnimation,
+          state: acData.state,
+          speed: acData.speed,
+        };
+      }
+
+      engineEntities[se.id] = {
+        nexus: eNexus, transform: eTransform, sprite: eSprite,
+        animationController: eAC, acPrev: acPrev,
+      };
     }
 
     // Input controller
@@ -2202,6 +2276,37 @@ ${engineScript}
       if (eng && eng.sprite && se.sprite) {
         eng.sprite.opacity = se.sprite.opacity;
         eng.sprite.tint = new Omosuen.Vector4D(se.sprite.tint.x, se.sprite.tint.y, se.sprite.tint.z, se.sprite.tint.w);
+      }
+      if (eng && eng.animationController && se.animationController) {
+        var eAC2 = eng.animationController;
+        var prev = eng.acPrev || { currentAnimation: null, state: 'stopped', speed: 1 };
+        var next = se.animationController;
+
+        if (next.speed !== prev.speed) eAC2.setSpeed(next.speed);
+
+        var animChanged = next.currentAnimation !== prev.currentAnimation;
+        var stateChanged = next.state !== prev.state;
+
+        if (animChanged || stateChanged) {
+          if (!next.currentAnimation) {
+            eAC2.stop();
+            eAC2.currentAnimation = null;
+          } else if (animChanged) {
+            eAC2.play(next.currentAnimation, true);
+            if (next.state === 'paused') eAC2.pause();
+            else if (next.state === 'stopped') eAC2.stop();
+          } else {
+            if (next.state === 'playing') eAC2.play(next.currentAnimation);
+            else if (next.state === 'paused') eAC2.pause();
+            else eAC2.stop();
+          }
+        }
+
+        eng.acPrev = {
+          currentAnimation: next.currentAnimation,
+          state: next.state,
+          speed: next.speed,
+        };
       }
     }
 
