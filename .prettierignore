@@ -1,0 +1,14 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Minified files
+*.min.js
+
+# Lock files
+package-lock.json
+
+# Archived old editor (reference only)
+_old

@@ -1,5 +1,0 @@
-<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="#B8C4D0">
-  <rect x="2" y="2" width="12" height="12" rx="1" fill="none" stroke="#B8C4D0" stroke-width="1.2"/>
-  <circle cx="5.5" cy="5.5" r="1.5" fill="#B8C4D0"/>
-  <polyline points="2,12 6,8 9,11 11,9 14,12" fill="none" stroke="#B8C4D0" stroke-width="1.2"/>
-</svg>

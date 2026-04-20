@@ -1,29 +1,49 @@
-const esbuild = require('esbuild');
+import esbuild from 'esbuild';
 
 const isProduction = process.argv.includes('--production');
 const isWatch = process.argv.includes('--watch');
 
-async function build() {
-  const context = await esbuild.context({
-    entryPoints: ['src/extension.ts'],
-    bundle: true,
-    format: 'cjs',
-    target: 'node18',
-    platform: 'node',
-    outfile: 'dist/extension.js',
-    external: ['vscode'],
-    sourcemap: !isProduction,
-    minify: isProduction,
-    logLevel: 'info',
-  });
+const commonOptions = {
+  bundle: true,
+  sourcemap: !isProduction,
+  minify: isProduction,
+  logLevel: 'info',
+};
 
+const extensionConfig = {
+  ...commonOptions,
+  entryPoints: ['src/app/extension.ts'],
+  format: 'cjs',
+  target: 'node18',
+  platform: 'node',
+  outfile: 'dist/extension.js',
+  external: ['vscode'],
+};
+
+const webviewConfig = {
+  ...commonOptions,
+  entryPoints: ['src/panel/webview.ts'],
+  format: 'iife',
+  target: 'es2020',
+  platform: 'browser',
+  outfile: 'dist/webview.js',
+};
+
+async function run() {
   if (isWatch) {
-    console.log('Watching for changes...');
-    await context.watch();
+    const extCtx = await esbuild.context(extensionConfig);
+    const webCtx = await esbuild.context(webviewConfig);
+    await Promise.all([extCtx.watch(), webCtx.watch()]);
+    console.log('[esbuild] Watching for changes...');
   } else {
-    await context.rebuild();
-    await context.dispose();
+    await Promise.all([
+      esbuild.build(extensionConfig),
+      esbuild.build(webviewConfig),
+    ]);
   }
 }
 
-build().catch(() => process.exit(1));
+run().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
