@@ -1,0 +1,87 @@
+/**
+ * Inspector property schemas, versioned per engine release.
+ *
+ * A component's editor schema is not a single document — it's a list of
+ * versions, each marked with the first engine release it applies to.
+ * The floor-match rule (largest `since` that is ≤ engine version) is how
+ * both the editor UI and the drift test pick the right schema for any
+ * given engine version.
+ *
+ * Adding a new schema version only becomes necessary when the engine
+ * changes a component's shape (field added, removed, renamed, or retyped).
+ * Until then, the original entry keeps applying to every release.
+ */
+
+/**
+ * Allowed value shapes the inspector UI can render. New types are added as
+ * inspector widgets are built out in later phases; the drift test only cares
+ * about field-name alignment, so an as-yet-unsupported type is acceptable
+ * as a placeholder for structural shape.
+ */
+export type PropertyType =
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'enum'
+  | 'Vector2D'
+  | 'Vector3D'
+  | 'Vector4D'
+  | 'object'
+  | 'array'
+  | 'map';
+
+/**
+ * Describes one inspector field corresponding to one PROPERTY_ALLOWLIST entry.
+ */
+export interface PropertySchema {
+  /** Must match the engine's PROPERTY_ALLOWLIST entry for the target component. */
+  name: string;
+  /** Value shape hint for the inspector UI. */
+  type: PropertyType;
+  /** Display label shown in the inspector. */
+  label: string;
+  /** Default value used when the serialized data is missing or unparseable. */
+  default?: unknown;
+  /** Numeric bounds; only meaningful for `type: 'number'`. */
+  min?: number;
+  max?: number;
+  step?: number;
+  /** Allowed values; only meaningful for `type: 'enum'`. */
+  values?: readonly string[];
+}
+
+/**
+ * One versioned schema snapshot for a component.
+ */
+export interface ComponentSchemaVersion {
+  /**
+   * First engine release this schema applies to, formatted like the engine's
+   * git tags: "v0.1.30". The `v` prefix is required for consistency with the
+   * rest of the tooling (UMD filenames, sync-releases, etc.).
+   */
+  since: string;
+  /** Inspector fields, ordered as the UI should render them. */
+  fields: readonly PropertySchema[];
+  /**
+   * PROPERTY_ALLOWLIST entries intentionally not modeled as inspector fields.
+   * Typical contents: WebGL resource bundles, DOM refs the engine rebuilds at
+   * runtime, private cache maps, callback slots populated by `init()`. The
+   * drift test requires every allowlist entry to appear in either `fields` or
+   * `exclude` — this field is how a schema author affirmatively says "yes,
+   * this allowlist entry exists, and yes, it's intentionally not a UI field."
+   */
+  exclude?: readonly string[];
+}
+
+/**
+ * Complete versioned schema for one component type.
+ */
+export interface ComponentSchemas {
+  /** Must match an engine COMPONENT_TYPE (e.g. "transform", "animation-controller"). */
+  componentType: string;
+  /**
+   * Schemas ordered ascending by `since`. The registry validates this order
+   * and rejects duplicate `since` values for the same component.
+   */
+  versions: readonly ComponentSchemaVersion[];
+}

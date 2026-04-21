@@ -6,7 +6,11 @@
 import { runEngineFixtureTests } from './engine-fixtures.test.js';
 import { reportAndExit } from './harness.js';
 import { runOmosceneTests } from './omoscene.test.js';
+import { runSchemaDriftTests } from './schema-drift.test.js';
+import { runSchemaTests } from './schema.test.js';
 
 runOmosceneTests();
+runSchemaTests();
 await runEngineFixtureTests();
+await runSchemaDriftTests();
 reportAndExit();

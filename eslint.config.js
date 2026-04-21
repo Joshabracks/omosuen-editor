@@ -124,6 +124,11 @@ export default [
   prettierConfig,
 
   // Per-component silo rule (requirement 1.1)
+  //
+  // Pattern `../[!.]*/**` blocks one-level-up-then-into-a-sibling-component
+  // (e.g. `../sprite/data.js` from `../transform/`), while `[!.]` ensures `..`
+  // is not matched — so shared cross-silo imports like `../../schema/registry.js`
+  // remain allowed.
   {
     files: ['src/component/*/**/*.ts'],
     rules: {
@@ -136,7 +141,7 @@ export default [
               message: 'Imports from _old/ are forbidden.',
             },
             {
-              group: ['../*/**'],
+              group: ['../[a-z]*/**', '../[a-z]*'],
               message:
                 'Components must not import from sibling component directories. Each component directory is a self-contained silo.',
             },
@@ -159,7 +164,7 @@ export default [
               message: 'Imports from _old/ are forbidden.',
             },
             {
-              group: ['../*/**'],
+              group: ['../[a-z]*/**', '../[a-z]*'],
               message:
                 'Scenes must not import from sibling scene directories. Each scene directory is a self-contained silo.',
             },
