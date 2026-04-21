@@ -83,6 +83,10 @@ export function assertDeepEqual(
     return;
   }
 
+  // Both `actual` and `expected` are declared `unknown` because this utility
+  // compares arbitrary values. After the non-null / non-array / object narrows
+  // above, "object with string keys and unknown values" is the literal type —
+  // not an escape hatch.
   const actualObj = actual as Record<string, unknown>;
   const expectedObj = expected as Record<string, unknown>;
   const aKeys = Object.keys(actualObj).sort();

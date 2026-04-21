@@ -72,7 +72,7 @@ export function runOmosceneTests(): void {
 
   test('stringify emits top-level keys in canonical order', () => {
     const text = stringify(fixture);
-    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const parsed = JSON.parse(text) as OmosceneFile;
     const keys = Object.keys(parsed);
     const expected = ['omoscene', 'engine', 'name', 'editor', 'scene'];
     if (keys.join(',') !== expected.join(',')) {

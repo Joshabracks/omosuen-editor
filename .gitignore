@@ -5,3 +5,4 @@ out/
 *.vsix
 _old/
 .vscode/
+src/test/local_releases/

@@ -155,8 +155,14 @@ function ensureCommonJsMarker(): void {
  * (no viewport / ui-overlay / input-controller components), so empty stubs
  * are sufficient.
  */
+interface BrowserGlobalStubs {
+  window?: unknown;
+  self?: unknown;
+  document?: unknown;
+}
+
 function installBrowserStubs(): void {
-  const g = globalThis as unknown as Record<string, unknown>;
+  const g = globalThis as unknown as BrowserGlobalStubs;
   if (g.window === undefined) g.window = globalThis;
   if (g.self === undefined) g.self = globalThis;
   if (g.document === undefined) {
