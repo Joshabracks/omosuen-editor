@@ -1,0 +1,41 @@
+{
+  "omoscene": 1,
+  "engine": "0.1.30",
+  "name": "pass-05-multi-component-scene",
+  "editor": {
+    "camera": { "panX": 0, "panY": 0, "zoom": 1 },
+    "selection": [],
+    "treeState": {},
+    "annotations": {},
+    "bookmarks": {}
+  },
+  "scene": {
+    "type": "nexus",
+    "name": "GameState",
+    "unique": 0,
+    "components": [
+      {
+        "type": "transform",
+        "name": "GameStateTransform",
+        "unique": 0,
+        "position": { "_vectorType": "Vector3D", "x": 0, "y": 0, "z": 0 },
+        "rotation": { "_vectorType": "Vector3D", "x": 0, "y": 0, "z": 0 },
+        "scale": { "_vectorType": "Vector3D", "x": 1, "y": 1, "z": 1 }
+      },
+      {
+        "type": "flag-manager",
+        "name": "GameFlags",
+        "unique": 2,
+        "flags": ["tutorialComplete", "firstLevelCleared", "bossDefeated"]
+      },
+      {
+        "type": "messenger",
+        "name": "GameEvents",
+        "listeners": [
+          { "pattern": "attack", "callbackKey": "handleAttack" },
+          { "pattern": "defend", "callbackKey": "handleDefend" }
+        ]
+      }
+    ]
+  }
+}

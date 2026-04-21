@@ -1,0 +1,32 @@
+{
+  "omoscene": 1,
+  "engine": "0.1.30",
+  "name": "errors-03-flag-manager-mixed-types",
+  "editor": {
+    "camera": { "panX": 0, "panY": 0, "zoom": 1 },
+    "selection": [],
+    "treeState": {},
+    "annotations": {},
+    "bookmarks": {}
+  },
+  "scene": {
+    "type": "nexus",
+    "name": "Root",
+    "unique": 0,
+    "components": [
+      {
+        "type": "flag-manager",
+        "name": "MixedFlags",
+        "unique": 2,
+        "flags": [
+          "validOne",
+          42,
+          "validTwo",
+          null,
+          true,
+          "validThree"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "omoscene": 1,
+  "engine": "0.1.30",
+  "name": "pass-04-nested-nexus-tree",
+  "editor": {
+    "camera": { "panX": 0, "panY": 0, "zoom": 1 },
+    "selection": [],
+    "treeState": {},
+    "annotations": {},
+    "bookmarks": {}
+  },
+  "scene": {
+    "type": "nexus",
+    "name": "World",
+    "unique": 0,
+    "components": [
+      {
+        "type": "nexus",
+        "name": "Environment",
+        "unique": 0,
+        "components": [
+          {
+            "type": "transform",
+            "name": "EnvironmentTransform",
+            "unique": 0,
+            "position": { "_vectorType": "Vector3D", "x": 0, "y": 0, "z": 0 },
+            "rotation": { "_vectorType": "Vector3D", "x": 0, "y": 0, "z": 0 },
+            "scale": { "_vectorType": "Vector3D", "x": 1, "y": 1, "z": 1 }
+          },
+          {
+            "type": "nexus",
+            "name": "Tree",
+            "unique": 0,
+            "components": [
+              {
+                "type": "transform",
+                "name": "TreeTransform",
+                "unique": 0,
+                "position": { "_vectorType": "Vector3D", "x": 5, "y": 0, "z": 2 },
+                "rotation": { "_vectorType": "Vector3D", "x": 0, "y": 0, "z": 0 },
+                "scale": { "_vectorType": "Vector3D", "x": 1, "y": 1, "z": 1 }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

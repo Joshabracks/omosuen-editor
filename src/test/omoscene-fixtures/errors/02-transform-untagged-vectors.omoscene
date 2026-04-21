@@ -1,0 +1,27 @@
+{
+  "omoscene": 1,
+  "engine": "0.1.30",
+  "name": "errors-02-transform-untagged-vectors",
+  "editor": {
+    "camera": { "panX": 0, "panY": 0, "zoom": 1 },
+    "selection": [],
+    "treeState": {},
+    "annotations": {},
+    "bookmarks": {}
+  },
+  "scene": {
+    "type": "nexus",
+    "name": "Root",
+    "unique": 0,
+    "components": [
+      {
+        "type": "transform",
+        "name": "UntaggedVectors",
+        "unique": 0,
+        "position": { "x": 1, "y": 2, "z": 3 },
+        "rotation": { "x": 0, "y": 0, "z": 0 },
+        "scale": { "x": 1, "y": 1, "z": 1 }
+      }
+    ]
+  }
+}

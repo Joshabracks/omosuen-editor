@@ -5,6 +5,7 @@
   "version": "0.2.0",
   "publisher": "omosuen",
   "license": "MIT",
+  "icon": "./media/icons/logo.png",
   "type": "module",
   "engines": {
     "vscode": "^1.85.0"
@@ -13,15 +14,53 @@
     "Other"
   ],
   "activationEvents": [
-    "workspaceContains:**/*.omoscene",
-    "onCommand:omosuen.hello"
+    "workspaceContains:**/*.omoscene"
   ],
-  "main": "./dist/extension.js",
+  "main": "./dist/extension.cjs",
   "contributes": {
     "commands": [
       {
         "command": "omosuen.hello",
         "title": "Omosuen: Hello"
+      }
+    ],
+    "languages": [
+      {
+        "id": "omoscene",
+        "aliases": [
+          "Omoscene"
+        ],
+        "extensions": [
+          ".omoscene"
+        ],
+        "icon": {
+          "light": "./media/icons/omoscene-file.svg",
+          "dark": "./media/icons/omoscene-file.svg"
+        }
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "omosuen",
+          "title": "Omosuen",
+          "icon": "./media/icons/activity-bar.svg"
+        }
+      ]
+    },
+    "views": {
+      "omosuen": [
+        {
+          "id": "omosuen.placeholder",
+          "name": "Omosuen",
+          "contextualTitle": "Omosuen"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "omosuen.placeholder",
+        "contents": "Omosuen editor features will appear here as they're built."
       }
     ]
   },

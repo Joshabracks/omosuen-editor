@@ -1,0 +1,30 @@
+{
+  "omoscene": 1,
+  "engine": "0.1.30",
+  "name": "errors-04-messenger-bad-listeners",
+  "editor": {
+    "camera": { "panX": 0, "panY": 0, "zoom": 1 },
+    "selection": [],
+    "treeState": {},
+    "annotations": {},
+    "bookmarks": {}
+  },
+  "scene": {
+    "type": "nexus",
+    "name": "Root",
+    "unique": 0,
+    "components": [
+      {
+        "type": "messenger",
+        "name": "BadListeners",
+        "listeners": [
+          { "pattern": "validMessage", "callbackKey": "handleValid" },
+          { "pattern": "", "callbackKey": "handleEmpty" },
+          { "callbackKey": "handleOrphan" },
+          { "pattern": "orphanPattern" },
+          null
+        ]
+      }
+    ]
+  }
+}

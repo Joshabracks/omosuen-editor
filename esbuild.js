@@ -16,7 +16,11 @@ const extensionConfig = {
   format: 'cjs',
   target: 'node18',
   platform: 'node',
-  outfile: 'dist/extension.js',
+  // .cjs extension forces Node to treat the file as CommonJS regardless of
+  // the root package.json "type": "module" setting. Source files stay ESM;
+  // only the extension-host bundle output is CJS (as VS Code's extension
+  // host expects require()-loadable code).
+  outfile: 'dist/extension.cjs',
   external: ['vscode'],
 };
 
@@ -24,7 +28,7 @@ const webviewConfig = {
   ...commonOptions,
   entryPoints: ['src/panel/webview.ts'],
   format: 'iife',
-  target: 'es2020',
+  target: 'es2022',
   platform: 'browser',
   outfile: 'dist/webview.js',
 };

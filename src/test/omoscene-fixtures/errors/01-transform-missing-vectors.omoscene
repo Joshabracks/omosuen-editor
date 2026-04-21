@@ -1,0 +1,24 @@
+{
+  "omoscene": 1,
+  "engine": "0.1.30",
+  "name": "errors-01-transform-missing-vectors",
+  "editor": {
+    "camera": { "panX": 0, "panY": 0, "zoom": 1 },
+    "selection": [],
+    "treeState": {},
+    "annotations": {},
+    "bookmarks": {}
+  },
+  "scene": {
+    "type": "nexus",
+    "name": "Root",
+    "unique": 0,
+    "components": [
+      {
+        "type": "transform",
+        "name": "IncompleteTransform",
+        "unique": 0
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "omoscene": 1,
+  "engine": "0.1.30",
+  "name": "null-01-nexus-no-name",
+  "editor": {
+    "camera": { "panX": 0, "panY": 0, "zoom": 1 },
+    "selection": [],
+    "treeState": {},
+    "annotations": {},
+    "bookmarks": {}
+  },
+  "scene": {
+    "type": "nexus",
+    "unique": 0,
+    "components": []
+  }
+}

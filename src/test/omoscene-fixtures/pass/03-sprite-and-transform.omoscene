@@ -1,0 +1,50 @@
+{
+  "omoscene": 1,
+  "engine": "0.1.30",
+  "name": "pass-03-sprite-and-transform",
+  "editor": {
+    "camera": { "panX": 0, "panY": 0, "zoom": 1 },
+    "selection": [],
+    "treeState": {},
+    "annotations": {},
+    "bookmarks": {}
+  },
+  "scene": {
+    "type": "nexus",
+    "name": "Player",
+    "unique": 0,
+    "components": [
+      {
+        "type": "transform",
+        "name": "PlayerTransform",
+        "unique": 0,
+        "position": { "_vectorType": "Vector3D", "x": 0, "y": 0, "z": 0 },
+        "rotation": { "_vectorType": "Vector3D", "x": 0, "y": 0, "z": 0 },
+        "scale": { "_vectorType": "Vector3D", "x": 1, "y": 1, "z": 1 }
+      },
+      {
+        "type": "sprite",
+        "name": "PlayerSprite",
+        "unique": 1,
+        "textureMapKeys": {
+          "albedo": "player-body",
+          "normal": "",
+          "material": "",
+          "emission": ""
+        },
+        "frame": { "albedo": 0, "normal": 0, "emission": 0, "material": 0 },
+        "anchor": { "_vectorType": "Vector2D", "x": 0.5, "y": 0.5 },
+        "tint": { "_vectorType": "Vector4D", "x": 1, "y": 1, "z": 1, "w": 1 },
+        "opacity": 1,
+        "showSilhouette": false,
+        "silhouetteColor": {
+          "_vectorType": "Vector4D",
+          "x": 0.2,
+          "y": 0.4,
+          "z": 0.8,
+          "w": 0.5
+        }
+      }
+    ]
+  }
+}

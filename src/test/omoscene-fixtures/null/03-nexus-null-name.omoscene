@@ -1,0 +1,19 @@
+{
+  "omoscene": 1,
+  "engine": "0.1.30",
+  "name": "null-03-nexus-null-name",
+  "editor": {
+    "camera": { "panX": 0, "panY": 0, "zoom": 1 },
+    "selection": [],
+    "treeState": {},
+    "annotations": {},
+    "bookmarks": {}
+  },
+  "scene": {
+    "type": "nexus",
+    "name": null,
+    "unique": 0,
+    "script": "./scripts/orphan.omo.ts",
+    "components": []
+  }
+}
