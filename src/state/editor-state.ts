@@ -84,19 +84,30 @@ export function createEditorState(): EditorState {
         // later `component:select` must not mutate the file.
         selection.set([...msg.file.editor.selection]);
         break;
-      case 'component:update':
-        sceneDocument.set((previous) =>
-          previous === null
-            ? previous
-            : applyComponentUpdate(
-                previous,
-                msg.id,
-                msg.componentType,
-                msg.property,
-                msg.value,
-              ),
-        );
+      case 'component:update': {
+        // Phase 3.5.13 resolution: if `applyComponentUpdate` returns the
+        // same file reference, no component matched — surface it so the
+        // silent no-op isn't a hidden failure mode. The no-op behaviour
+        // itself stays (a user undoing a component's creation while an
+        // inspector still holds a stale reference is a valid flow).
+        sceneDocument.set((previous) => {
+          if (previous === null) return previous;
+          const next = applyComponentUpdate(
+            previous,
+            msg.id,
+            msg.componentType,
+            msg.property,
+            msg.value,
+          );
+          if (next === previous) {
+            console.warn(
+              `[state] component:update target not found: id=${String(msg.id)}, componentType="${msg.componentType}", property="${msg.property}"`,
+            );
+          }
+          return next;
+        });
         break;
+      }
       case 'scene:save':
         // No store mutation — raw-message subscribers handle persistence.
         break;

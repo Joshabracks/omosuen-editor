@@ -30,7 +30,8 @@ const extensionConfig = {
 const webviewConfig = {
   ...commonOptions,
   entryPoints: {
-    'selection-info': 'src/panel/selection-info/webview.ts',
+    'scene-tree': 'src/panel/scene-tree/webview.ts',
+    inspector: 'src/panel/inspector/webview.ts',
   },
   format: 'iife',
   target: 'es2022',

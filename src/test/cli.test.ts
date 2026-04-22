@@ -5,6 +5,7 @@
 
 import { runBootstrapTests } from './bootstrap.test.js';
 import { runBridgeTests } from './bridge.test.js';
+import { runDocumentControllerTests } from './document-controller.test.js';
 import { runEngineFixtureTests } from './engine-fixtures.test.js';
 import { runGuardsTests } from './guards.test.js';
 import { reportAndExit } from './harness.js';
@@ -17,6 +18,7 @@ import { runStateTests } from './state.test.js';
 
 runBootstrapTests();
 runBridgeTests();
+runDocumentControllerTests();
 runGuardsTests();
 runOmosceneTests();
 runPanelHTMLTests();

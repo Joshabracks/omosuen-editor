@@ -354,6 +354,33 @@ export function runStateTests(): void {
     }
   });
 
+  test('dispatch: component:update with stale id warns via console.warn (3.5.13)', () => {
+    const state = createEditorState();
+    state.dispatch(sceneLoad(makeScene()));
+
+    const warnings: unknown[][] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]): void => {
+      warnings.push(args);
+    };
+    try {
+      state.dispatch(componentUpdate(9999, 'transform', 'x', 0));
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    if (warnings.length !== 1) {
+      throw new Error(`expected 1 warning, got ${warnings.length}`);
+    }
+    const message = String(warnings[0]?.[0] ?? '');
+    if (!message.includes('target not found')) {
+      throw new Error(`unexpected warning message: ${message}`);
+    }
+    if (!message.includes('9999')) {
+      throw new Error(`warning should include the stale id; got: ${message}`);
+    }
+  });
+
   test('dispatch: component:update with no document open is a no-op', () => {
     const state = createEditorState();
     let calls = 0;
