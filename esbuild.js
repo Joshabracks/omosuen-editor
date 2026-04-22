@@ -32,6 +32,7 @@ const webviewConfig = {
   entryPoints: {
     'scene-tree': 'src/panel/scene-tree/webview.ts',
     inspector: 'src/panel/inspector/webview.ts',
+    preview: 'src/panel/preview/webview.ts',
   },
   format: 'iife',
   target: 'es2022',

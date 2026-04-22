@@ -14,6 +14,12 @@
  * State Street mounts to `<body>`. The body is intentionally empty here —
  * State Street's constructor replaces the body contents with its parsed
  * template.
+ *
+ * Phase 6.0 extended this with `allowWebviewResourceScripts` +
+ * `extraScripts` so the scene-preview custom editor can load the engine
+ * UMD alongside the panel bundle (engine URI arrives via
+ * `webview.asWebviewUri`, so CSP must grant `${webview.cspSource}` in
+ * `script-src`). Sidebars keep the tighter nonce-only default.
  */
 
 import type { Webview, Uri } from 'vscode';
@@ -23,35 +29,61 @@ export interface BuildPanelHTMLOptions {
   readonly scriptUri: Uri;
   readonly title: string;
   readonly nonce: string;
+  /**
+   * When true, CSP `script-src` allows webview-resource URIs in addition
+   * to the nonced panel bundle. Required if `extraScripts` is non-empty
+   * (those scripts load via `webview.asWebviewUri`). Default false —
+   * pure panels that only run their own bundle should leave it off.
+   */
+  readonly allowWebviewResourceScripts?: boolean;
+  /**
+   * Additional scripts injected *before* the main panel bundle. Each
+   * entry's `src` is a webview-resolved URI (caller runs
+   * `webview.asWebviewUri` before passing). Scripts are marked `defer`
+   * so they run after DOM parse, in source order, and before the
+   * `type="module"` main script — the panel bundle can rely on any
+   * globals these set (e.g. `window.Omosuen`).
+   *
+   * Using this requires `allowWebviewResourceScripts: true`.
+   */
+  readonly extraScripts?: readonly { readonly src: Uri }[];
 }
 
 /**
  * Produce the full HTML document for a panel's webview.
- *
- * The output includes:
- *   - doctype + `<html lang="en">` + `<head>`
- *   - a charset + viewport meta
- *   - a strict CSP meta: `default-src 'none'`, script-src pinned to the
- *     provided nonce, style-src + font-src + img-src pinned to
- *     `webview.cspSource` (`'unsafe-inline'` on style-src for VS Code
- *     theme-var interpolation into element styles)
- *   - a `<style>` block passing VS Code theme variables into the body
- *     (background, foreground, font family) so panels inherit the
- *     active theme without per-panel stylesheets
- *   - an empty `<body>` — State Street replaces its content
- *   - a nonce-authorized `<script type="module" src>` pointing at the
- *     panel's bundle
  */
 export function buildPanelHTML(options: BuildPanelHTMLOptions): string {
-  const { webview, scriptUri, title, nonce } = options;
+  const {
+    webview,
+    scriptUri,
+    title,
+    nonce,
+    allowWebviewResourceScripts = false,
+    extraScripts = [],
+  } = options;
+
+  if (extraScripts.length > 0 && !allowWebviewResourceScripts) {
+    throw new Error(
+      'buildPanelHTML: extraScripts requires allowWebviewResourceScripts: true',
+    );
+  }
+
   const cspSource = webview.cspSource;
-  return [
+  const scriptSrc = allowWebviewResourceScripts
+    ? `'nonce-${nonce}' ${cspSource}`
+    : `'nonce-${nonce}'`;
+
+  const extraScriptTags = extraScripts
+    .map((s) => `<script src="${s.src.toString()}" defer></script>`)
+    .join('\n');
+
+  const lines = [
     `<!DOCTYPE html>`,
     `<html lang="en">`,
     `<head>`,
     `  <meta charset="UTF-8" />`,
     `  <meta name="viewport" content="width=device-width, initial-scale=1.0" />`,
-    `  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; font-src ${cspSource}; img-src ${cspSource} data:; script-src 'nonce-${nonce}';" />`,
+    `  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; font-src ${cspSource}; img-src ${cspSource} data:; script-src ${scriptSrc};" />`,
     `  <title>${escapeHtml(title)}</title>`,
     `  <style>`,
     `    html, body { margin: 0; padding: 0; height: 100%; }`,
@@ -65,9 +97,13 @@ export function buildPanelHTML(options: BuildPanelHTMLOptions): string {
     `  </style>`,
     `</head>`,
     `<body></body>`,
+  ];
+  if (extraScriptTags !== '') lines.push(extraScriptTags);
+  lines.push(
     `<script type="module" nonce="${nonce}" src="${scriptUri.toString()}"></script>`,
     `</html>`,
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 
 /**

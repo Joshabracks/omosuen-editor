@@ -47,6 +47,18 @@
         }
       }
     ],
+    "customEditors": [
+      {
+        "viewType": "omosuen.sceneEditor",
+        "displayName": "Omosuen Scene Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.omoscene"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {

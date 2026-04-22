@@ -2,7 +2,11 @@ import * as vscode from 'vscode';
 import { readOmoscene, writeOmoscene } from '../omoscene/fs.js';
 import { registerPanel } from '../panel/base.js';
 import { registerCommands } from './commands.js';
-import { createDocumentController } from './document-controller.js';
+import {
+  createDocumentRegistry,
+  followActiveController,
+} from './document-registry.js';
+import { registerSceneEditorProvider } from './scene-editor-provider.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   // Phase 0 sanity command — still useful for confirming activation.
@@ -13,24 +17,26 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(hello);
 
-  // One document controller for the extension. Phase 5 supports one open
-  // scene at a time; Phase 6's custom editor will change this to per-tab.
-  const controller = createDocumentController({
+  // Phase 6.1: per-tab document registry. Each `.omoscene` URI gets its
+  // own controller; sidebars follow whichever is active.
+  const registry = createDocumentRegistry({
     readFile: (uri) => readOmoscene(uri),
     writeFile: (uri, file) => writeOmoscene(uri, file),
   });
-  context.subscriptions.push({ dispose: () => controller.dispose() });
+  context.subscriptions.push({ dispose: () => registry.dispose() });
 
-  registerCommands(context, controller);
+  registerCommands(context, registry);
+  registerSceneEditorProvider(context, registry);
 
-  // Phase 5 sidebar views. Scene Tree + Inspector both route through the
-  // document-controller broker so a click in one reaches the other.
+  // Sidebars (Scene Tree + Inspector) — `followActiveController` rebinds
+  // their bridge when the active tab changes and hydrates them with the
+  // new document via the existing `registerPanel` scene:load emission.
   const sceneTree = registerPanel(context, {
     id: 'omosuen.sceneTree',
     title: 'Scene',
     kind: 'view',
     webviewEntryPath: 'scene-tree.js',
-    wireOutgoing: (bridge) => controller.registerPanel(bridge),
+    wireOutgoing: (bridge) => followActiveController(bridge, registry),
   });
   context.subscriptions.push({ dispose: () => sceneTree.dispose() });
 
@@ -39,7 +45,7 @@ export function activate(context: vscode.ExtensionContext): void {
     title: 'Inspector',
     kind: 'view',
     webviewEntryPath: 'inspector.js',
-    wireOutgoing: (bridge) => controller.registerPanel(bridge),
+    wireOutgoing: (bridge) => followActiveController(bridge, registry),
   });
   context.subscriptions.push({ dispose: () => inspector.dispose() });
 }

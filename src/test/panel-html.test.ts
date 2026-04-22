@@ -140,6 +140,91 @@ export function runPanelHTMLTests(): void {
     }
   });
 
+  // --- 6.0 additions: allowWebviewResourceScripts + extraScripts --------
+
+  test('buildPanelHTML: by default, script-src is nonce-only (no cspSource)', () => {
+    const html = buildPanelHTML({
+      webview: fakeWebview('WS-SOURCE'),
+      scriptUri: fakeUri('x'),
+      title: 'T',
+      nonce: 'N',
+    });
+    // nonce present, cspSource should NOT appear in script-src directive.
+    const cspMatch = html.match(/script-src [^;"]*/);
+    if (cspMatch === null) throw new Error('no script-src directive found');
+    const scriptSrc = cspMatch[0];
+    if (!scriptSrc.includes(`'nonce-N'`)) {
+      throw new Error('script-src should include the nonce');
+    }
+    if (scriptSrc.includes('WS-SOURCE')) {
+      throw new Error('default script-src must not include webview.cspSource');
+    }
+  });
+
+  test('buildPanelHTML: allowWebviewResourceScripts adds cspSource to script-src', () => {
+    const html = buildPanelHTML({
+      webview: fakeWebview('WS-SOURCE'),
+      scriptUri: fakeUri('x'),
+      title: 'T',
+      nonce: 'N',
+      allowWebviewResourceScripts: true,
+    });
+    const cspMatch = html.match(/script-src [^;"]*/);
+    if (cspMatch === null) throw new Error('no script-src directive found');
+    const scriptSrc = cspMatch[0];
+    if (!scriptSrc.includes(`'nonce-N'`) || !scriptSrc.includes('WS-SOURCE')) {
+      throw new Error(
+        `script-src should include nonce + cspSource, got: ${scriptSrc}`,
+      );
+    }
+  });
+
+  test('buildPanelHTML: extraScripts emit defer tags before the main module', () => {
+    const html = buildPanelHTML({
+      webview: fakeWebview('WS'),
+      scriptUri: fakeUri('vscode-webview://host/dist/panel.js'),
+      title: 'T',
+      nonce: 'N',
+      allowWebviewResourceScripts: true,
+      extraScripts: [{ src: fakeUri('vscode-webview://host/cache/engine.js') }],
+    });
+    if (
+      !html.includes(
+        '<script src="vscode-webview://host/cache/engine.js" defer></script>',
+      )
+    ) {
+      throw new Error('extra script tag missing or malformed');
+    }
+    const enginePos = html.indexOf('engine.js');
+    const panelPos = html.indexOf('panel.js');
+    if (enginePos === -1 || panelPos === -1) {
+      throw new Error('both script tags should be present');
+    }
+    if (enginePos > panelPos) {
+      throw new Error('extra scripts must appear before the main module');
+    }
+  });
+
+  test('buildPanelHTML: extraScripts without allowWebviewResourceScripts throws', () => {
+    try {
+      buildPanelHTML({
+        webview: fakeWebview('WS'),
+        scriptUri: fakeUri('x'),
+        title: 'T',
+        nonce: 'N',
+        extraScripts: [{ src: fakeUri('engine.js') }],
+      });
+      throw new Error('expected throw');
+    } catch (err) {
+      if (
+        !(err instanceof Error) ||
+        !err.message.includes('allowWebviewResourceScripts')
+      ) {
+        throw new Error(`unexpected error: ${String(err)}`);
+      }
+    }
+  });
+
   test('generateNonce: consecutive calls differ', () => {
     const a = generateNonce();
     const b = generateNonce();

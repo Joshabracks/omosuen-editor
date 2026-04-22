@@ -1,20 +1,23 @@
 /**
- * VS Code command registrations for Phase 5.
+ * VS Code command registrations.
  *
  * Two commands:
- *   - `omosuen.openScene` — file-picker → controller.load(uri)
- *   - `omosuen.saveScene` — controller.save() (info message if nothing loaded)
+ *   - `omosuen.openScene` — file-picker → registry.getOrCreateController(uri)
+ *     → load(uri) → setActiveUri(uri)
+ *   - `omosuen.saveScene` — active controller's save() (info message if
+ *     nothing loaded)
  *
- * Phase 6 replaces the openScene command with a custom-editor registration
- * (tab-based). `saveScene` likely survives as-is.
+ * Phase 6.2 adds the custom editor for `.omoscene` which becomes the
+ * primary open path. These commands remain for now — they offer a
+ * no-tab flow if the user just wants to edit metadata via the sidebars.
  */
 
 import * as vscode from 'vscode';
-import type { DocumentController } from './document-controller.js';
+import type { DocumentRegistry } from './document-registry.js';
 
 export function registerCommands(
   ctx: vscode.ExtensionContext,
-  controller: DocumentController,
+  registry: DocumentRegistry,
 ): void {
   const openCmd = vscode.commands.registerCommand(
     'omosuen.openScene',
@@ -28,7 +31,9 @@ export function registerCommands(
       const uri = picks[0];
       if (uri === undefined) return;
       try {
+        const controller = registry.getOrCreateController(uri);
         await controller.load(uri);
+        registry.setActiveUri(uri);
       } catch (err) {
         void vscode.window.showErrorMessage(
           `Omosuen: failed to open scene — ${describeError(err)}`,
@@ -41,16 +46,17 @@ export function registerCommands(
   const saveCmd = vscode.commands.registerCommand(
     'omosuen.saveScene',
     async () => {
-      if (controller.uri === null) {
+      const active = registry.activeController.get();
+      if (active === null || active.uri === null) {
         void vscode.window.showInformationMessage(
           'Omosuen: no scene is loaded. Use "Omosuen: Open Scene…" first.',
         );
         return;
       }
       try {
-        await controller.save();
+        await active.save();
         void vscode.window.showInformationMessage(
-          `Omosuen: saved ${controller.uri.fsPath}`,
+          `Omosuen: saved ${active.uri.fsPath}`,
         );
       } catch (err) {
         void vscode.window.showErrorMessage(
