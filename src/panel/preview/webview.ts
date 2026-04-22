@@ -49,6 +49,26 @@ interface Handle {
   readonly position: Vec3;
 }
 
+/**
+ * A non-transform visible component (sprite / camera / light / etc.)
+ * rendered at the position of its sibling transform. Phase 7.2.
+ */
+interface Item {
+  readonly type: string;
+  readonly componentId: number;
+  readonly position: Vec3;
+}
+
+const VISIBLE_NON_TRANSFORM_TYPES: ReadonlySet<string> = new Set([
+  'sprite',
+  'camera',
+  'light',
+  'cell-map',
+  'collider',
+  'event-collider',
+  'ui-overlay',
+]);
+
 interface CameraState {
   readonly panX: number;
   readonly panY: number;
@@ -90,6 +110,7 @@ pollEngine();
 // Preview-local state owned outside State.data (mutating these wouldn't
 // need a re-render, since the canvas draws on-demand via rAF).
 let handles: Handle[] = [];
+let items: Item[] = [];
 let camera: CameraState = { panX: 0, panY: 0, zoom: DEFAULT_ZOOM };
 let selectedIds: readonly number[] = [];
 let canvas: HTMLCanvasElement | null = null;
@@ -138,6 +159,7 @@ function rebuildHandles(): void {
   const file = editor.sceneDocument.get();
   if (file === null) {
     handles = [];
+    items = [];
     camera = { panX: 0, panY: 0, zoom: DEFAULT_ZOOM };
     panel.state.data.title = 'Omosuen Scene Preview';
     scheduleDraw();
@@ -147,7 +169,9 @@ function rebuildHandles(): void {
   panel.state.data.title = `Scene: ${file.name}`;
   camera = readCamera(file);
   const sanitized = sanitizeSceneForPreview(file.scene);
-  handles = collectHandles(sanitized);
+  const collected = collectHandles(sanitized);
+  handles = collected.handles;
+  items = collected.items;
   scheduleDraw();
 }
 
@@ -163,35 +187,53 @@ function readCamera(file: OmosceneFile): CameraState {
   };
 }
 
-function collectHandles(root: SerializedComponent): Handle[] {
-  const out: Handle[] = [];
+function collectHandles(root: SerializedComponent): {
+  handles: Handle[];
+  items: Item[];
+} {
+  const handlesOut: Handle[] = [];
+  const itemsOut: Item[] = [];
   visit(root);
-  return out;
+  return { handles: handlesOut, items: itemsOut };
 
   function visit(node: SerializedComponent): void {
     const childTransforms: SerializedComponent[] = [];
+    const childVisibles: SerializedComponent[] = [];
     const childNodes: SerializedComponent[] = [];
     if (Array.isArray(node.components)) {
       for (const c of node.components) {
         if (!isNode(c)) continue;
         childNodes.push(c);
-        if (c.type === 'transform') childTransforms.push(c);
+        if (c.type === 'transform') {
+          childTransforms.push(c);
+        } else if (VISIBLE_NON_TRANSFORM_TYPES.has(c.type)) {
+          childVisibles.push(c);
+        }
       }
     }
-    // Req 2.2: nexuses with a sibling transform show a label. Here we
-    // treat each nexus as the "parent" of its own child transforms; the
-    // nexus's name labels the position they define.
+    // Req 2.2: a nexus with a sibling transform shows a label at that
+    // transform's position. Non-transform visible components in the
+    // same nexus ride on the same position (Phase 7.2 icons).
     const nexusName =
       node.type === 'nexus' && typeof node.name === 'string' ? node.name : null;
     for (const t of childTransforms) {
       const position = readVector3(t['position']);
-      const id = typeof t.id === 'number' ? t.id : null;
-      if (id === null) continue;
-      out.push({
-        transformId: id,
+      const tid = typeof t.id === 'number' ? t.id : null;
+      if (tid === null) continue;
+      handlesOut.push({
+        transformId: tid,
         parentNexusName: nexusName,
         position,
       });
+      for (const v of childVisibles) {
+        const cid = typeof v.id === 'number' ? v.id : null;
+        if (cid === null) continue;
+        itemsOut.push({
+          type: v.type,
+          componentId: cid,
+          position,
+        });
+      }
     }
     for (const child of childNodes) {
       visit(child);
@@ -238,12 +280,24 @@ function draw(): void {
   // Grid
   drawGrid(ctx, width, height);
 
-  // Handles
   const selected = new Set(selectedIds);
   const themeForeground = cssVar('--vscode-editor-foreground') || '#ccc';
   const themeSelection =
     cssVar('--vscode-list-activeSelectionBackground') || '#4a9eff';
   const themeMuted = cssVar('--vscode-descriptionForeground') || '#888';
+
+  // Items render first so transform handles draw on top — handles are
+  // the interactive drag targets and should be the top-most layer.
+  for (const item of items) {
+    const screen = worldToScreen(item.position, width, height);
+    const isSelected = selected.has(item.componentId);
+    drawItemIcon(ctx, item.type, screen, {
+      foreground: themeForeground,
+      selection: themeSelection,
+      muted: themeMuted,
+      isSelected,
+    });
+  }
 
   for (const handle of handles) {
     const screen = worldToScreen(handle.position, width, height);
@@ -276,6 +330,89 @@ function draw(): void {
     }
   }
 }
+
+interface IconColors {
+  readonly foreground: string;
+  readonly selection: string;
+  readonly muted: string;
+  readonly isSelected: boolean;
+}
+
+/**
+ * Render the small per-type icon for a non-transform visible component.
+ * Icons are deliberately simple for Phase 7 — just enough to tell
+ * components apart visually. Phase 8's specialized editors can replace
+ * these with real sprite/camera-frustum/light-cone renders.
+ */
+function drawItemIcon(
+  ctx: CanvasRenderingContext2D,
+  type: string,
+  center: { x: number; y: number },
+  colors: IconColors,
+): void {
+  const stroke = colors.isSelected ? colors.selection : colors.foreground;
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = colors.muted;
+  ctx.lineWidth = colors.isSelected ? 2 : 1;
+
+  switch (type) {
+    case 'sprite': {
+      // Outlined rectangle.
+      const s = 14;
+      ctx.strokeRect(center.x - s, center.y - s, s * 2, s * 2);
+      break;
+    }
+    case 'camera': {
+      // Diamond.
+      const s = 10;
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y - s);
+      ctx.lineTo(center.x + s, center.y);
+      ctx.lineTo(center.x, center.y + s);
+      ctx.lineTo(center.x - s, center.y);
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    }
+    case 'light': {
+      // Circle outline (distinct from the filled transform dot).
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, 10, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+    default: {
+      // Typed text badge for cell-map / collider / event-collider /
+      // ui-overlay and any other non-transform visible the allowlist
+      // grows to carry.
+      const label = TYPE_BADGE_TEXT[type] ?? type.slice(0, 2).toUpperCase();
+      ctx.font = '10px var(--vscode-font-family)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const metrics = ctx.measureText(label);
+      const padX = 5;
+      const padY = 3;
+      const width = metrics.width + padX * 2;
+      const height = 12 + padY * 2;
+      ctx.strokeRect(
+        center.x - width / 2,
+        center.y - height / 2,
+        width,
+        height,
+      );
+      ctx.fillStyle = stroke;
+      ctx.fillText(label, center.x, center.y);
+      ctx.textAlign = 'start';
+    }
+  }
+}
+
+const TYPE_BADGE_TEXT: Readonly<Record<string, string>> = {
+  'cell-map': 'CM',
+  collider: 'C',
+  'event-collider': 'EC',
+  'ui-overlay': 'UI',
+};
 
 function drawGrid(
   ctx: CanvasRenderingContext2D,
@@ -333,7 +470,44 @@ function canvasPixel(event: PointerEvent): { x: number; y: number } | null {
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
-function hitTest(pixel: { x: number; y: number }): Handle | null {
+type HitResult =
+  | { readonly kind: 'handle'; readonly handle: Handle }
+  | { readonly kind: 'item'; readonly item: Item };
+
+/**
+ * Hit-test at the given canvas-pixel position. Handles win ties with
+ * items so users can always grab the drag target even when an icon
+ * overlaps a transform's dot.
+ */
+function hitTestAt(pixel: { x: number; y: number }): HitResult | null {
+  const handle = hitTestHandles(pixel);
+  if (handle !== null) return { kind: 'handle', handle };
+  const item = hitTestItems(pixel);
+  if (item !== null) return { kind: 'item', item };
+  return null;
+}
+
+function hitTestItems(pixel: { x: number; y: number }): Item | null {
+  if (canvas === null) return null;
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  let best: { item: Item; distance: number } | null = null;
+  for (const item of items) {
+    const screen = worldToScreen(item.position, width, height);
+    const dx = screen.x - pixel.x;
+    const dy = screen.y - pixel.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    // Items are bigger than handles — give them a looser hit radius so
+    // clicks on the icon body (not just its center) register.
+    const hitRadius = HIT_RADIUS_PX + 6;
+    if (distance <= hitRadius && (best === null || distance < best.distance)) {
+      best = { item, distance };
+    }
+  }
+  return best?.item ?? null;
+}
+
+function hitTestHandles(pixel: { x: number; y: number }): Handle | null {
   if (canvas === null) return null;
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
@@ -356,19 +530,25 @@ function hitTest(pixel: { x: number; y: number }): Handle | null {
 function onPointerDown(event: PointerEvent): void {
   const pixel = canvasPixel(event);
   if (pixel === null) return;
-  const hit = hitTest(pixel);
+  const hit = hitTestAt(pixel);
   if (hit === null) {
     panel.bridge.dispatch(componentSelect([]));
     return;
   }
-  if (canvas !== null) canvas.setPointerCapture(event.pointerId);
-  panel.bridge.dispatch(componentSelect([hit.transformId]));
-  drag = {
-    transformId: hit.transformId,
-    startPixel: pixel,
-    startWorld: hit.position,
-  };
-  if (canvas !== null) canvas.style.cursor = 'grabbing';
+  if (hit.kind === 'handle') {
+    if (canvas !== null) canvas.setPointerCapture(event.pointerId);
+    panel.bridge.dispatch(componentSelect([hit.handle.transformId]));
+    drag = {
+      transformId: hit.handle.transformId,
+      startPixel: pixel,
+      startWorld: hit.handle.position,
+    };
+    if (canvas !== null) canvas.style.cursor = 'grabbing';
+    return;
+  }
+  // hit.kind === 'item' — select the component; items aren't draggable
+  // (dragging moves the sibling transform, which has its own handle).
+  panel.bridge.dispatch(componentSelect([hit.item.componentId]));
 }
 
 function onPointerMove(event: PointerEvent): void {

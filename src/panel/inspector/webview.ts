@@ -1,28 +1,29 @@
 /**
- * Inspector webview — Phase 5.4 (transform only).
+ * Inspector webview — Phase 7.1.
  *
- * Reads the current selection from its per-webview `EditorState`, walks
- * the scene tree to find the selected component, resolves its schema via
- * `resolveSchema` + `getComponentSchemas`, and renders schema-driven
- * fields. Phase 5 supports transform only (Vector3D fields); other
- * component types get a "not yet supported" placeholder — Phase 7 rolls
- * per-component widgets.
+ * Phase 5 shipped this panel supporting only `transform`'s Vector3D
+ * fields. Phase 7.1 adds widgets for every `PropertyType` via
+ * [widgets.ts](./widgets.ts): string, number, boolean, enum, Vector2D,
+ * Vector3D, Vector4D, plus a JSON textarea for object/array/map.
  *
- * Rendering strategy: `state.data.fieldsHtml` holds pre-rendered HTML
- * that's spliced via a component-body `{{fieldsHtml}}` interpolation
- * (State Street doesn't escape component bodies, unlike text content).
+ * Dispatch: widgets emit State Street `:change=editX(field=..., ...)`
+ * bindings that resolve to the per-type methods below. Each reads the
+ * latest component state from `state.data._component` and dispatches a
+ * `component:update` with the new value.
+ *
+ * JSON-textarea edits silently skip dispatch on parse failure — an
+ * inline error hint is Phase 8 work.
  */
 
 import { State } from 'state-street';
 import { componentUpdate, type JsonValue } from '../../protocol/index.js';
 import type { SerializedComponent } from '../../omoscene/index.js';
 import { getComponentSchemas, resolveSchema } from '../../schema/index.js';
-import type {
-  ComponentSchemaVersion,
-  PropertySchema,
-} from '../../schema/index.js';
+import type { ComponentSchemaVersion } from '../../schema/index.js';
 import { createEditorState } from '../../state/index.js';
 import { bootstrapPanel } from '../bootstrap.js';
+import type { Bridge } from '../../bridge/index.js';
+import { renderField, escapeHtml } from './widgets.js';
 
 interface PanelData {
   title: string;
@@ -61,41 +62,80 @@ const panel = bootstrapPanel<PanelData>({
   stateFactory: (t, d, c, m) => new State<PanelData>(t, d, c, m),
   components: { FieldsBody },
   methods: {
-    edit: ({ bridge, state, field, axis, event }) => {
+    editString: ({ bridge, state, field, event }) => {
+      const target = event.target as HTMLInputElement;
+      dispatchFieldUpdate(bridge, state, field, target.value);
+    },
+    editNumber: ({ bridge, state, field, event }) => {
+      const target = event.target as HTMLInputElement;
+      const parsed = Number.parseFloat(target.value);
+      if (!Number.isFinite(parsed)) return;
+      dispatchFieldUpdate(bridge, state, field, parsed);
+    },
+    editBoolean: ({ bridge, state, field, event }) => {
+      const target = event.target as HTMLInputElement;
+      dispatchFieldUpdate(bridge, state, field, target.checked);
+    },
+    editEnum: ({ bridge, state, field, event }) => {
+      const target = event.target as HTMLSelectElement;
+      dispatchFieldUpdate(bridge, state, field, target.value);
+    },
+    editVector: ({ bridge, state, field, axis, event }) => {
+      const target = event.target as HTMLInputElement;
+      const parsed = Number.parseFloat(target.value);
+      if (!Number.isFinite(parsed)) return;
       const data = (state as { data: PanelData }).data;
       const component = data._component;
       if (component === null) return;
-      if (data._selectedId === null || data._componentType === null) return;
-
-      const target = event.target as HTMLInputElement;
-      const newAxisValue = Number.parseFloat(target.value);
-      if (!Number.isFinite(newAxisValue)) return;
-
       const fieldName = String(field);
       const axisName = String(axis);
       const currentVector = component[fieldName];
-      if (!isVector3D(currentVector)) return;
-
-      const newVector: JsonValue = {
-        _vectorType: 'Vector3D',
-        x: axisName === 'x' ? newAxisValue : currentVector.x,
-        y: axisName === 'y' ? newAxisValue : currentVector.y,
-        z: axisName === 'z' ? newAxisValue : currentVector.z,
+      if (!isPlainObject(currentVector)) return;
+      // Preserve _vectorType + other axes; override only the named axis.
+      const nextVector: JsonValue = {
+        ...(currentVector as Record<string, JsonValue>),
+        [axisName]: parsed,
       };
-      bridge.dispatch(
-        componentUpdate(
-          data._selectedId,
-          data._componentType,
-          fieldName,
-          newVector,
-        ),
-      );
+      dispatchFieldUpdate(bridge, state, field, nextVector);
+    },
+    editStructured: ({ bridge, state, field, event }) => {
+      const target = event.target as HTMLTextAreaElement;
+      let parsed: JsonValue;
+      try {
+        parsed = JSON.parse(target.value) as JsonValue;
+      } catch {
+        // Malformed JSON — skip dispatch. Phase 8 surfaces this inline.
+        return;
+      }
+      dispatchFieldUpdate(bridge, state, field, parsed);
     },
   },
   wireIncoming: (msg) => {
     editor.dispatch(msg);
   },
 });
+
+function dispatchFieldUpdate(
+  bridge: Bridge,
+  state: unknown,
+  field: unknown,
+  value: JsonValue,
+): void {
+  const data = (state as { data: PanelData }).data;
+  if (data._selectedId === null || data._componentType === null) return;
+  bridge.dispatch(
+    componentUpdate(
+      data._selectedId,
+      data._componentType,
+      String(field),
+      value,
+    ),
+  );
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 // Re-render whenever scene or selection changes.
 editor.sceneDocument.subscribe(() => refresh());
@@ -167,48 +207,6 @@ function renderFields(
     .join('');
 }
 
-function renderField(field: PropertySchema, value: unknown): string {
-  const label = escapeHtml(field.label);
-  if (field.type === 'Vector3D') {
-    const vec = isVector3D(value) ? value : { x: 0, y: 0, z: 0 };
-    return renderVectorField(field.name, label, vec, ['x', 'y', 'z']);
-  }
-  return (
-    `<div style="margin-bottom: 0.75em;">` +
-    `<div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 0.25em;">${label}</div>` +
-    `<em style="color: var(--vscode-descriptionForeground);">Editor for type "${escapeHtml(field.type)}" is not yet implemented.</em>` +
-    `</div>`
-  );
-}
-
-function renderVectorField(
-  fieldName: string,
-  label: string,
-  vector: { x: number; y: number; z: number },
-  axes: readonly ('x' | 'y' | 'z')[],
-): string {
-  const inputs = axes
-    .map((axis) => {
-      const current = vector[axis];
-      const value = Number.isFinite(current) ? String(current) : '0';
-      return (
-        `<label style="display: inline-flex; align-items: center; margin-right: 0.5em; font-size: 0.85em;">` +
-        `<span style="margin-right: 0.25em; color: var(--vscode-descriptionForeground);">${axis}</span>` +
-        `<input type="number" step="any" value="${escapeAttribute(value)}" ` +
-        `style="width: 5em; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); padding: 2px 4px;" ` +
-        `:change=edit(field=${fieldName}, axis=${axis}) />` +
-        `</label>`
-      );
-    })
-    .join('');
-  return (
-    `<div style="margin-bottom: 0.75em;">` +
-    `<div style="font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 0.25em;">${label}</div>` +
-    `<div>${inputs}</div>` +
-    `</div>`
-  );
-}
-
 function findById(
   root: SerializedComponent,
   id: number,
@@ -230,31 +228,4 @@ function isNode(value: unknown): value is SerializedComponent {
     !Array.isArray(value) &&
     typeof (value as { type?: unknown }).type === 'string'
   );
-}
-
-function isVector3D(
-  value: unknown,
-): value is { x: number; y: number; z: number } {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const v = value as { x?: unknown; y?: unknown; z?: unknown };
-  return (
-    typeof v.x === 'number' &&
-    typeof v.y === 'number' &&
-    typeof v.z === 'number'
-  );
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function escapeAttribute(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
