@@ -6,9 +6,12 @@
 
 import type { OmosceneFile } from '../omoscene/index.js';
 import type {
+  CommandInvokeMessage,
   ComponentSelectMessage,
   ComponentUpdateMessage,
   JsonValue,
+  PreviewLogMessage,
+  PreviewReadyMessage,
   SceneLoadMessage,
   SceneSaveMessage,
 } from './types.js';
@@ -34,4 +37,22 @@ export function sceneLoad(file: OmosceneFile): SceneLoadMessage {
 
 export function sceneSave(): SceneSaveMessage {
   return { kind: 'scene:save' };
+}
+
+export function previewReady(engineVersion: string): PreviewReadyMessage {
+  return { kind: 'preview:ready', engineVersion };
+}
+
+export function previewLog(
+  level: PreviewLogMessage['level'],
+  message: string,
+): PreviewLogMessage {
+  return { kind: 'preview:log', level, message };
+}
+
+export function commandInvoke(
+  command: string,
+  componentId: number,
+): CommandInvokeMessage {
+  return { kind: 'command:invoke', command, componentId };
 }

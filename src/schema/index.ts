@@ -38,6 +38,7 @@ import '../component/viewport/schema.js';
 
 // --- Public API re-exports --------------------------------------------------
 export type {
+  ComponentAction,
   ComponentSchemaVersion,
   ComponentSchemas,
   PropertySchema,

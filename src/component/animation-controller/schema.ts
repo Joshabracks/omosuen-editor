@@ -32,6 +32,12 @@ registerComponentSchemas({
       // currentFrameIndex / frameTime are playback-state scratch, rewritten
       // every update tick. Not meaningful as user-edited inspector fields.
       exclude: ['currentFrameIndex', 'frameTime'],
+      actions: [
+        {
+          label: 'Open Animation Editor',
+          command: 'omosuen.openAnimationEditor',
+        },
+      ],
     },
   ],
 });

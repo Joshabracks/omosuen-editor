@@ -30,8 +30,32 @@
       {
         "command": "omosuen.saveScene",
         "title": "Omosuen: Save Scene"
+      },
+      {
+        "command": "omosuen.newProject",
+        "title": "Omosuen: New Project…"
+      },
+      {
+        "command": "omosuen.previewScene",
+        "title": "Omosuen: Preview Scene"
+      },
+      {
+        "command": "omosuen.openAnimationEditor",
+        "title": "Omosuen: Open Animation Editor"
       }
     ],
+    "configuration": {
+      "title": "Omosuen",
+      "properties": {
+        "omosuen.previewPort": {
+          "type": "number",
+          "default": 9421,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Port the Omosuen preview server binds on localhost. Must be free when running `Omosuen: Preview Scene`."
+        }
+      }
+    },
     "languages": [
       {
         "id": "omoscene",
@@ -100,6 +124,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "concurrently": "^9.0.0",
@@ -112,6 +137,7 @@
     "typescript": "^5.6.0"
   },
   "dependencies": {
-    "state-street": "npm:@state-street/state-street@1.1.2"
+    "state-street": "npm:@state-street/state-street@1.1.2",
+    "ws": "^8.20.0"
   }
 }

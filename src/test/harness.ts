@@ -18,6 +18,25 @@ export function test(name: string, fn: () => void): void {
   }
 }
 
+/**
+ * Async variant of `test`. The harness awaits the test body so Promise
+ * rejections surface as failures rather than silent unhandled rejections.
+ * Must be `await`ed by the runXTests function it lives in.
+ */
+export async function testAsync(
+  name: string,
+  fn: () => Promise<void>,
+): Promise<void> {
+  try {
+    await fn();
+    console.log(`✓ ${name}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`✗ ${name}: ${msg}`);
+    failures += 1;
+  }
+}
+
 export function expectThrow(fn: () => void, errorName?: string): void {
   try {
     fn();

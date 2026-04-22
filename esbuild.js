@@ -33,6 +33,12 @@ const webviewConfig = {
     'scene-tree': 'src/panel/scene-tree/webview.ts',
     inspector: 'src/panel/inspector/webview.ts',
     preview: 'src/panel/preview/webview.ts',
+    // Phase 9.3: preview-overlay is served by the HTTP preview server
+    // to the user's game page; runs in the browser alongside the
+    // Omosuen engine to bridge selection/edits over WebSocket.
+    'preview-overlay': 'src/panel/preview-overlay/client.ts',
+    // Phase 8.2: animation editor webview.
+    'animation-editor': 'src/scene/animation-editor/webview.ts',
   },
   format: 'iife',
   target: 'es2022',

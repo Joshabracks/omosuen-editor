@@ -7,12 +7,15 @@
  */
 
 export type {
+  CommandInvokeMessage,
   ComponentSelectMessage,
   ComponentUpdateMessage,
   EditorMessage,
   EditorMessageKind,
   JsonPrimitive,
   JsonValue,
+  PreviewLogMessage,
+  PreviewReadyMessage,
   SceneLoadMessage,
   SceneSaveMessage,
 } from './types.js';
@@ -20,8 +23,11 @@ export { assertNever } from './types.js';
 export { encodeMessage, ProtocolEncodeError } from './encode.js';
 export { decodeMessage, ProtocolDecodeError } from './decode.js';
 export {
+  commandInvoke,
   componentSelect,
   componentUpdate,
+  previewLog,
+  previewReady,
   sceneLoad,
   sceneSave,
 } from './factories.js';

@@ -6,7 +6,10 @@ import {
   createDocumentRegistry,
   followActiveController,
 } from './document-registry.js';
+import { registerNewProjectCommand } from './new-project-command.js';
+import { registerPreviewLauncherCommand } from './preview-launcher-command.js';
 import { registerSceneEditorProvider } from './scene-editor-provider.js';
+import { registerAnimationEditor } from '../scene/animation-editor/host.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   // Phase 0 sanity command — still useful for confirming activation.
@@ -26,7 +29,22 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push({ dispose: () => registry.dispose() });
 
   registerCommands(context, registry);
+  registerNewProjectCommand(context);
+  registerPreviewLauncherCommand(context, registry);
   registerSceneEditorProvider(context, registry);
+  registerAnimationEditor(context, registry);
+
+  // Phase 8.1: forward `command:invoke` messages from any panel through
+  // to `vscode.commands.executeCommand` so schema-declared inspector
+  // action buttons actually fire their commands. Subscribe per
+  // controller as each is created; message listeners auto-clean when
+  // the controller disposes.
+  registry.onControllerCreated((controller) => {
+    controller.editorState.subscribeMessages((msg) => {
+      if (msg.kind !== 'command:invoke') return;
+      void vscode.commands.executeCommand(msg.command, msg.componentId);
+    });
+  });
 
   // Sidebars (Scene Tree + Inspector) — `followActiveController` rebinds
   // their bridge when the active tab changes and hydrates them with the

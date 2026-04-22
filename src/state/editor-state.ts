@@ -111,6 +111,18 @@ export function createEditorState(): EditorState {
       case 'scene:save':
         // No store mutation — raw-message subscribers handle persistence.
         break;
+      case 'preview:ready':
+      case 'preview:log':
+        // Bridge-layer notifications from the Phase 9 preview overlay.
+        // No store mutation — raw-message subscribers (the extension-host
+        // preview launcher) forward these to the "Omosuen Preview" output
+        // channel.
+        break;
+      case 'command:invoke':
+        // Phase 8.1 action-button dispatch. No store mutation — the
+        // extension host subscribes to the raw message stream and
+        // forwards to `vscode.commands.executeCommand` when it sees one.
+        break;
       default:
         assertNever(msg);
     }

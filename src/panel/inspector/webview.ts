@@ -16,7 +16,11 @@
  */
 
 import { State } from 'state-street';
-import { componentUpdate, type JsonValue } from '../../protocol/index.js';
+import {
+  commandInvoke,
+  componentUpdate,
+  type JsonValue,
+} from '../../protocol/index.js';
 import type { SerializedComponent } from '../../omoscene/index.js';
 import { getComponentSchemas, resolveSchema } from '../../schema/index.js';
 import type { ComponentSchemaVersion } from '../../schema/index.js';
@@ -28,6 +32,7 @@ import { renderField, escapeHtml } from './widgets.js';
 interface PanelData {
   title: string;
   fieldsHtml: string;
+  actionsHtml: string;
   // Non-rendered fields accessed by methods; prefixed `_` by convention.
   _selectedId: number | null;
   _componentType: string | null;
@@ -43,11 +48,15 @@ const template = /* html */ `
     <div>
       <FieldsBody/>
     </div>
+    <div style="margin-top: 0.75em;">
+      <ActionsBody/>
+    </div>
   </div>
 </body>
 `;
 
 const FieldsBody = (): string => `{{fieldsHtml}}`;
+const ActionsBody = (): string => `{{actionsHtml}}`;
 
 const panel = bootstrapPanel<PanelData>({
   template,
@@ -55,12 +64,13 @@ const panel = bootstrapPanel<PanelData>({
     title: 'Inspector',
     fieldsHtml:
       '<em style="color: var(--vscode-descriptionForeground);">Select a component to inspect.</em>',
+    actionsHtml: '',
     _selectedId: null,
     _componentType: null,
     _component: null,
   },
   stateFactory: (t, d, c, m) => new State<PanelData>(t, d, c, m),
-  components: { FieldsBody },
+  components: { FieldsBody, ActionsBody },
   methods: {
     editString: ({ bridge, state, field, event }) => {
       const target = event.target as HTMLInputElement;
@@ -108,6 +118,11 @@ const panel = bootstrapPanel<PanelData>({
         return;
       }
       dispatchFieldUpdate(bridge, state, field, parsed);
+    },
+    invokeAction: ({ bridge, state, command }) => {
+      const data = (state as { data: PanelData }).data;
+      if (data._selectedId === null) return;
+      bridge.dispatch(commandInvoke(String(command), data._selectedId));
     },
   },
   wireIncoming: (msg) => {
@@ -176,11 +191,13 @@ function refresh(): void {
   panel.state.data._componentType = component.type;
   panel.state.data._component = component;
   panel.state.data.fieldsHtml = renderFields(schema, component);
+  panel.state.data.actionsHtml = renderActions(schema);
 }
 
 function setEmpty(message: string): void {
   panel.state.data.title = 'Inspector';
   panel.state.data.fieldsHtml = `<em style="color: var(--vscode-descriptionForeground);">${escapeHtml(message)}</em>`;
+  panel.state.data.actionsHtml = '';
   panel.state.data._selectedId = null;
   panel.state.data._componentType = null;
   panel.state.data._component = null;
@@ -204,6 +221,18 @@ function renderFields(
   }
   return schema.fields
     .map((field) => renderField(field, component[field.name]))
+    .join('');
+}
+
+function renderActions(schema: ComponentSchemaVersion): string {
+  const actions = schema.actions ?? [];
+  if (actions.length === 0) return '';
+  return actions
+    .map((action) => {
+      const safeCommand = escapeHtml(action.command);
+      const safeLabel = escapeHtml(action.label);
+      return `<button type="button" :click="invokeAction(command='${safeCommand}')" style="margin-right: 0.5em; margin-bottom: 0.25em;">${safeLabel}</button>`;
+    })
     .join('');
 }
 

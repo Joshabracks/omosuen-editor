@@ -68,6 +68,46 @@ export interface SceneLoadMessage {
 }
 
 /**
+ * Webview → host request to invoke a VS Code command with a
+ * component-id argument. Surfaces the schema-declared action buttons
+ * (Phase 8.1) rendered by the inspector: clicking "Open Animation
+ * Editor" posts `{ kind: 'command:invoke', command: 'omosuen.openAnimationEditor', componentId: 42 }`.
+ * The host's broker subscribes to the message stream and forwards to
+ * `vscode.commands.executeCommand(command, componentId)`; state dispatch
+ * is a no-op (no store mutation).
+ */
+export interface CommandInvokeMessage {
+  readonly kind: 'command:invoke';
+  readonly command: string;
+  readonly componentId: number;
+}
+
+/**
+ * Preview-lifecycle notification from a running game to the host. Sent
+ * by the Phase 9 overlay on WebSocket connect, once per browser tab.
+ * Carries the running engine's `version` string so the "Omosuen Preview"
+ * output channel can log which build is live. No state mutation — the
+ * editor-state dispatch is a no-op; the host listens via
+ * `subscribeMessages` to write to the output channel.
+ */
+export interface PreviewReadyMessage {
+  readonly kind: 'preview:ready';
+  readonly engineVersion: string;
+}
+
+/**
+ * A line of console output from the running preview game. The overlay's
+ * console interceptor forwards every `console.log`/`warn`/`error` here.
+ * Like `preview:ready`, a bridge-level notification — editor-state
+ * dispatch is a no-op.
+ */
+export interface PreviewLogMessage {
+  readonly kind: 'preview:log';
+  readonly level: 'info' | 'warn' | 'error';
+  readonly message: string;
+}
+
+/**
  * Request persistence of the current document. The extension host
  * subscribes to the raw message bus and writes the current scene to disk
  * when it sees this. Carries no payload.
@@ -101,7 +141,10 @@ export type EditorMessage =
   | ComponentUpdateMessage
   | ComponentSelectMessage
   | SceneLoadMessage
-  | SceneSaveMessage;
+  | SceneSaveMessage
+  | PreviewReadyMessage
+  | PreviewLogMessage
+  | CommandInvokeMessage;
 
 export type EditorMessageKind = EditorMessage['kind'];
 

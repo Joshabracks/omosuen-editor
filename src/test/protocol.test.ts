@@ -10,10 +10,13 @@
 import {
   ProtocolDecodeError,
   ProtocolEncodeError,
+  commandInvoke,
   componentSelect,
   componentUpdate,
   decodeMessage,
   encodeMessage,
+  previewLog,
+  previewReady,
   sceneLoad,
   sceneSave,
 } from '../protocol/index.js';
@@ -83,6 +86,31 @@ export function runProtocolTests(): void {
 
   test('round-trip: scene:save', () => {
     const msg = sceneSave();
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: preview:ready', () => {
+    const msg = previewReady('v0.1.30');
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: preview:log (info)', () => {
+    const msg = previewLog('info', 'frame rendered');
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: preview:log (warn)', () => {
+    const msg = previewLog('warn', 'missing texture');
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: preview:log (error)', () => {
+    const msg = previewLog('error', 'boom');
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: command:invoke', () => {
+    const msg = commandInvoke('omosuen.openAnimationEditor', 42);
     assertDeepEqual(roundTrip(msg), msg);
   });
 
@@ -187,6 +215,50 @@ export function runProtocolTests(): void {
       () =>
         decodeMessage(
           '{"kind":"scene:load","file":{"omoscene":1,"engine":"0"}}',
+        ),
+      'ProtocolDecodeError',
+    );
+  });
+
+  test('decode rejects preview:ready without string engineVersion', () => {
+    expectThrow(
+      () => decodeMessage('{"kind":"preview:ready"}'),
+      'ProtocolDecodeError',
+    );
+    expectThrow(
+      () => decodeMessage('{"kind":"preview:ready","engineVersion":null}'),
+      'ProtocolDecodeError',
+    );
+  });
+
+  test('decode rejects preview:log with unknown level', () => {
+    expectThrow(
+      () =>
+        decodeMessage('{"kind":"preview:log","level":"debug","message":"x"}'),
+      'ProtocolDecodeError',
+    );
+  });
+
+  test('decode rejects preview:log without string message', () => {
+    expectThrow(
+      () => decodeMessage('{"kind":"preview:log","level":"info"}'),
+      'ProtocolDecodeError',
+    );
+  });
+
+  test('decode rejects command:invoke with empty command', () => {
+    expectThrow(
+      () =>
+        decodeMessage('{"kind":"command:invoke","command":"","componentId":1}'),
+      'ProtocolDecodeError',
+    );
+  });
+
+  test('decode rejects command:invoke with non-finite componentId', () => {
+    expectThrow(
+      () =>
+        decodeMessage(
+          '{"kind":"command:invoke","command":"omosuen.openAnimationEditor","componentId":null}',
         ),
       'ProtocolDecodeError',
     );

@@ -28,6 +28,9 @@ const KNOWN_KINDS: ReadonlySet<EditorMessageKind> = new Set([
   'component:select',
   'scene:load',
   'scene:save',
+  'preview:ready',
+  'preview:log',
+  'command:invoke',
 ] satisfies EditorMessageKind[]);
 
 export function decodeMessage(text: string): EditorMessage {
@@ -117,6 +120,46 @@ export function decodeMessage(text: string): EditorMessage {
 
     case 'scene:save': {
       return { kind: 'scene:save' };
+    }
+
+    case 'preview:ready': {
+      const engineVersion = raw['engineVersion'];
+      if (typeof engineVersion !== 'string') {
+        throw new ProtocolDecodeError(
+          'preview:ready requires string `engineVersion`',
+        );
+      }
+      return { kind: 'preview:ready', engineVersion };
+    }
+
+    case 'preview:log': {
+      const level = raw['level'];
+      const message = raw['message'];
+      if (level !== 'info' && level !== 'warn' && level !== 'error') {
+        throw new ProtocolDecodeError(
+          'preview:log `level` must be one of "info" | "warn" | "error"',
+        );
+      }
+      if (typeof message !== 'string') {
+        throw new ProtocolDecodeError('preview:log requires string `message`');
+      }
+      return { kind: 'preview:log', level, message };
+    }
+
+    case 'command:invoke': {
+      const command = raw['command'];
+      const componentId = raw['componentId'];
+      if (typeof command !== 'string' || command === '') {
+        throw new ProtocolDecodeError(
+          'command:invoke requires non-empty string `command`',
+        );
+      }
+      if (typeof componentId !== 'number' || !Number.isFinite(componentId)) {
+        throw new ProtocolDecodeError(
+          'command:invoke requires finite numeric `componentId`',
+        );
+      }
+      return { kind: 'command:invoke', command, componentId };
     }
   }
 }

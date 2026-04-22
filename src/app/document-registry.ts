@@ -40,6 +40,15 @@ export interface DocumentRegistry {
    */
   readonly activeController: Store<DocumentController | null>;
   /**
+   * Register a listener fired once per newly-created controller (before
+   * it's handed out to the caller of `getOrCreateController`). Used by
+   * Phase 8.1 to wire `command:invoke` forwarding on each controller's
+   * editor-state message stream. Returns an unsubscribe function.
+   */
+  onControllerCreated(
+    listener: (controller: DocumentController) => void,
+  ): () => void;
+  /**
    * Return the existing controller for `uri`, or instantiate one if
    * absent. Newly created controllers use the registry's shared deps
    * (read/write injected once at registry creation).
@@ -68,6 +77,7 @@ export function createDocumentRegistry(
 ): DocumentRegistry {
   const controllers = new Map<string, DocumentController>();
   const activeController = createStore<DocumentController | null>(null);
+  const creationListeners = new Set<(controller: DocumentController) => void>();
 
   function getController(uri: Uri): DocumentController | null {
     return controllers.get(uri.toString()) ?? null;
@@ -79,7 +89,17 @@ export function createDocumentRegistry(
     if (existing !== undefined) return existing;
     const created = createDocumentController(deps);
     controllers.set(key, created);
+    for (const listener of [...creationListeners]) listener(created);
     return created;
+  }
+
+  function onControllerCreated(
+    listener: (controller: DocumentController) => void,
+  ): () => void {
+    creationListeners.add(listener);
+    return () => {
+      creationListeners.delete(listener);
+    };
   }
 
   function setActiveUri(uri: Uri | null): void {
@@ -113,6 +133,7 @@ export function createDocumentRegistry(
 
   return {
     activeController,
+    onControllerCreated,
     getOrCreateController,
     setActiveUri,
     getController,

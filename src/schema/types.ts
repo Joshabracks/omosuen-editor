@@ -51,6 +51,23 @@ export interface PropertySchema {
 }
 
 /**
+ * Schema-declared inspector action button. Rendered by the inspector as
+ * a clickable button below the component's fields; a click emits a
+ * `command:invoke` message that the extension host forwards to
+ * `vscode.commands.executeCommand(command, componentId)`.
+ *
+ * Used to launch Phase 8's specialized editors (animation, texture-map,
+ * cell-map, cell-map-materials) from the inspector panel without the
+ * user having to memorize command-palette entries.
+ */
+export interface ComponentAction {
+  /** Display text on the inspector button. */
+  label: string;
+  /** VS Code command id registered via `commands.registerCommand`. */
+  command: string;
+}
+
+/**
  * One versioned schema snapshot for a component.
  */
 export interface ComponentSchemaVersion {
@@ -71,6 +88,12 @@ export interface ComponentSchemaVersion {
    * this allowlist entry exists, and yes, it's intentionally not a UI field."
    */
   exclude?: readonly string[];
+  /**
+   * Optional inspector action buttons (Phase 8.1). Rendered after the
+   * fields; each entry becomes one button whose click dispatches the
+   * named VS Code command with the current component's id.
+   */
+  actions?: readonly ComponentAction[];
 }
 
 /**

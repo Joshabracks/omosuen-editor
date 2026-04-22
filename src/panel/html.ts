@@ -47,6 +47,14 @@ export interface BuildPanelHTMLOptions {
    * Using this requires `allowWebviewResourceScripts: true`.
    */
   readonly extraScripts?: readonly { readonly src: Uri }[];
+  /**
+   * Optional attributes rendered on the `<body>` element. Used by the
+   * Phase 8 editor-panel factory to bake the target component id into
+   * the HTML as a `data-component-id` attribute, so the panel bundle
+   * reads its focus target synchronously on boot without a round-trip
+   * message. Keys must be `[a-z][a-z0-9-]*`; values are HTML-escaped.
+   */
+  readonly bodyAttrs?: Record<string, string>;
 }
 
 /**
@@ -60,6 +68,7 @@ export function buildPanelHTML(options: BuildPanelHTMLOptions): string {
     nonce,
     allowWebviewResourceScripts = false,
     extraScripts = [],
+    bodyAttrs = {},
   } = options;
 
   if (extraScripts.length > 0 && !allowWebviewResourceScripts) {
@@ -67,6 +76,17 @@ export function buildPanelHTML(options: BuildPanelHTMLOptions): string {
       'buildPanelHTML: extraScripts requires allowWebviewResourceScripts: true',
     );
   }
+
+  const bodyAttrString = Object.entries(bodyAttrs)
+    .map(([k, v]) => {
+      if (!/^[a-z][a-z0-9-]*$/.test(k)) {
+        throw new Error(
+          `buildPanelHTML: invalid bodyAttrs key "${k}" (must match [a-z][a-z0-9-]*)`,
+        );
+      }
+      return ` ${k}="${escapeHtml(v)}"`;
+    })
+    .join('');
 
   const cspSource = webview.cspSource;
   const scriptSrc = allowWebviewResourceScripts
@@ -96,7 +116,7 @@ export function buildPanelHTML(options: BuildPanelHTMLOptions): string {
     `    }`,
     `  </style>`,
     `</head>`,
-    `<body></body>`,
+    `<body${bodyAttrString}></body>`,
   ];
   if (extraScriptTags !== '') lines.push(extraScriptTags);
   lines.push(
