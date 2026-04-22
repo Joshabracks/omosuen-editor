@@ -11,11 +11,13 @@ export type {
   ComponentUpdateMessage,
   EditorMessage,
   EditorMessageKind,
+  JsonPrimitive,
+  JsonValue,
   SceneLoadMessage,
   SceneSaveMessage,
 } from './types.js';
 export { assertNever } from './types.js';
-export { encodeMessage } from './encode.js';
+export { encodeMessage, ProtocolEncodeError } from './encode.js';
 export { decodeMessage, ProtocolDecodeError } from './decode.js';
 export {
   componentSelect,

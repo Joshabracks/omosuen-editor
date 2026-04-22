@@ -40,24 +40,10 @@
  * ─────────────────────────────────────────────────────────────────────────
  */
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { parse } from '../omoscene/index.js';
 import type { EngineError } from './engine-context.js';
 import { getCachedReleases } from './engine-context.js';
+import { loadSceneFixtures } from './fixtures.js';
 import { test } from './harness.js';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const FIXTURES_ROOT = join(HERE, 'omoscene-fixtures');
-
-type Category = 'pass' | 'errors' | 'null';
-
-interface Fixture {
-  category: Category;
-  name: string;
-  scene: unknown;
-}
 
 interface DeserializeOutcome {
   component: unknown;
@@ -66,38 +52,13 @@ interface DeserializeOutcome {
 
 type AssertionResult = DeserializeOutcome | Error;
 
-/**
- * Enumerate fixtures. Each file under omoscene-fixtures/<category>/ becomes
- * one Fixture with its parsed scene region.
- */
-function loadFixtures(): Fixture[] {
-  const out: Fixture[] = [];
-  const categories: Category[] = ['pass', 'errors', 'null'];
-  for (const category of categories) {
-    const dir = join(FIXTURES_ROOT, category);
-    if (!existsSync(dir)) continue;
-    for (const filename of readdirSync(dir).sort()) {
-      if (!filename.endsWith('.omoscene')) continue;
-      const fullPath = join(dir, filename);
-      const text = readFileSync(fullPath, 'utf-8');
-      const file = parse(text);
-      out.push({
-        category,
-        name: `${category}/${filename.replace(/\.omoscene$/, '')}`,
-        scene: file.scene,
-      });
-    }
-  }
-  return out;
-}
-
 function formatErrors(errs: EngineError[]): string {
   return errs.map((e) => e.code).join(', ');
 }
 
 export async function runEngineFixtureTests(): Promise<void> {
   const releases = await getCachedReleases();
-  const fixtures = loadFixtures();
+  const fixtures = loadSceneFixtures();
 
   if (releases.length === 0) {
     test('engine fixtures: at least one cached release', () => {

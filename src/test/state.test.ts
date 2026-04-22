@@ -3,6 +3,9 @@
  *
  * Covers:
  *   - Generic `createStore` subscription / unsubscribe / reference-equality.
+ *   - `createEditorState` factory: each call returns an isolated instance
+ *     with its own stores, dispatcher, and message subscribers (the
+ *     per-document scoping decision from Phase 3.5.1 Option A).
  *   - `dispatch` routing for every protocol variant, including raw-message
  *     subscribers.
  *   - `applyComponentUpdate` / `updateComponentProperty` tree-walk purity:
@@ -13,11 +16,7 @@
  * message flows through the store; mock subscribers observe the change."
  */
 
-import {
-  OMOSCENE_FORMAT_VERSION,
-  defaultEditorMetadata,
-} from '../omoscene/index.js';
-import type { OmosceneFile } from '../omoscene/index.js';
+import type { OmosceneFile, SerializedScene } from '../omoscene/index.js';
 import {
   componentSelect,
   componentUpdate,
@@ -27,22 +26,18 @@ import {
 import type { EditorMessage } from '../protocol/index.js';
 import {
   applyComponentUpdate,
+  createEditorState,
   createStore,
-  dispatch,
-  resetStateForTests,
-  sceneDocument,
-  selection,
-  subscribeMessages,
   updateComponentProperty,
 } from '../state/index.js';
+import { loadSingleFixture, makeScene as makeBaseScene } from './fixtures.js';
 import { assertDeepEqual, test } from './harness.js';
 
+// Multi-component tree with a nested nexus — covers the scene-mutation
+// walk's primary cases (sibling traversal, nested descent, deep matches).
+// Wraps the shared `makeScene` base so each test gets a fresh reference.
 function makeScene(): OmosceneFile {
-  return {
-    omoscene: OMOSCENE_FORMAT_VERSION,
-    engine: '0.0.0-test',
-    name: 'state-test',
-    editor: defaultEditorMetadata(),
+  return makeBaseScene({
     scene: {
       type: 'nexus',
       name: 'Root',
@@ -70,7 +65,7 @@ function makeScene(): OmosceneFile {
         },
       ],
     },
-  };
+  });
 }
 
 export function runStateTests(): void {
@@ -120,6 +115,26 @@ export function runStateTests(): void {
     unsub();
     s.set(2);
     if (calls !== 1) throw new Error(`expected 1 notification, got ${calls}`);
+  });
+
+  test('createStore: unsubscribing a not-yet-visited listener mid-notify still delivers this event', () => {
+    // Regression for 3.5.3: without snapshotting the listener set before
+    // iteration, Set iteration semantics skip entries deleted after the
+    // iterator started but before they were yielded. A (subscribed first)
+    // unsubscribes B (subscribed second, not yet visited); B should still
+    // receive the current event because B existed at set() time.
+    const s = createStore(0);
+    const receivedByB: number[] = [];
+    let unsubB = (): void => undefined;
+    s.subscribe(() => {
+      unsubB();
+    });
+    unsubB = s.subscribe((next) => {
+      receivedByB.push(next);
+    });
+    s.set(1);
+    s.set(2); // B is gone by now; should not receive.
+    assertDeepEqual(receivedByB, [1]);
   });
 
   // --- updateComponentProperty (pure) -------------------------------------
@@ -192,6 +207,35 @@ export function runStateTests(): void {
     }
   });
 
+  test('updateComponentProperty: preceding sibling refs preserved when a later sibling changes (3.5.6 lazy rebuild)', () => {
+    // After the lazy-rebuild change, siblings encountered before the
+    // first divergence keep their references — only from the divergence
+    // point onward do we hold new references. Proves the slice-from-index
+    // back-fill, not a slice-from-zero.
+    const scene = makeScene().scene;
+    const originalChildren = scene.components as readonly unknown[];
+    // id=3 is the Child nexus, the *third* sibling — updating it forces
+    // a rebuild starting at index 2, so [0] and [1] must stay intact.
+    const { scene: next, changed } = updateComponentProperty(
+      scene,
+      3,
+      'nexus',
+      'label',
+      'updated',
+    );
+    if (!changed) throw new Error('expected changed=true');
+    const nextChildren = next.components as readonly unknown[];
+    if (nextChildren[0] !== originalChildren[0]) {
+      throw new Error('preceding sibling [0] should keep its reference');
+    }
+    if (nextChildren[1] !== originalChildren[1]) {
+      throw new Error('preceding sibling [1] should keep its reference');
+    }
+    if (nextChildren[2] === originalChildren[2]) {
+      throw new Error('matched sibling [2] should be a new reference');
+    }
+  });
+
   test('updateComponentProperty: reaches into nested nexus children', () => {
     const scene = makeScene().scene;
     const { scene: next, changed } = updateComponentProperty(
@@ -229,35 +273,77 @@ export function runStateTests(): void {
     }
   });
 
-  // --- dispatch + stores --------------------------------------------------
+  // --- createEditorState isolation ----------------------------------------
 
-  test('dispatch: component:select updates selection store', () => {
-    resetStateForTests();
-    const observed: Array<number | null> = [];
-    selection.subscribe((next) => observed.push(next));
-    dispatch(componentSelect(42));
-    dispatch(componentSelect(null));
-    assertDeepEqual(observed, [42, null]);
-    if (selection.get() !== null) {
-      throw new Error(`expected null selection, got ${selection.get()}`);
+  test('createEditorState: two instances have independent stores', () => {
+    const a = createEditorState();
+    const b = createEditorState();
+    a.dispatch(componentSelect([1]));
+    b.dispatch(componentSelect([2]));
+    assertDeepEqual(a.selection.get(), [1]);
+    assertDeepEqual(b.selection.get(), [2]);
+  });
+
+  test('createEditorState: message subscribers do not cross instances', () => {
+    const a = createEditorState();
+    const b = createEditorState();
+    const seenByA: EditorMessage[] = [];
+    a.subscribeMessages((msg) => seenByA.push(msg));
+    b.dispatch(componentSelect([7]));
+    if (seenByA.length !== 0) {
+      throw new Error(
+        `a's listener should not see b's messages; saw ${seenByA.length}`,
+      );
     }
   });
 
+  // --- dispatch + stores (per-instance) -----------------------------------
+
+  test('dispatch: component:select updates selection store', () => {
+    const state = createEditorState();
+    const observed: Array<readonly number[]> = [];
+    state.selection.subscribe((next) => observed.push(next));
+    state.dispatch(componentSelect([42]));
+    state.dispatch(componentSelect([1, 2, 3]));
+    state.dispatch(componentSelect([]));
+    assertDeepEqual(observed, [[42], [1, 2, 3], []]);
+    assertDeepEqual(state.selection.get(), []);
+  });
+
   test('dispatch: scene:load populates the document store', () => {
-    resetStateForTests();
+    const state = createEditorState();
     const file = makeScene();
-    dispatch(sceneLoad(file));
-    if (sceneDocument.get() !== file) {
+    state.dispatch(sceneLoad(file));
+    if (state.sceneDocument.get() !== file) {
       throw new Error('expected sceneDocument to hold the loaded file');
     }
   });
 
-  test('dispatch: component:update mutates the scene document immutably', () => {
-    resetStateForTests();
+  test('dispatch: scene:load hydrates selection from file.editor.selection', () => {
+    const state = createEditorState();
     const file = makeScene();
-    dispatch(sceneLoad(file));
-    dispatch(componentUpdate(2, 'sprite', 'opacity', 0.42));
-    const current = sceneDocument.get();
+    file.editor.selection = [1, 4];
+    state.dispatch(sceneLoad(file));
+    assertDeepEqual(state.selection.get(), [1, 4]);
+  });
+
+  test('dispatch: scene:load selection hydration is a defensive copy', () => {
+    // Mutating file.editor.selection after dispatch must not leak into the
+    // store's held array. The store should hold its own copy.
+    const state = createEditorState();
+    const file = makeScene();
+    file.editor.selection = [5];
+    state.dispatch(sceneLoad(file));
+    file.editor.selection.push(6);
+    assertDeepEqual(state.selection.get(), [5]);
+  });
+
+  test('dispatch: component:update mutates the scene document immutably', () => {
+    const state = createEditorState();
+    const file = makeScene();
+    state.dispatch(sceneLoad(file));
+    state.dispatch(componentUpdate(2, 'sprite', 'opacity', 0.42));
+    const current = state.sceneDocument.get();
     if (current === null) throw new Error('expected a document');
     if (current === file) throw new Error('expected new file reference');
     const sprite = (
@@ -269,54 +355,120 @@ export function runStateTests(): void {
   });
 
   test('dispatch: component:update with no document open is a no-op', () => {
-    resetStateForTests();
+    const state = createEditorState();
     let calls = 0;
-    sceneDocument.subscribe(() => {
+    state.sceneDocument.subscribe(() => {
       calls += 1;
     });
-    dispatch(componentUpdate(1, 'transform', 'x', 0));
+    state.dispatch(componentUpdate(1, 'transform', 'x', 0));
     if (calls !== 0) throw new Error('did not expect sceneDocument to change');
-    if (sceneDocument.get() !== null) {
+    if (state.sceneDocument.get() !== null) {
       throw new Error('expected sceneDocument to remain null');
     }
   });
 
+  test('dispatch: component:update works against a real engine-fixture scene (3.6.1 structural canary)', () => {
+    // Structural canary: load a real engine-fixture, inject ids (engine
+    // assigns them during deserialize; hand-authored fixtures omit them),
+    // dispatch a property update, assert it took effect. If engine output
+    // ever uses a different tree shape — `children` instead of
+    // `components`, `kind` instead of `type`, etc. — the fixture updates
+    // in lockstep (driven by `engine-fixtures.test.ts` failing first),
+    // the scene-mutation walk fails to match, and this test fails —
+    // forcing `src/state/scene-mutation.ts` to be updated alongside.
+    const loaded = loadSingleFixture('pass/02-single-transform.omoscene');
+    const loadedChildren = loaded.scene.components ?? [];
+    const augmentedScene: SerializedScene = {
+      ...loaded.scene,
+      id: 0,
+      components: loadedChildren.map((c, i) => ({ ...c, id: i + 1 })),
+    };
+    const file = makeBaseScene({ scene: augmentedScene });
+
+    const state = createEditorState();
+    state.dispatch(sceneLoad(file));
+    state.dispatch(
+      componentUpdate(1, 'transform', 'scale', {
+        _vectorType: 'Vector3D',
+        x: 2,
+        y: 2,
+        z: 2,
+      }),
+    );
+
+    const current = state.sceneDocument.get();
+    if (current === null) throw new Error('expected a document');
+    const components = current.scene.components as
+      | readonly { id?: number; scale?: unknown }[]
+      | undefined;
+    const transform = components?.find((c) => c.id === 1);
+    if (!transform) {
+      throw new Error(
+        'transform[id=1] not found — structural drift in engine output?',
+      );
+    }
+    const scale = transform.scale as { x?: number };
+    if (scale.x !== 2) {
+      throw new Error(`expected scale.x=2, got ${String(scale.x)}`);
+    }
+  });
+
   test('dispatch: scene:save does not mutate stores', () => {
-    resetStateForTests();
+    const state = createEditorState();
     let sceneCalls = 0;
     let selectionCalls = 0;
-    sceneDocument.subscribe(() => {
+    state.sceneDocument.subscribe(() => {
       sceneCalls += 1;
     });
-    selection.subscribe(() => {
+    state.selection.subscribe(() => {
       selectionCalls += 1;
     });
-    dispatch(sceneSave());
+    state.dispatch(sceneSave());
     if (sceneCalls !== 0 || selectionCalls !== 0) {
       throw new Error('scene:save must not mutate stores');
     }
   });
 
   test('subscribeMessages: observes every dispatched message', () => {
-    resetStateForTests();
+    const state = createEditorState();
     const observed: EditorMessage[] = [];
-    const unsub = subscribeMessages((msg) => observed.push(msg));
-    dispatch(componentSelect(1));
-    dispatch(sceneSave());
+    const unsub = state.subscribeMessages((msg) => observed.push(msg));
+    state.dispatch(componentSelect([1]));
+    state.dispatch(sceneSave());
     unsub();
-    dispatch(componentSelect(2));
-    assertDeepEqual(observed, [componentSelect(1), sceneSave()]);
+    state.dispatch(componentSelect([2]));
+    assertDeepEqual(observed, [componentSelect([1]), sceneSave()]);
   });
 
   test('subscribeMessages: unsubscribe stops delivery', () => {
-    resetStateForTests();
+    const state = createEditorState();
     let calls = 0;
-    const unsub = subscribeMessages(() => {
+    const unsub = state.subscribeMessages(() => {
       calls += 1;
     });
-    dispatch(componentSelect(1));
+    state.dispatch(componentSelect([1]));
     unsub();
-    dispatch(componentSelect(2));
+    state.dispatch(componentSelect([2]));
     if (calls !== 1) throw new Error(`expected 1 message, got ${calls}`);
+  });
+
+  test('subscribeMessages: unsubscribing a not-yet-visited listener mid-dispatch still delivers this message', () => {
+    // Regression for 3.5.3 on the message-listener set. Same semantics as
+    // the store-level test above: listeners present at dispatch() time
+    // receive the message even if a preceding listener unsubscribed them.
+    const state = createEditorState();
+    const seenByB: EditorMessage[] = [];
+    let unsubB = (): void => undefined;
+    state.subscribeMessages(() => {
+      unsubB();
+    });
+    unsubB = state.subscribeMessages((msg) => {
+      seenByB.push(msg);
+    });
+    state.dispatch(componentSelect([1]));
+    state.dispatch(componentSelect([2])); // B is gone by now; should not receive.
+    if (seenByB.length !== 1) {
+      throw new Error(`expected B to see 1 message, got ${seenByB.length}`);
+    }
   });
 }

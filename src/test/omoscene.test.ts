@@ -15,12 +15,12 @@ import {
   stringify,
 } from '../omoscene/index.js';
 import type { OmosceneFile } from '../omoscene/index.js';
+import { makeScene } from './fixtures.js';
 import { assertDeepEqual, expectThrow, test } from './harness.js';
 
-const fixture: OmosceneFile = {
-  omoscene: OMOSCENE_FORMAT_VERSION,
-  engine: '0.0.0-test',
-  name: 'Test Scene',
+// Populated editor + multi-component scene so round-trip tests exercise
+// non-default content, not just an empty shell.
+const fixture: OmosceneFile = makeScene({
   editor: {
     camera: { panX: 10, panY: -5, zoom: 1.5 },
     selection: [0, 1, 2],
@@ -43,7 +43,7 @@ const fixture: OmosceneFile = {
       { type: 'sprite', name: 'main sprite', id: 2 },
     ],
   },
-};
+});
 
 export function runOmosceneTests(): void {
   test('stringify -> parse round-trips to a deep-equal object', () => {

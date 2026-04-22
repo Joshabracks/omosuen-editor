@@ -13,23 +13,39 @@
  * shapes are not introspected — but the *tree structure* (type, id,
  * components[]) is common across all component types and is fair game for
  * the editor to traverse.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * FUTURE OPTIMIZATION — component-id index (deferred from Phase 3.5.7):
+ *
+ * Every `component:update` dispatch walks the full scene tree to locate
+ * `(componentType, id)`. At realistic Phase-5-and-earlier scene sizes
+ * that's cheap. At Phase 6 gizmo-drag time — say a 10k-component scene
+ * with 60 fps updates — it works out to ~600k node visits/sec.
+ *
+ * The planned fix is an `id → node-path` index held alongside the store:
+ *   - Built once when `scene:load` hydrates the document.
+ *   - Invalidated / patched on structural mutations (`component:add` /
+ *     `component:remove` / `nexus:reparent` — verbs planned in 3.5.8).
+ *   - Consumed by `applyComponentUpdate` for O(depth) path-descent
+ *     instead of the current O(N) tree-walk.
+ *
+ * Not implemented yet: property-update walks are not the bottleneck until
+ * Phase 6, and shipping the index without the structural verbs that also
+ * need it would require re-designing invalidation once those verbs land.
+ * Full design note: `.design/05-implementation-plan.md` → "Deferred
+ * optimizations → Component-id lookup index".
+ * ─────────────────────────────────────────────────────────────────────────
  */
 
-import type { OmosceneFile, SerializedScene } from '../omoscene/index.js';
+import type {
+  OmosceneFile,
+  SerializedComponent,
+  SerializedScene,
+} from '../omoscene/index.js';
+import { isRecord } from '../util/guards.js';
 
-interface ComponentNode {
-  readonly type: string;
-  readonly id?: number;
-  readonly components?: readonly ComponentNode[];
-  readonly [key: string]: unknown;
-}
-
-function isComponentNode(value: unknown): value is ComponentNode {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const typed = value as { type?: unknown };
-  return typeof typed.type === 'string';
+function isSerializedComponent(value: unknown): value is SerializedComponent {
+  return isRecord(value) && typeof value['type'] === 'string';
 }
 
 /**
@@ -55,42 +71,52 @@ export function updateComponentProperty(
 }
 
 function updateNode(
-  node: ComponentNode,
+  node: SerializedComponent,
   id: number,
   componentType: string,
   property: string,
   value: unknown,
-): ComponentNode {
+): SerializedComponent {
   const matches = node.type === componentType && node.id === id;
 
   // Recurse into children first so a match higher in the tree still gets
   // its children visited (a component can match and have children, e.g. a
   // nexus updating a metadata field while still holding nested components).
-  let nextChildren: readonly ComponentNode[] | undefined = node.components;
+  //
+  // Lazy rebuild: `rebuilt` stays null until the first divergence is
+  // found, at which point we back-fill the preceding unchanged children
+  // and start pushing subsequent ones. No-match walks therefore allocate
+  // zero per-node arrays.
+  let rebuilt: SerializedComponent[] | null = null;
   if (Array.isArray(node.components)) {
-    let childChanged = false;
-    const rebuilt: ComponentNode[] = [];
-    for (const child of node.components) {
-      if (!isComponentNode(child)) {
-        rebuilt.push(child);
-        continue;
+    // `Array.isArray` narrows to `any[]`; pin the type back to the
+    // interface-declared shape so per-element inference stays clean.
+    const children = node.components as readonly SerializedComponent[];
+    for (let i = 0; i < children.length; i += 1) {
+      const child = children[i];
+      if (child === undefined) continue;
+      const updated = isSerializedComponent(child)
+        ? updateNode(child, id, componentType, property, value)
+        : child;
+      if (rebuilt !== null) {
+        rebuilt.push(updated);
+      } else if (updated !== child) {
+        // First divergence: back-fill preceding unchanged children.
+        rebuilt = children.slice(0, i);
+        rebuilt.push(updated);
       }
-      const updated = updateNode(child, id, componentType, property, value);
-      if (updated !== child) childChanged = true;
-      rebuilt.push(updated);
-    }
-    if (childChanged) {
-      nextChildren = rebuilt;
     }
   }
 
-  const childrenChanged = nextChildren !== node.components;
+  const childrenChanged = rebuilt !== null;
+  const nextChildren: readonly SerializedComponent[] | undefined =
+    rebuilt ?? node.components;
 
   if (!matches && !childrenChanged) {
     return node;
   }
 
-  const nextNode: ComponentNode = { ...node };
+  const nextNode: SerializedComponent = { ...node };
   if (matches) {
     (nextNode as Record<string, unknown>)[property] = value;
   }

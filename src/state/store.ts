@@ -44,7 +44,10 @@ export function createStore<T>(initial: T): Store<T> {
       if (nextValue === value) return;
       const previous = value;
       value = nextValue;
-      for (const listener of listeners) {
+      // Snapshot before iterating: a listener that unsubscribes itself or
+      // another listener during notification must not disturb the delivery
+      // of this event to the listeners that existed at the time of set().
+      for (const listener of [...listeners]) {
         listener(nextValue, previous);
       }
     },

@@ -13,15 +13,34 @@
 export const OMOSCENE_FORMAT_VERSION = 1;
 
 /**
- * Opaque representation of the engine's serialized scene tree.
- * The extension host never inspects this beyond validating that the root
- * component is a nexus. Engine serializers produce it; engine deserializers
- * consume it.
+ * One node in the engine's serialized component tree.
+ *
+ * Only the fields common to every serialized component are typed:
+ * `type` (always present), optional `id` (engine-assigned during
+ * deserialize — absent on pre-deserialize scenes), and optional
+ * `components` for container nodes like nexuses. Per-component fields
+ * (position, opacity, etc.) are reachable via the index signature as
+ * `unknown` — the extension host does not introspect them; per-field
+ * typing is handled by the per-component schemas.
+ *
+ * The editor traverses this structure by `type`, `id`, and `components`
+ * only. Anything deeper goes through the engine or the schemas.
  */
-export type SerializedScene = {
-  readonly type: 'nexus';
+export interface SerializedComponent {
+  readonly type: string;
+  readonly id?: number;
+  readonly components?: readonly SerializedComponent[];
   readonly [key: string]: unknown;
-};
+}
+
+/**
+ * Root of the engine's serialized scene tree — always a nexus.
+ * Specialization of `SerializedComponent` constraining `type`.
+ * Engine serializers produce it; engine deserializers consume it.
+ */
+export interface SerializedScene extends SerializedComponent {
+  readonly type: 'nexus';
+}
 
 /**
  * Editor-only metadata stored alongside the scene region.

@@ -1,3 +1,4 @@
+import { isRecord } from '../util/guards.js';
 import type { EditorMetadata, OmosceneFile, SerializedScene } from './types.js';
 import { OMOSCENE_FORMAT_VERSION } from './types.js';
 
@@ -13,6 +14,11 @@ export class OmosceneParseError extends Error {
  * Parse a `.omoscene` JSON text into a validated `OmosceneFile`.
  * The `scene` region is not introspected beyond checking that its root is
  * a nexus — the engine owns that region's shape.
+ *
+ * Thin wrapper around `validateOmosceneFile` — prefer calling that
+ * directly when you already have a parsed object (e.g. from a
+ * postMessage / WebSocket payload), to avoid a redundant JSON
+ * stringify/re-parse cycle.
  */
 export function parse(source: string): OmosceneFile {
   let raw: unknown;
@@ -22,8 +28,16 @@ export function parse(source: string): OmosceneFile {
     const reason = err instanceof Error ? err.message : String(err);
     throw new OmosceneParseError(`Invalid JSON: ${reason}`);
   }
+  return validateOmosceneFile(raw);
+}
 
-  if (!isObject(raw)) {
+/**
+ * Validate an already-parsed value against the `OmosceneFile` shape.
+ * Shared between `parse(text)` and the protocol decoder, which receives
+ * pre-parsed objects from the transport layer.
+ */
+export function validateOmosceneFile(raw: unknown): OmosceneFile {
+  if (!isRecord(raw)) {
     throw new OmosceneParseError('Root value must be an object.');
   }
 
@@ -62,13 +76,13 @@ export function parse(source: string): OmosceneFile {
 }
 
 function validateEditor(raw: unknown): EditorMetadata {
-  if (!isObject(raw)) {
+  if (!isRecord(raw)) {
     throw new OmosceneParseError('`editor` field must be an object.');
   }
 
   const camera = raw.camera;
   if (
-    !isObject(camera) ||
+    !isRecord(camera) ||
     typeof camera.panX !== 'number' ||
     typeof camera.panY !== 'number' ||
     typeof camera.zoom !== 'number'
@@ -87,7 +101,7 @@ function validateEditor(raw: unknown): EditorMetadata {
     );
   }
 
-  if (!isObject(raw.treeState)) {
+  if (!isRecord(raw.treeState)) {
     throw new OmosceneParseError('`editor.treeState` must be an object.');
   }
   for (const [key, value] of Object.entries(raw.treeState)) {
@@ -98,11 +112,11 @@ function validateEditor(raw: unknown): EditorMetadata {
     }
   }
 
-  if (!isObject(raw.annotations)) {
+  if (!isRecord(raw.annotations)) {
     throw new OmosceneParseError('`editor.annotations` must be an object.');
   }
   for (const [key, value] of Object.entries(raw.annotations)) {
-    if (!isObject(value)) {
+    if (!isRecord(value)) {
       throw new OmosceneParseError(
         `\`editor.annotations[${JSON.stringify(key)}]\` must be an object.`,
       );
@@ -119,7 +133,7 @@ function validateEditor(raw: unknown): EditorMetadata {
     }
   }
 
-  if (!isObject(raw.bookmarks)) {
+  if (!isRecord(raw.bookmarks)) {
     throw new OmosceneParseError('`editor.bookmarks` must be an object.');
   }
   for (const [key, value] of Object.entries(raw.bookmarks)) {
@@ -147,7 +161,7 @@ function validateEditor(raw: unknown): EditorMetadata {
 }
 
 function validateScene(raw: unknown): SerializedScene {
-  if (!isObject(raw)) {
+  if (!isRecord(raw)) {
     throw new OmosceneParseError('`scene` field must be an object.');
   }
   if (raw.type !== 'nexus') {
@@ -156,10 +170,6 @@ function validateScene(raw: unknown): SerializedScene {
     );
   }
   return raw as SerializedScene;
-}
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 function typeOf(v: unknown): string {

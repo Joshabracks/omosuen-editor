@@ -6,8 +6,13 @@
  * (tests, logic code that doesn't touch the filesystem) use only the
  * exports below and avoid pulling the `vscode` module into Node.
  */
-export type { EditorMetadata, OmosceneFile, SerializedScene } from './types.js';
+export type {
+  EditorMetadata,
+  OmosceneFile,
+  SerializedComponent,
+  SerializedScene,
+} from './types.js';
 export { OMOSCENE_FORMAT_VERSION } from './types.js';
 export { defaultEditorMetadata } from './defaults.js';
-export { parse, OmosceneParseError } from './parse.js';
+export { parse, validateOmosceneFile, OmosceneParseError } from './parse.js';
 export { stringify } from './stringify.js';

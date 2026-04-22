@@ -8,6 +8,7 @@ import type { OmosceneFile } from '../omoscene/index.js';
 import type {
   ComponentSelectMessage,
   ComponentUpdateMessage,
+  JsonValue,
   SceneLoadMessage,
   SceneSaveMessage,
 } from './types.js';
@@ -16,13 +17,15 @@ export function componentUpdate(
   id: number,
   componentType: string,
   property: string,
-  value: unknown,
+  value: JsonValue,
 ): ComponentUpdateMessage {
   return { kind: 'component:update', id, componentType, property, value };
 }
 
-export function componentSelect(id: number | null): ComponentSelectMessage {
-  return { kind: 'component:select', id };
+export function componentSelect(
+  ids: readonly number[],
+): ComponentSelectMessage {
+  return { kind: 'component:select', ids };
 }
 
 export function sceneLoad(file: OmosceneFile): SceneLoadMessage {

@@ -12,8 +12,9 @@
  * and it lives in `src/omoscene/parse.ts`.
  */
 
-import { parse } from '../omoscene/index.js';
-import type { EditorMessage, EditorMessageKind } from './types.js';
+import { validateOmosceneFile } from '../omoscene/index.js';
+import { isRecord } from '../util/guards.js';
+import type { EditorMessage, EditorMessageKind, JsonValue } from './types.js';
 
 export class ProtocolDecodeError extends Error {
   constructor(message: string) {
@@ -28,10 +29,6 @@ const KNOWN_KINDS: ReadonlySet<EditorMessageKind> = new Set([
   'scene:load',
   'scene:save',
 ] satisfies EditorMessageKind[]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 export function decodeMessage(text: string): EditorMessage {
   let raw: unknown;
@@ -79,34 +76,38 @@ export function decodeMessage(text: string): EditorMessage {
           'component:update requires `value` field (may be any JSON-compatible value)',
         );
       }
+      // `JSON.parse` cannot produce `NaN`, `Infinity`, `undefined`, or
+      // other non-JSON values — the grammar forbids them — so the parsed
+      // `value` is structurally `JsonValue` and the cast is sound.
       return {
         kind: 'component:update',
         id,
         componentType,
         property,
-        value: raw['value'],
+        value: raw['value'] as JsonValue,
       };
     }
 
     case 'component:select': {
-      const id = raw['id'];
-      if (id !== null && (typeof id !== 'number' || !Number.isFinite(id))) {
+      const ids = raw['ids'];
+      if (!Array.isArray(ids)) {
         throw new ProtocolDecodeError(
-          'component:select requires `id` to be a finite number or null',
+          'component:select requires `ids` to be an array of finite numbers (use [] to clear)',
         );
       }
-      return { kind: 'component:select', id };
+      for (const entry of ids) {
+        if (typeof entry !== 'number' || !Number.isFinite(entry)) {
+          throw new ProtocolDecodeError(
+            'component:select `ids` entries must all be finite numbers',
+          );
+        }
+      }
+      return { kind: 'component:select', ids: ids as readonly number[] };
     }
 
     case 'scene:load': {
-      const file = raw['file'];
-      if (!isRecord(file)) {
-        throw new ProtocolDecodeError(
-          'scene:load requires object `file` field',
-        );
-      }
       try {
-        const validated = parse(JSON.stringify(file));
+        const validated = validateOmosceneFile(raw['file']);
         return { kind: 'scene:load', file: validated };
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);

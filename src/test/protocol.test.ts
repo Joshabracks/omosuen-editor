@@ -8,12 +8,8 @@
  */
 
 import {
-  OMOSCENE_FORMAT_VERSION,
-  defaultEditorMetadata,
-} from '../omoscene/index.js';
-import type { OmosceneFile } from '../omoscene/index.js';
-import {
   ProtocolDecodeError,
+  ProtocolEncodeError,
   componentSelect,
   componentUpdate,
   decodeMessage,
@@ -22,13 +18,13 @@ import {
   sceneSave,
 } from '../protocol/index.js';
 import type { EditorMessage } from '../protocol/index.js';
+import { makeScene } from './fixtures.js';
 import { assertDeepEqual, expectThrow, test } from './harness.js';
 
-const sceneFixture: OmosceneFile = {
-  omoscene: OMOSCENE_FORMAT_VERSION,
-  engine: '0.0.0-test',
-  name: 'Test Scene',
-  editor: defaultEditorMetadata(),
+// Minimal scene with one transform — just enough to exercise `scene:load`
+// round-trip through the protocol decoder (which delegates to omoscene's
+// validator). The specific component set doesn't matter for codec tests.
+const sceneFixture = makeScene({
   scene: {
     type: 'nexus',
     name: 'Root',
@@ -36,7 +32,7 @@ const sceneFixture: OmosceneFile = {
     unique: 0,
     components: [{ type: 'transform', name: 't', id: 1 }],
   },
-};
+});
 
 function roundTrip(msg: EditorMessage): EditorMessage {
   return decodeMessage(encodeMessage(msg));
@@ -45,13 +41,18 @@ function roundTrip(msg: EditorMessage): EditorMessage {
 export function runProtocolTests(): void {
   // --- Round-trips --------------------------------------------------------
 
-  test('round-trip: component:select (numeric id)', () => {
-    const msg = componentSelect(42);
+  test('round-trip: component:select (single id)', () => {
+    const msg = componentSelect([42]);
     assertDeepEqual(roundTrip(msg), msg);
   });
 
-  test('round-trip: component:select (null clears selection)', () => {
-    const msg = componentSelect(null);
+  test('round-trip: component:select (multi-select)', () => {
+    const msg = componentSelect([1, 2, 3]);
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: component:select (empty clears selection)', () => {
+    const msg = componentSelect([]);
     assertDeepEqual(roundTrip(msg), msg);
   });
 
@@ -108,9 +109,28 @@ export function runProtocolTests(): void {
     );
   });
 
-  test('decode rejects component:select with non-numeric non-null id', () => {
+  test('decode rejects component:select without ids array', () => {
     expectThrow(
-      () => decodeMessage('{"kind":"component:select","id":"one"}'),
+      () => decodeMessage('{"kind":"component:select"}'),
+      'ProtocolDecodeError',
+    );
+    expectThrow(
+      () => decodeMessage('{"kind":"component:select","ids":null}'),
+      'ProtocolDecodeError',
+    );
+    expectThrow(
+      () => decodeMessage('{"kind":"component:select","ids":42}'),
+      'ProtocolDecodeError',
+    );
+  });
+
+  test('decode rejects component:select ids containing non-number', () => {
+    expectThrow(
+      () => decodeMessage('{"kind":"component:select","ids":[1,"two",3]}'),
+      'ProtocolDecodeError',
+    );
+    expectThrow(
+      () => decodeMessage('{"kind":"component:select","ids":[null]}'),
       'ProtocolDecodeError',
     );
   });
@@ -179,6 +199,52 @@ export function runProtocolTests(): void {
     } catch (err) {
       if (!(err instanceof ProtocolDecodeError)) {
         throw new Error(`expected ProtocolDecodeError, got ${String(err)}`);
+      }
+    }
+  });
+
+  // --- Encoder rejections (3.5.12) ---------------------------------------
+
+  test('encode rejects NaN in component:update.value', () => {
+    expectThrow(
+      () => encodeMessage(componentUpdate(1, 'transform', 'x', NaN)),
+      'ProtocolEncodeError',
+    );
+  });
+
+  test('encode rejects Infinity in component:update.value', () => {
+    expectThrow(
+      () => encodeMessage(componentUpdate(1, 'transform', 'x', Infinity)),
+      'ProtocolEncodeError',
+    );
+    expectThrow(
+      () => encodeMessage(componentUpdate(1, 'transform', 'x', -Infinity)),
+      'ProtocolEncodeError',
+    );
+  });
+
+  test('encode rejects nested non-finite number in component:update.value', () => {
+    expectThrow(
+      () =>
+        encodeMessage(componentUpdate(1, 'transform', 'position', [0, NaN, 0])),
+      'ProtocolEncodeError',
+    );
+    expectThrow(
+      () =>
+        encodeMessage(
+          componentUpdate(1, 'sprite', 'tint', { r: 1, g: Infinity, b: 0 }),
+        ),
+      'ProtocolEncodeError',
+    );
+  });
+
+  test('ProtocolEncodeError is the error name', () => {
+    try {
+      encodeMessage(componentUpdate(1, 'transform', 'x', NaN));
+      throw new Error('expected throw');
+    } catch (err) {
+      if (!(err instanceof ProtocolEncodeError)) {
+        throw new Error(`expected ProtocolEncodeError, got ${String(err)}`);
       }
     }
   });
