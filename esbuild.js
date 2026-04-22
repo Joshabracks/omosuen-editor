@@ -24,13 +24,18 @@ const extensionConfig = {
   external: ['vscode'],
 };
 
+// Webview bundles. Each key becomes `dist/<key>.js`; add a line per
+// panel. Entries are IIFE so the webview HTML can load them as a single
+// <script> tag without import-map plumbing.
 const webviewConfig = {
   ...commonOptions,
-  entryPoints: ['src/panel/webview.ts'],
+  entryPoints: {
+    'selection-info': 'src/panel/selection-info/webview.ts',
+  },
   format: 'iife',
   target: 'es2022',
   platform: 'browser',
-  outfile: 'dist/webview.js',
+  outdir: 'dist',
 };
 
 async function run() {

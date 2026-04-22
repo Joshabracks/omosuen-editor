@@ -1,14 +1,5 @@
 import * as vscode from 'vscode';
-
-class PlaceholderTreeProvider implements vscode.TreeDataProvider<string> {
-  getTreeItem(element: string): vscode.TreeItem {
-    return new vscode.TreeItem(element);
-  }
-
-  getChildren(): Promise<string[]> {
-    return Promise.resolve([]);
-  }
-}
+import { registerPanel } from '../panel/base.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const hello = vscode.commands.registerCommand('omosuen.hello', () => {
@@ -16,11 +7,25 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(hello);
 
-  const placeholder = vscode.window.registerTreeDataProvider(
-    'omosuen.placeholder',
-    new PlaceholderTreeProvider(),
-  );
-  context.subscriptions.push(placeholder);
+  // Phase 4.5 sample panel — Selection Info.
+  //
+  // `wireOutgoing` echoes every incoming message back to the same
+  // webview. This is scaffolding: Phase 5 replaces the echo with real
+  // routing (a central hub forwards messages to every registered panel).
+  // The panel's code doesn't know or care whether the echo or the real
+  // router is wired up — the bridge looks the same from the webview
+  // side either way.
+  const selectionInfo = registerPanel(context, {
+    id: 'omosuen.selectionInfo',
+    title: 'Selection Info',
+    kind: 'view',
+    webviewEntryPath: 'selection-info.js',
+    wireOutgoing: (bridge) =>
+      bridge.onMessage((msg) => {
+        bridge.dispatch(msg);
+      }),
+  });
+  context.subscriptions.push({ dispose: () => selectionInfo.dispose() });
 }
 
 export function deactivate(): void {

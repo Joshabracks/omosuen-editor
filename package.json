@@ -51,18 +51,13 @@
     "views": {
       "omosuen": [
         {
-          "id": "omosuen.placeholder",
-          "name": "Omosuen",
+          "id": "omosuen.selectionInfo",
+          "name": "Selection Info",
+          "type": "webview",
           "contextualTitle": "Omosuen"
         }
       ]
-    },
-    "viewsWelcome": [
-      {
-        "view": "omosuen.placeholder",
-        "contents": "Omosuen editor features will appear here as they're built."
-      }
-    ]
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ./",
@@ -89,5 +84,8 @@
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "state-street": "npm:@state-street/state-street@1.1.2"
   }
 }
