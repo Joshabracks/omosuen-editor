@@ -31,6 +31,7 @@ import { renderField, escapeHtml } from './widgets.js';
 
 interface PanelData {
   title: string;
+  nameRowHtml: string;
   fieldsHtml: string;
   actionsHtml: string;
   // Non-rendered fields accessed by methods; prefixed `_` by convention.
@@ -46,6 +47,9 @@ const template = /* html */ `
   <div style="padding: 0.5em;">
     <h3 style="margin: 0 0 0.5em 0; font-size: 1em;">{{title}}</h3>
     <div>
+      <NameRowBody/>
+    </div>
+    <div>
       <FieldsBody/>
     </div>
     <div style="margin-top: 0.75em;">
@@ -55,6 +59,7 @@ const template = /* html */ `
 </body>
 `;
 
+const NameRowBody = (): string => `{{nameRowHtml}}`;
 const FieldsBody = (): string => `{{fieldsHtml}}`;
 const ActionsBody = (): string => `{{actionsHtml}}`;
 
@@ -62,6 +67,7 @@ const panel = bootstrapPanel<PanelData>({
   template,
   initialData: {
     title: 'Inspector',
+    nameRowHtml: '',
     fieldsHtml:
       '<em style="color: var(--vscode-descriptionForeground);">Select a component to inspect.</em>',
     actionsHtml: '',
@@ -70,7 +76,7 @@ const panel = bootstrapPanel<PanelData>({
     _component: null,
   },
   stateFactory: (t, d, c, m) => new State<PanelData>(t, d, c, m),
-  components: { FieldsBody, ActionsBody },
+  components: { NameRowBody, FieldsBody, ActionsBody },
   methods: {
     editString: ({ bridge, state, field, event }) => {
       const target = event.target as HTMLInputElement;
@@ -122,7 +128,11 @@ const panel = bootstrapPanel<PanelData>({
     invokeAction: ({ bridge, state, command }) => {
       const data = (state as { data: PanelData }).data;
       if (data._selectedId === null) return;
-      bridge.dispatch(commandInvoke(String(command), data._selectedId));
+      bridge.dispatch(commandInvoke(String(command), [data._selectedId]));
+    },
+    editName: ({ bridge, state, event }) => {
+      const target = event.target as HTMLInputElement;
+      dispatchFieldUpdate(bridge, state, 'name', target.value);
     },
   },
   wireIncoming: (msg) => {
@@ -138,14 +148,19 @@ function dispatchFieldUpdate(
 ): void {
   const data = (state as { data: PanelData }).data;
   if (data._selectedId === null || data._componentType === null) return;
-  bridge.dispatch(
-    componentUpdate(
-      data._selectedId,
-      data._componentType,
-      String(field),
-      value,
-    ),
+  const msg = componentUpdate(
+    data._selectedId,
+    data._componentType,
+    String(field),
+    value,
   );
+  // Optimistic local dispatch — the document-controller broker
+  // deliberately skips re-broadcasting to the source panel, so without
+  // this the inspector's own sceneDocument stays stale and the edit
+  // appears to "revert" the next time the same component is selected
+  // (same pattern as the scene-tree's select fix).
+  editor.dispatch(msg);
+  bridge.dispatch(msg);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -182,25 +197,35 @@ function refresh(): void {
     return;
   }
 
-  const displayName =
-    typeof component.name === 'string' && component.name !== ''
-      ? `${component.type} "${component.name}"`
-      : component.type;
-  panel.state.data.title = `${displayName} (id=${String(selectedId)})`;
+  panel.state.data.title = `${String(selectedId)}: ${component.type}`;
   panel.state.data._selectedId = selectedId;
   panel.state.data._componentType = component.type;
   panel.state.data._component = component;
+  panel.state.data.nameRowHtml = renderNameRow(component);
   panel.state.data.fieldsHtml = renderFields(schema, component);
   panel.state.data.actionsHtml = renderActions(schema);
 }
 
 function setEmpty(message: string): void {
   panel.state.data.title = 'Inspector';
+  panel.state.data.nameRowHtml = '';
   panel.state.data.fieldsHtml = `<em style="color: var(--vscode-descriptionForeground);">${escapeHtml(message)}</em>`;
   panel.state.data.actionsHtml = '';
   panel.state.data._selectedId = null;
   panel.state.data._componentType = null;
   panel.state.data._component = null;
+}
+
+function renderNameRow(component: SerializedComponent): string {
+  const name = typeof component.name === 'string' ? component.name : '';
+  // Handlers use the unquoted `:event=method(args)` form — State
+  // Street's event regex only matches unquoted method calls, and a
+  // quoted `:change="..."` confuses the attribute regex's non-greedy
+  // match so neighbouring attribute values absorb the handler text.
+  return `<div style="display: grid; grid-template-columns: auto 1fr; gap: 0.5em; align-items: center; margin-bottom: 0.5em;">
+    <label style="font-size: 0.9em;">Name</label>
+    <input type="text" value="${escapeHtml(name)}" :change=editName() style="background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 0.25em; width: 100%; box-sizing: border-box;" />
+  </div>`;
 }
 
 function resolveComponentSchema(
@@ -229,9 +254,11 @@ function renderActions(schema: ComponentSchemaVersion): string {
   if (actions.length === 0) return '';
   return actions
     .map((action) => {
-      const safeCommand = escapeHtml(action.command);
+      // Bare unquoted form for State Street's event parser. Command
+      // ids match [a-zA-Z0-9.]+ which is safe inside the method-arg
+      // parens (no spaces, no quotes needed).
       const safeLabel = escapeHtml(action.label);
-      return `<button type="button" :click="invokeAction(command='${safeCommand}')" style="margin-right: 0.5em; margin-bottom: 0.25em;">${safeLabel}</button>`;
+      return `<button type="button" :click=invokeAction(command=${action.command}) style="margin-right: 0.5em; margin-bottom: 0.25em;">${safeLabel}</button>`;
     })
     .join('');
 }

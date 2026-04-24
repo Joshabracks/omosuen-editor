@@ -52,7 +52,7 @@ export function previewLog(
 
 export function commandInvoke(
   command: string,
-  componentId: number,
+  args: readonly JsonValue[] = [],
 ): CommandInvokeMessage {
-  return { kind: 'command:invoke', command, componentId };
+  return { kind: 'command:invoke', command, args };
 }

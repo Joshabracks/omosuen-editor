@@ -9,6 +9,7 @@ import {
 import { registerNewProjectCommand } from './new-project-command.js';
 import { registerPreviewLauncherCommand } from './preview-launcher-command.js';
 import { registerSceneEditorProvider } from './scene-editor-provider.js';
+import { registerSceneTreeCommands } from './scene-tree-commands.js';
 import { registerAnimationEditor } from '../scene/animation-editor/host.js';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -33,6 +34,7 @@ export function activate(context: vscode.ExtensionContext): void {
   registerPreviewLauncherCommand(context, registry);
   registerSceneEditorProvider(context, registry);
   registerAnimationEditor(context, registry);
+  registerSceneTreeCommands(context, registry);
 
   // Phase 8.1: forward `command:invoke` messages from any panel through
   // to `vscode.commands.executeCommand` so schema-declared inspector
@@ -42,7 +44,7 @@ export function activate(context: vscode.ExtensionContext): void {
   registry.onControllerCreated((controller) => {
     controller.editorState.subscribeMessages((msg) => {
       if (msg.kind !== 'command:invoke') return;
-      void vscode.commands.executeCommand(msg.command, msg.componentId);
+      void vscode.commands.executeCommand(msg.command, ...msg.args);
     });
   });
 
@@ -66,6 +68,17 @@ export function activate(context: vscode.ExtensionContext): void {
     wireOutgoing: (bridge) => followActiveController(bridge, registry),
   });
   context.subscriptions.push({ dispose: () => inspector.dispose() });
+
+  // Post-8 gap-fill: Project view hosts the "Create New Project…"
+  // button (and future project-settings UI). No controller binding —
+  // the panel doesn't depend on which scene is active.
+  const project = registerPanel(context, {
+    id: 'omosuen.project',
+    title: 'Project',
+    kind: 'view',
+    webviewEntryPath: 'project.js',
+  });
+  context.subscriptions.push({ dispose: () => project.dispose() });
 }
 
 export function deactivate(): void {

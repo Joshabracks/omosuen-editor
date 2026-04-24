@@ -87,7 +87,7 @@ const template = /* html */ `
       <h3 class="ae-title">Animations</h3>
       <div>
         <input type="text" id="ae-new-name" placeholder="New animation name" />
-        <button :click="addAnim()">Add</button>
+        <button :click=addAnim()>Add</button>
       </div>
       <div style="margin-top: 0.5em;">
         <AnimationsList/>
@@ -151,41 +151,51 @@ const panel = bootstrapPanel<PanelData>({
       input.value = '';
       commit(bridge, data, next, name);
     },
-    selectAnim: ({ state, name }) => {
-      const data = (state as { data: PanelData }).data;
-      data._selectedAnimation = String(name);
-      refresh(data);
+    selectAnim: ({ state, idx }) => {
+      const d = (state as { data: PanelData }).data;
+      const anim = d._animations[Number(idx)];
+      if (anim === undefined) return;
+      d._selectedAnimation = anim.name;
+      refresh(d);
     },
-    removeAnim: ({ bridge, state, name }) => {
-      const data = (state as { data: PanelData }).data;
-      const next = removeAnimation(data._animations, String(name));
+    removeAnim: ({ bridge, state, idx }) => {
+      const d = (state as { data: PanelData }).data;
+      const anim = d._animations[Number(idx)];
+      if (anim === undefined) return;
+      const next = removeAnimation(d._animations, anim.name);
       const nextSelected =
-        data._selectedAnimation === name ? null : data._selectedAnimation;
-      commit(bridge, data, next, nextSelected);
+        d._selectedAnimation === anim.name ? null : d._selectedAnimation;
+      commit(bridge, d, next, nextSelected);
     },
-    renameAnim: ({ bridge, state, name, event }) => {
+    renameAnim: ({ bridge, state, idx, event }) => {
       const target = event.target as HTMLInputElement;
       const newName = target.value;
-      const oldName = String(name);
-      const next = renameAnimation(data(state)._animations, oldName, newName);
       const d = data(state);
+      const anim = d._animations[Number(idx)];
+      if (anim === undefined) return;
+      const oldName = anim.name;
+      const next = renameAnimation(d._animations, oldName, newName);
       const nextSelected =
         d._selectedAnimation === oldName
           ? newName.trim()
           : d._selectedAnimation;
       commit(bridge, d, next, nextSelected);
     },
-    changeFrameRate: ({ bridge, state, name, event }) => {
+    changeFrameRate: ({ bridge, state, idx, event }) => {
       const target = event.target as HTMLInputElement;
       const fr = Number.parseFloat(target.value);
       if (!Number.isFinite(fr) || fr <= 0) return;
       const d = data(state);
-      commit(bridge, d, setFrameRate(d._animations, String(name), fr));
+      const anim = d._animations[Number(idx)];
+      if (anim === undefined) return;
+      commit(bridge, d, setFrameRate(d._animations, anim.name, fr));
     },
-    toggleLoop: ({ bridge, state, name, event }) => {
+    toggleLoop: ({ bridge, state, idx, event }) => {
       const target = event.target as HTMLInputElement;
       const d = data(state);
-      commit(bridge, d, setLoop(d._animations, String(name), target.checked));
+      const anim = d._animations[Number(idx)];
+      if (anim === undefined) return;
+      commit(bridge, d, setLoop(d._animations, anim.name, target.checked));
     },
     addFrame: ({ bridge, state, index }) => {
       const d = data(state);
@@ -305,13 +315,17 @@ function renderAnimationsList(d: PanelData): string {
   if (d._animations.length === 0) {
     return '<em style="color: var(--vscode-descriptionForeground);">No animations. Add one above.</em>';
   }
+  // State Street's event-arg parser splits naively on `,` and `=` and
+  // doesn't strip quotes, so we cannot inject user-typed animation
+  // names as event arguments (they can contain any char). Pass the
+  // list index instead; handler looks up by position on dispatch.
   return d._animations
-    .map((a) => {
+    .map((a, idx) => {
       const selected = a.name === d._selectedAnimation ? ' selected' : '';
       const safeName = escapeHtml(a.name);
-      return `<div class="ae-list-item${selected}" :click="selectAnim(name='${escapeAttr(a.name)}')">
+      return `<div class="ae-list-item${selected}" :click=selectAnim(idx=${idx})>
         <span>${safeName}</span>
-        <button type="button" style="float: right;" :click="removeAnim(name='${escapeAttr(a.name)}')">×</button>
+        <button type="button" style="float: right;" :click=removeAnim(idx=${idx})>×</button>
       </div>`;
     })
     .join('');
@@ -321,9 +335,9 @@ function renderTimeline(d: PanelData): string {
   if (d._selectedAnimation === null) {
     return '<em style="color: var(--vscode-descriptionForeground);">Select an animation on the left.</em>';
   }
-  const anim = d._animations.find((a) => a.name === d._selectedAnimation);
-  if (anim === undefined) return '';
-  const nameAttr = escapeAttr(anim.name);
+  const idx = d._animations.findIndex((a) => a.name === d._selectedAnimation);
+  if (idx === -1) return '';
+  const anim = d._animations[idx]!;
   const framesHtml =
     anim.frames.length === 0
       ? '<em style="color: var(--vscode-descriptionForeground);">No frames. Click the palette on the right to add.</em>'
@@ -331,18 +345,18 @@ function renderTimeline(d: PanelData): string {
           .map(
             (frameIdx, pos) =>
               `<div class="ae-frame">${frameIdx}
-                <button class="remove" type="button" :click="removeFrame(position='${pos}')">×</button>
+                <button class="remove" type="button" :click=removeFrame(position=${pos})>×</button>
               </div>`,
           )
           .join('');
   return `<div>
     <div style="display: grid; grid-template-columns: auto 1fr auto 1fr auto auto; gap: 0.5em; align-items: center;">
       <label>Name</label>
-      <input type="text" value="${escapeAttr(anim.name)}" :change="renameAnim(name='${nameAttr}')" />
+      <input type="text" value="${escapeHtml(anim.name)}" :change=renameAnim(idx=${idx}) />
       <label>FPS</label>
-      <input type="number" min="1" step="1" value="${anim.frameRate}" :change="changeFrameRate(name='${nameAttr}')" />
+      <input type="number" min="1" step="1" value="${anim.frameRate}" :change=changeFrameRate(idx=${idx}) />
       <label>Loop</label>
-      <input type="checkbox" ${anim.loop ? 'checked' : ''} :change="toggleLoop(name='${nameAttr}')" />
+      <input type="checkbox" ${anim.loop ? 'checked' : ''} :change=toggleLoop(idx=${idx}) />
     </div>
     <div class="ae-timeline">${framesHtml}</div>
   </div>`;
@@ -352,7 +366,7 @@ function renderPalette(d: PanelData): string {
   const cells: string[] = [];
   for (let i = 0; i < d._frameCount; i += 1) {
     cells.push(
-      `<div class="ae-palette-cell" :click="addFrame(index='${i}')">${i}</div>`,
+      `<div class="ae-palette-cell" :click=addFrame(index=${i})>${i}</div>`,
     );
   }
   return `<div class="ae-palette-grid">${cells.join('')}</div>`;
@@ -380,8 +394,4 @@ function escapeHtml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-function escapeAttr(s: string): string {
-  return s.replace(/'/g, '').replace(/"/g, '');
 }

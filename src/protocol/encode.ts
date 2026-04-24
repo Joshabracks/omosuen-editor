@@ -23,6 +23,11 @@ export function encodeMessage(msg: EditorMessage): string {
   if (msg.kind === 'component:update') {
     validateJsonValue(msg.value, 'component:update.value');
   }
+  if (msg.kind === 'command:invoke') {
+    for (let i = 0; i < msg.args.length; i += 1) {
+      validateJsonValue(msg.args[i], `command:invoke.args[${i}]`);
+    }
+  }
   return JSON.stringify(msg);
 }
 

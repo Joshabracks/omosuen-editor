@@ -42,6 +42,22 @@
       {
         "command": "omosuen.openAnimationEditor",
         "title": "Omosuen: Open Animation Editor"
+      },
+      {
+        "command": "omosuen.addChildComponent",
+        "title": "Omosuen: Add Child Component"
+      },
+      {
+        "command": "omosuen.deleteComponent",
+        "title": "Omosuen: Delete Component"
+      },
+      {
+        "command": "omosuen.moveComponent",
+        "title": "Omosuen: Move Component"
+      },
+      {
+        "command": "omosuen.reparentComponent",
+        "title": "Omosuen: Reparent Component"
       }
     ],
     "configuration": {
@@ -94,6 +110,12 @@
     },
     "views": {
       "omosuen": [
+        {
+          "id": "omosuen.project",
+          "name": "Project",
+          "type": "webview",
+          "contextualTitle": "Omosuen"
+        },
         {
           "id": "omosuen.sceneTree",
           "name": "Scene",

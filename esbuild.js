@@ -39,6 +39,8 @@ const webviewConfig = {
     'preview-overlay': 'src/panel/preview-overlay/client.ts',
     // Phase 8.2: animation editor webview.
     'animation-editor': 'src/scene/animation-editor/webview.ts',
+    // Post-8 gap-fill: Project activity-bar view.
+    project: 'src/panel/project/webview.ts',
   },
   format: 'iife',
   target: 'es2022',

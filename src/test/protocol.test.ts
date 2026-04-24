@@ -109,8 +109,23 @@ export function runProtocolTests(): void {
     assertDeepEqual(roundTrip(msg), msg);
   });
 
-  test('round-trip: command:invoke', () => {
-    const msg = commandInvoke('omosuen.openAnimationEditor', 42);
+  test('round-trip: command:invoke (no args)', () => {
+    const msg = commandInvoke('omosuen.newProject');
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: command:invoke (single component-id arg)', () => {
+    const msg = commandInvoke('omosuen.openAnimationEditor', [42]);
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: command:invoke (heterogeneous args)', () => {
+    const msg = commandInvoke('omosuen.someFuture', [
+      42,
+      'scene.omoscene',
+      true,
+      null,
+    ]);
     assertDeepEqual(roundTrip(msg), msg);
   });
 
@@ -248,19 +263,32 @@ export function runProtocolTests(): void {
 
   test('decode rejects command:invoke with empty command', () => {
     expectThrow(
-      () =>
-        decodeMessage('{"kind":"command:invoke","command":"","componentId":1}'),
+      () => decodeMessage('{"kind":"command:invoke","command":"","args":[]}'),
       'ProtocolDecodeError',
     );
   });
 
-  test('decode rejects command:invoke with non-finite componentId', () => {
+  test('decode rejects command:invoke without args array', () => {
     expectThrow(
       () =>
         decodeMessage(
-          '{"kind":"command:invoke","command":"omosuen.openAnimationEditor","componentId":null}',
+          '{"kind":"command:invoke","command":"omosuen.openAnimationEditor"}',
         ),
       'ProtocolDecodeError',
+    );
+    expectThrow(
+      () =>
+        decodeMessage(
+          '{"kind":"command:invoke","command":"omosuen.openAnimationEditor","args":42}',
+        ),
+      'ProtocolDecodeError',
+    );
+  });
+
+  test('encode rejects command:invoke with non-finite arg', () => {
+    expectThrow(
+      () => encodeMessage(commandInvoke('omosuen.x', [NaN])),
+      'ProtocolEncodeError',
     );
   });
 

@@ -148,18 +148,24 @@ export function decodeMessage(text: string): EditorMessage {
 
     case 'command:invoke': {
       const command = raw['command'];
-      const componentId = raw['componentId'];
+      const args = raw['args'];
       if (typeof command !== 'string' || command === '') {
         throw new ProtocolDecodeError(
           'command:invoke requires non-empty string `command`',
         );
       }
-      if (typeof componentId !== 'number' || !Number.isFinite(componentId)) {
+      if (!Array.isArray(args)) {
         throw new ProtocolDecodeError(
-          'command:invoke requires finite numeric `componentId`',
+          'command:invoke requires `args` to be an array (use [] for no arguments)',
         );
       }
-      return { kind: 'command:invoke', command, componentId };
+      // JSON.parse cannot produce NaN / Infinity / undefined, so
+      // `args` is structurally `JsonValue[]` and the cast is sound.
+      return {
+        kind: 'command:invoke',
+        command,
+        args: args as readonly JsonValue[],
+      };
     }
   }
 }

@@ -57,6 +57,14 @@ export interface DocumentController {
    * joiners thus see the current scene without needing to request it.
    */
   registerPanel(bridge: Bridge): () => void;
+  /**
+   * Re-dispatch the current host-side document to every registered
+   * panel as a fresh `scene:load`. Used by host-originated mutations
+   * (e.g. the Post-8 `omosuen.addChildComponent` command) where the
+   * mutation happens outside the panel-broker pipeline but still needs
+   * every panel to re-hydrate. No-op when no document is loaded.
+   */
+  rebroadcastSceneLoad(): void;
   /** Tears down every per-panel subscription. Idempotent. */
   dispose(): void;
 }
@@ -149,6 +157,16 @@ export function createDocumentController(
     panels.clear();
   }
 
+  function rebroadcastSceneLoad(): void {
+    if (disposed) return;
+    const currentFile = editorState.sceneDocument.get();
+    if (currentFile === null) return;
+    const loadMsg = sceneLoad(currentFile);
+    for (const bridge of [...panels]) {
+      bridge.dispatch(loadMsg);
+    }
+  }
+
   return {
     editorState,
     get uri(): Uri | null {
@@ -157,6 +175,7 @@ export function createDocumentController(
     load,
     save,
     registerPanel,
+    rebroadcastSceneLoad,
     dispose,
   };
 }

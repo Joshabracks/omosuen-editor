@@ -18,7 +18,15 @@ export { createStore } from './store.js';
 export type { Listener, Store, Unsubscribe, Updater } from './store.js';
 export {
   applyComponentUpdate,
+  insertChildComponent,
+  moveComponent,
+  nextComponentId,
+  removeComponent,
+  reparentComponent,
   updateComponentProperty,
 } from './scene-mutation.js';
+export type { MoveDirection } from './scene-mutation.js';
+export { buildDefaultComponent } from './component-defaults.js';
+export type { BuildDefaultComponentOptions } from './component-defaults.js';
 export { createEditorState } from './editor-state.js';
 export type { EditorState, MessageListener } from './editor-state.js';

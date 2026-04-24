@@ -68,18 +68,20 @@ export interface SceneLoadMessage {
 }
 
 /**
- * Webview → host request to invoke a VS Code command with a
- * component-id argument. Surfaces the schema-declared action buttons
- * (Phase 8.1) rendered by the inspector: clicking "Open Animation
- * Editor" posts `{ kind: 'command:invoke', command: 'omosuen.openAnimationEditor', componentId: 42 }`.
+ * Webview → host request to invoke a VS Code command with arbitrary
+ * arguments. Surfaces the schema-declared action buttons (Phase 8.1)
+ * rendered by the inspector, the Post-8 scene-tree "+" button, the
+ * Project view's "Create New Project…" button, etc. Example:
+ * `{ kind: 'command:invoke', command: 'omosuen.openAnimationEditor', args: [42] }`.
+ *
  * The host's broker subscribes to the message stream and forwards to
- * `vscode.commands.executeCommand(command, componentId)`; state dispatch
- * is a no-op (no store mutation).
+ * `vscode.commands.executeCommand(command, ...args)`; state dispatch is
+ * a no-op (no store mutation).
  */
 export interface CommandInvokeMessage {
   readonly kind: 'command:invoke';
   readonly command: string;
-  readonly componentId: number;
+  readonly args: readonly JsonValue[];
 }
 
 /**
