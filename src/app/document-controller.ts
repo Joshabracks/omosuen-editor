@@ -65,6 +65,20 @@ export interface DocumentController {
    * every panel to re-hydrate. No-op when no document is loaded.
    */
   rebroadcastSceneLoad(): void;
+  /**
+   * Host-originated equivalent of what a registered panel's bridge
+   * does when it dispatches an `EditorMessage`: apply to the canonical
+   * `editorState` AND broadcast to every registered panel (no source
+   * to skip — host has no bridge).
+   *
+   * Used by the native scene tree provider (which is NOT a webview
+   * and has no bridge) to route `component:select` + friends through
+   * the same broker pipeline, keeping every panel in sync.
+   *
+   * Special-cases `scene:save` identically to the broker — persists
+   * via `save()` and does not broadcast.
+   */
+  dispatchFromHost(msg: EditorMessage): void;
   /** Tears down every per-panel subscription. Idempotent. */
   dispose(): void;
 }
@@ -79,7 +93,7 @@ export function createDocumentController(
   let currentUri: Uri | null = null;
   let disposed = false;
 
-  function broker(source: Bridge, msg: EditorMessage): void {
+  function applyAndBroadcast(source: Bridge | null, msg: EditorMessage): void {
     if (disposed) return;
 
     if (msg.kind === 'scene:save') {
@@ -95,11 +109,20 @@ export function createDocumentController(
 
     // Snapshot before iterating — see Phase 3.5.3. A broker subscriber
     // that unregisters mid-fan-out must not disturb delivery to peers
-    // that existed when this message arrived.
+    // that existed when this message arrived. `source === null` means
+    // the message originated from host-side code (no bridge to skip).
     for (const other of [...panels]) {
       if (other === source) continue;
       other.dispatch(msg);
     }
+  }
+
+  function broker(source: Bridge, msg: EditorMessage): void {
+    applyAndBroadcast(source, msg);
+  }
+
+  function dispatchFromHost(msg: EditorMessage): void {
+    applyAndBroadcast(null, msg);
   }
 
   async function load(uri: Uri): Promise<void> {
@@ -176,6 +199,7 @@ export function createDocumentController(
     save,
     registerPanel,
     rebroadcastSceneLoad,
+    dispatchFromHost,
     dispose,
   };
 }

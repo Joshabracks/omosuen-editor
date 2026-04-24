@@ -164,6 +164,53 @@ export function runDocumentControllerTests(): void {
     }
   });
 
+  test('dispatchFromHost: applies to host state and broadcasts to every panel (no source to skip)', async () => {
+    const file = makeScene();
+    const deps = fakeDeps(file);
+    const controller = createDocumentController(deps);
+    await controller.load(fakeUri('/h') as never);
+
+    const a = fakeBridge();
+    const b = fakeBridge();
+    controller.registerPanel(a);
+    controller.registerPanel(b);
+    a.__received.length = 0;
+    b.__received.length = 0;
+
+    controller.dispatchFromHost(componentSelect([7]));
+
+    // Host state updated.
+    assertDeepEqual(controller.editorState.selection.get(), [7]);
+
+    // Every registered bridge received the message — no source to skip,
+    // unlike the broker path which skips the originating panel.
+    assertDeepEqual(a.__received, [componentSelect([7])]);
+    assertDeepEqual(b.__received, [componentSelect([7])]);
+  });
+
+  test('dispatchFromHost: scene:save triggers writeFile and does not broadcast', async () => {
+    const file = makeScene();
+    const deps = fakeDeps(file);
+    const controller = createDocumentController(deps);
+    await controller.load(fakeUri('/hs') as never);
+
+    const a = fakeBridge();
+    controller.registerPanel(a);
+    a.__received.length = 0;
+
+    controller.dispatchFromHost(sceneSave());
+    // save() is async; let the microtask queue drain.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    if (deps.__writes.length !== 1) {
+      throw new Error(`expected 1 write, got ${deps.__writes.length}`);
+    }
+    if (a.__received.length !== 0) {
+      throw new Error('scene:save must not be broadcast');
+    }
+  });
+
   test('broker: scene:save triggers writeFile (not a broadcast)', async () => {
     const file = makeScene();
     const deps = fakeDeps(file);

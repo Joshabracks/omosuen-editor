@@ -114,29 +114,20 @@ function resolveView(
   options: RegisterPanelOptions,
 ): void {
   const distRoot = vscode.Uri.joinPath(ctx.extensionUri, 'dist');
-  const mediaRoot = vscode.Uri.joinPath(ctx.extensionUri, 'media');
 
   view.webview.options = {
     enableScripts: true,
-    // `mediaRoot` grants webview-resolved access to the packaged icon
-    // set under `media/icons/components/*.svg`. Panels that need them
-    // (scene tree) read the resolved base URI from the body
-    // `data-icons-base` attribute; panels that don't just ignore it.
-    localResourceRoots: [distRoot, mediaRoot],
+    localResourceRoots: [distRoot],
   };
 
   const scriptUri = view.webview.asWebviewUri(
     vscode.Uri.joinPath(distRoot, options.webviewEntryPath),
   );
-  const iconsBase = view.webview
-    .asWebviewUri(vscode.Uri.joinPath(mediaRoot, 'icons', 'components'))
-    .toString();
   view.webview.html = buildPanelHTML({
     webview: view.webview,
     scriptUri,
     title: options.title,
     nonce: generateNonce(),
-    bodyAttrs: { 'data-icons-base': iconsBase },
   });
 
   const bridge = createHostBridge({ webview: view.webview });

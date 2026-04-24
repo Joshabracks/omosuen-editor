@@ -30,7 +30,6 @@ const extensionConfig = {
 const webviewConfig = {
   ...commonOptions,
   entryPoints: {
-    'scene-tree': 'src/panel/scene-tree/webview.ts',
     inspector: 'src/panel/inspector/webview.ts',
     preview: 'src/panel/preview/webview.ts',
     // Phase 9.3: preview-overlay is served by the HTTP preview server

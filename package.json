@@ -58,8 +58,223 @@
       {
         "command": "omosuen.reparentComponent",
         "title": "Omosuen: Reparent Component"
+      },
+      {
+        "command": "omosuen.sceneTree.delete",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "omosuen.sceneTree.moveUp",
+        "title": "Move Up",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "omosuen.sceneTree.moveDown",
+        "title": "Move Down",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "omosuen.addComponent.animation-controller",
+        "title": "animation-controller"
+      },
+      {
+        "command": "omosuen.addComponent.atlas-manager",
+        "title": "atlas-manager"
+      },
+      {
+        "command": "omosuen.addComponent.audio-effect",
+        "title": "audio-effect"
+      },
+      {
+        "command": "omosuen.addComponent.audio-player",
+        "title": "audio-player"
+      },
+      {
+        "command": "omosuen.addComponent.audio-track",
+        "title": "audio-track"
+      },
+      {
+        "command": "omosuen.addComponent.camera",
+        "title": "camera"
+      },
+      {
+        "command": "omosuen.addComponent.cell-map",
+        "title": "cell-map"
+      },
+      {
+        "command": "omosuen.addComponent.collider",
+        "title": "collider"
+      },
+      {
+        "command": "omosuen.addComponent.data-layer",
+        "title": "data-layer"
+      },
+      {
+        "command": "omosuen.addComponent.event-collider",
+        "title": "event-collider"
+      },
+      {
+        "command": "omosuen.addComponent.flag-manager",
+        "title": "flag-manager"
+      },
+      {
+        "command": "omosuen.addComponent.input-controller",
+        "title": "input-controller"
+      },
+      {
+        "command": "omosuen.addComponent.light",
+        "title": "light"
+      },
+      {
+        "command": "omosuen.addComponent.messenger",
+        "title": "messenger"
+      },
+      {
+        "command": "omosuen.addComponent.nexus",
+        "title": "nexus"
+      },
+      {
+        "command": "omosuen.addComponent.sprite",
+        "title": "sprite"
+      },
+      {
+        "command": "omosuen.addComponent.texture-map",
+        "title": "texture-map"
+      },
+      {
+        "command": "omosuen.addComponent.timer",
+        "title": "timer"
+      },
+      {
+        "command": "omosuen.addComponent.transform",
+        "title": "transform"
+      },
+      {
+        "command": "omosuen.addComponent.ui-overlay",
+        "title": "ui-overlay"
+      },
+      {
+        "command": "omosuen.addComponent.viewport",
+        "title": "viewport"
       }
     ],
+    "submenus": [
+      {
+        "id": "omosuen.addComponentSubmenu",
+        "label": "Add Component"
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "submenu": "omosuen.addComponentSubmenu",
+          "when": "view == omosuen.sceneTree && (viewItem == nexus || viewItem == root)",
+          "group": "0_add"
+        },
+        {
+          "command": "omosuen.sceneTree.moveUp",
+          "when": "view == omosuen.sceneTree && viewItem != root",
+          "group": "1_reorder@1"
+        },
+        {
+          "command": "omosuen.sceneTree.moveDown",
+          "when": "view == omosuen.sceneTree && viewItem != root",
+          "group": "1_reorder@2"
+        },
+        {
+          "command": "omosuen.sceneTree.delete",
+          "when": "view == omosuen.sceneTree && viewItem != root",
+          "group": "9_destructive"
+        }
+      ],
+      "omosuen.addComponentSubmenu": [
+        {
+          "command": "omosuen.addComponent.animation-controller",
+          "group": "1_add@01"
+        },
+        {
+          "command": "omosuen.addComponent.atlas-manager",
+          "group": "1_add@02"
+        },
+        {
+          "command": "omosuen.addComponent.audio-effect",
+          "group": "1_add@03"
+        },
+        {
+          "command": "omosuen.addComponent.audio-player",
+          "group": "1_add@04"
+        },
+        {
+          "command": "omosuen.addComponent.audio-track",
+          "group": "1_add@05"
+        },
+        {
+          "command": "omosuen.addComponent.camera",
+          "group": "1_add@06"
+        },
+        {
+          "command": "omosuen.addComponent.cell-map",
+          "group": "1_add@07"
+        },
+        {
+          "command": "omosuen.addComponent.collider",
+          "group": "1_add@08"
+        },
+        {
+          "command": "omosuen.addComponent.data-layer",
+          "group": "1_add@09"
+        },
+        {
+          "command": "omosuen.addComponent.event-collider",
+          "group": "1_add@10"
+        },
+        {
+          "command": "omosuen.addComponent.flag-manager",
+          "group": "1_add@11"
+        },
+        {
+          "command": "omosuen.addComponent.input-controller",
+          "group": "1_add@12"
+        },
+        {
+          "command": "omosuen.addComponent.light",
+          "group": "1_add@13"
+        },
+        {
+          "command": "omosuen.addComponent.messenger",
+          "group": "1_add@14"
+        },
+        {
+          "command": "omosuen.addComponent.nexus",
+          "group": "1_add@15"
+        },
+        {
+          "command": "omosuen.addComponent.sprite",
+          "group": "1_add@16"
+        },
+        {
+          "command": "omosuen.addComponent.texture-map",
+          "group": "1_add@17"
+        },
+        {
+          "command": "omosuen.addComponent.timer",
+          "group": "1_add@18"
+        },
+        {
+          "command": "omosuen.addComponent.transform",
+          "group": "1_add@19"
+        },
+        {
+          "command": "omosuen.addComponent.ui-overlay",
+          "group": "1_add@20"
+        },
+        {
+          "command": "omosuen.addComponent.viewport",
+          "group": "1_add@21"
+        }
+      ]
+    },
     "configuration": {
       "title": "Omosuen",
       "properties": {
@@ -119,7 +334,6 @@
         {
           "id": "omosuen.sceneTree",
           "name": "Scene",
-          "type": "webview",
           "contextualTitle": "Omosuen"
         },
         {

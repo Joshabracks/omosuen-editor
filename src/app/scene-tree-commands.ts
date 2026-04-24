@@ -59,6 +59,75 @@ export function registerSceneTreeCommands(
         runReparent(registry, componentId, newParentId),
     ),
   );
+
+  // Tree-item shims: VS Code's `view/item/context` menus pass the
+  // clicked `TreeItem` to the command as the first argument. The
+  // underlying mutation commands above take raw ids so they stay
+  // palette-invocable, so we register thin wrappers that unwrap the
+  // tree item's component id and forward.
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand(
+      'omosuen.sceneTree.delete',
+      (item: TreeItemLike | undefined) => {
+        const id = extractComponentId(item);
+        if (id === null) return;
+        void vscode.commands.executeCommand('omosuen.deleteComponent', id);
+      },
+    ),
+    vscode.commands.registerCommand(
+      'omosuen.sceneTree.moveUp',
+      (item: TreeItemLike | undefined) => {
+        const id = extractComponentId(item);
+        if (id === null) return;
+        void vscode.commands.executeCommand('omosuen.moveComponent', id, 'up');
+      },
+    ),
+    vscode.commands.registerCommand(
+      'omosuen.sceneTree.moveDown',
+      (item: TreeItemLike | undefined) => {
+        const id = extractComponentId(item);
+        if (id === null) return;
+        void vscode.commands.executeCommand(
+          'omosuen.moveComponent',
+          id,
+          'down',
+        );
+      },
+    ),
+  );
+
+  // Per-type "Add Component" submenu entries — one command per
+  // registered component type. VS Code submenu items can't carry
+  // arguments, so the type is baked into each command id and
+  // delegated to the generic `omosuen.addChildComponent` which
+  // already accepts an explicit type and skips the QuickPick.
+  for (const type of listRegisteredComponents()) {
+    ctx.subscriptions.push(
+      vscode.commands.registerCommand(
+        `omosuen.addComponent.${type}`,
+        (item: TreeItemLike | undefined) => {
+          const id = extractComponentId(item);
+          if (id === null) return;
+          void vscode.commands.executeCommand(
+            'omosuen.addChildComponent',
+            id,
+            type,
+          );
+        },
+      ),
+    );
+  }
+}
+
+interface TreeItemLike {
+  readonly component?: { readonly id?: number | undefined };
+}
+
+function extractComponentId(item: TreeItemLike | undefined): number | null {
+  if (item === undefined) return null;
+  const id = item.component?.id;
+  if (typeof id !== 'number' || !Number.isFinite(id)) return null;
+  return id;
 }
 
 // ---------- add ------------------------------------------------------------

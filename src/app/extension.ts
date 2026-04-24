@@ -10,6 +10,7 @@ import { registerNewProjectCommand } from './new-project-command.js';
 import { registerPreviewLauncherCommand } from './preview-launcher-command.js';
 import { registerSceneEditorProvider } from './scene-editor-provider.js';
 import { registerSceneTreeCommands } from './scene-tree-commands.js';
+import { registerSceneTreeProvider } from './scene-tree-provider.js';
 import { registerAnimationEditor } from '../scene/animation-editor/host.js';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -48,18 +49,16 @@ export function activate(context: vscode.ExtensionContext): void {
     });
   });
 
-  // Sidebars (Scene Tree + Inspector) — `followActiveController` rebinds
+  // Scene Tree — native VS Code `TreeDataProvider`. Runs in the
+  // extension host so context menus and drag ghosts render in the
+  // editor chrome (unbounded by sidebar width), while host-side
+  // reads of `editorState` keep it in lockstep with the inspector
+  // via `DocumentController.dispatchFromHost` + store subscriptions.
+  registerSceneTreeProvider(context, registry);
+
+  // Remaining sidebars (Inspector) — `followActiveController` rebinds
   // their bridge when the active tab changes and hydrates them with the
   // new document via the existing `registerPanel` scene:load emission.
-  const sceneTree = registerPanel(context, {
-    id: 'omosuen.sceneTree',
-    title: 'Scene',
-    kind: 'view',
-    webviewEntryPath: 'scene-tree.js',
-    wireOutgoing: (bridge) => followActiveController(bridge, registry),
-  });
-  context.subscriptions.push({ dispose: () => sceneTree.dispose() });
-
   const inspector = registerPanel(context, {
     id: 'omosuen.inspector',
     title: 'Inspector',
