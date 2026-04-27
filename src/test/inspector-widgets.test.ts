@@ -148,12 +148,12 @@ export function runInspectorWidgetsTests(): void {
     );
     expectIncludes(
       html,
-      ':change=editVector(field=anchor, axis=x)',
+      ':change=editVector(field=anchor,axis=x)',
       'x axis binding',
     );
     expectIncludes(
       html,
-      ':change=editVector(field=anchor, axis=y)',
+      ':change=editVector(field=anchor,axis=y)',
       'y axis binding',
     );
     expectExcludes(html, 'axis=z', '2D widget must not emit a z input');

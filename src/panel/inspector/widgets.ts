@@ -123,7 +123,13 @@ function renderVectorField(
         `<span style="margin-right: 0.25em; color: var(--vscode-descriptionForeground);">${axis}</span>` +
         `<input type="number"${stepAttr} value="${escapeAttr(String(current))}" ` +
         `style="${SCALAR_INPUT_STYLE} width: 5em;" ` +
-        `:change=editVector(field=${field.name}, axis=${axis}) />` +
+        // No space after the comma: State Street's event-arg parser
+        // splits on `,` and doesn't trim, so ` axis=x` arrives with a
+        // leading-space key and the handler's `{ axis }` destructure
+        // sees `undefined`. That silently wrote to `nextVector.undefined`
+        // and left x/y/z at their old values — exactly the "typed value
+        // reverts to 0" symptom. Keeping it tight.
+        `:change=editVector(field=${field.name},axis=${axis}) />` +
         `</label>`
       );
     })
