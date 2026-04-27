@@ -23,6 +23,7 @@ export type PropertyType =
   | 'number'
   | 'boolean'
   | 'enum'
+  | 'stringSet'
   | 'Vector2D'
   | 'Vector3D'
   | 'Vector4D'
@@ -74,6 +75,54 @@ export interface PropertySchema {
   filePicker?: {
     readonly extensions: readonly string[];
   };
+  /**
+   * Opt-in for `type: 'enum'` fields whose option values come from
+   * other components in the same scene rather than a static list.
+   * Example: a sprite's `textureMapKeys.albedo` should let the user
+   * pick from any `texture-map`'s `textureMapKey` field in the
+   * current scene.
+   *
+   * When set, `values` is ignored — the inspector walks the scene
+   * tree, collects every component matching `componentType`, reads
+   * `keyField` from each, dedupes + sorts the strings, and passes
+   * the resulting list as the enum's options at render time. The
+   * currently-saved value is always included so a stale reference
+   * stays visible (and the user can switch off it).
+   */
+  componentRef?: {
+    readonly componentType: string;
+    readonly keyField: string;
+  };
+  /**
+   * Opt-in for `type: 'enum'` fields whose options come from another
+   * field on the *same* component. Sibling of `componentRef` (which
+   * scans across components in the scene). Used by
+   * animation-controller's `currentAnimation` to populate the dropdown
+   * from `animations[*].name` of the same controller.
+   *
+   * `mapField` is the property to extract from each array item when
+   * the source array contains objects. Omit it when the source array
+   * is already a `string[]`. The resolved list is deduped, sorted,
+   * and prefixed with an empty option so the user can clear the
+   * selection.
+   */
+  valuesFromField?: {
+    readonly fieldName: string;
+    readonly mapField?: string;
+  };
+  /**
+   * For `type: 'stringSet'` only. The full set of allowed members
+   * the widget renders as toggleable checkboxes. The on-disk value
+   * is a `string[]` containing some subset of these.
+   */
+  options?: readonly string[];
+  /**
+   * For `type: 'stringSet'` only. Members in this list render as
+   * checked + disabled — the user can't toggle them off through the
+   * inspector. Use when the engine requires a member to always be
+   * present (animation-controller's `albedo` channel).
+   */
+  alwaysOn?: readonly string[];
 }
 
 /**

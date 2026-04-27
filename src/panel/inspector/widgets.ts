@@ -42,6 +42,8 @@ function renderBody(field: PropertySchema, value: unknown): string {
       return renderBooleanField(field, value);
     case 'enum':
       return renderEnumField(field, value);
+    case 'stringSet':
+      return renderStringSetField(field, value);
     case 'Vector2D':
       return renderVectorField(field, value, ['x', 'y']);
     case 'Vector3D':
@@ -139,6 +141,40 @@ function renderEnumField(field: PropertySchema, value: unknown): string {
     options +
     `</select>`
   );
+}
+
+function renderStringSetField(field: PropertySchema, value: unknown): string {
+  const options = field.options ?? [];
+  const alwaysOn = new Set(field.alwaysOn ?? []);
+  const current = new Set<string>();
+  if (Array.isArray(value)) {
+    for (const v of value) if (typeof v === 'string') current.add(v);
+  }
+  // alwaysOn members render as checked + disabled even when absent
+  // from the saved data, so the inspector matches engine behaviour
+  // (the engine forces them on regardless). Disabled inputs don't
+  // dispatch :change, so the binding is omitted for those — the
+  // `member=...` arg in the binding tells the toggle handler which
+  // entry was clicked without needing a `data-` attribute (State
+  // Street's regex strips hyphenated names).
+  const checkboxes = options
+    .map((opt) => {
+      const isOn = alwaysOn.has(opt) || current.has(opt);
+      const disabled = alwaysOn.has(opt);
+      const checked = isOn ? ' checked="checked"' : '';
+      const dis = disabled ? ' disabled="disabled"' : '';
+      const binding = disabled
+        ? ''
+        : ` :change=toggleStringSet(field=${field.name},member=${opt})`;
+      return (
+        `<label style="display: inline-flex; align-items: center; gap: 0.3em; margin-right: 0.75em;">` +
+        `<input type="checkbox"${checked}${dis}${binding} />` +
+        `<span style="font-size: 0.85em;">${escapeHtml(opt)}</span>` +
+        `</label>`
+      );
+    })
+    .join('');
+  return `<div style="display: flex; flex-wrap: wrap; gap: 0.25em;">${checkboxes}</div>`;
 }
 
 function renderVectorField(

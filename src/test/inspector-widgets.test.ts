@@ -212,6 +212,93 @@ export function runInspectorWidgetsTests(): void {
     expectIncludes(html, '<option value="8192"', 'last numeric option');
   });
 
+  // --- stringSet --------------------------------------------------------
+
+  const channelsField = {
+    name: 'channels',
+    type: 'stringSet' as const,
+    label: 'Channels',
+    options: ['albedo', 'normal', 'material', 'emission'],
+    alwaysOn: ['albedo'],
+  };
+
+  test('widget: stringSet renders one checkbox per option', () => {
+    const html = renderField(channelsField, ['albedo']);
+    // Four checkboxes total — one per option entry.
+    const checkboxCount = (html.match(/type="checkbox"/g) ?? []).length;
+    if (checkboxCount !== 4) {
+      throw new Error(`expected 4 checkboxes, got ${checkboxCount}`);
+    }
+    expectIncludes(html, '>albedo</span>', 'albedo label');
+    expectIncludes(html, '>normal</span>', 'normal label');
+    expectIncludes(html, '>material</span>', 'material label');
+    expectIncludes(html, '>emission</span>', 'emission label');
+  });
+
+  test('widget: stringSet alwaysOn members are checked + disabled, no binding', () => {
+    const html = renderField(channelsField, ['albedo']);
+    // Find the albedo checkbox segment by anchoring on its label.
+    const albedoSegment = html.slice(0, html.indexOf('>albedo</span>'));
+    expectIncludes(albedoSegment, ' checked="checked"', 'albedo checked');
+    expectIncludes(albedoSegment, ' disabled="disabled"', 'albedo disabled');
+    expectExcludes(
+      albedoSegment,
+      ':change=toggleStringSet',
+      'albedo emits no toggle binding',
+    );
+  });
+
+  test('widget: stringSet non-alwaysOn members emit toggle binding with member arg', () => {
+    const html = renderField(channelsField, ['albedo']);
+    expectIncludes(
+      html,
+      ':change=toggleStringSet(field=channels,member=normal)',
+      'normal toggle binding',
+    );
+    expectIncludes(
+      html,
+      ':change=toggleStringSet(field=channels,member=material)',
+      'material toggle binding',
+    );
+    expectIncludes(
+      html,
+      ':change=toggleStringSet(field=channels,member=emission)',
+      'emission toggle binding',
+    );
+  });
+
+  test('widget: stringSet members in saved value render checked', () => {
+    const html = renderField(channelsField, ['albedo', 'normal']);
+    // Locate the normal segment (between "normal" and the next label).
+    const normalIdx = html.indexOf('>normal</span>');
+    const before = html.slice(0, normalIdx);
+    const lastInput = before.lastIndexOf('<input');
+    const normalSegment = html.slice(lastInput, normalIdx);
+    expectIncludes(normalSegment, ' checked="checked"', 'normal is checked');
+    expectExcludes(
+      normalSegment,
+      ' disabled="disabled"',
+      'normal is not disabled',
+    );
+  });
+
+  test('widget: stringSet alwaysOn checked even when absent from saved value', () => {
+    // Saved data lacks 'albedo' entirely — engine forces it on; the
+    // inspector mirrors that so the UI never lies about engine state.
+    const html = renderField(channelsField, []);
+    const albedoSegment = html.slice(0, html.indexOf('>albedo</span>'));
+    expectIncludes(albedoSegment, ' checked="checked"', 'albedo still checked');
+  });
+
+  test('widget: stringSet options not in saved value render unchecked', () => {
+    const html = renderField(channelsField, ['albedo']);
+    const emissionIdx = html.indexOf('>emission</span>');
+    const before = html.slice(0, emissionIdx);
+    const lastInput = before.lastIndexOf('<input');
+    const emissionSegment = html.slice(lastInput, emissionIdx);
+    expectExcludes(emissionSegment, ' checked', 'emission is unchecked');
+  });
+
   // --- Vector2D / Vector3D / Vector4D -----------------------------------
 
   test('widget: Vector2D emits 2 labeled axis inputs', () => {

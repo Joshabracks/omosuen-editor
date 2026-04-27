@@ -21,10 +21,17 @@ import {
   componentUpdate,
   type JsonValue,
 } from '../../protocol/index.js';
-import type { SerializedComponent } from '../../omoscene/index.js';
+import type {
+  OmosceneFile,
+  SerializedComponent,
+} from '../../omoscene/index.js';
 import { getComponentSchemas, resolveSchema } from '../../schema/index.js';
 import type { ComponentSchemaVersion } from '../../schema/index.js';
 import { createEditorState, getNestedProperty } from '../../state/index.js';
+import {
+  resolveDynamicEnum,
+  resolveSameComponentEnum,
+} from '../../state/component-refs.js';
 import { bootstrapPanel } from '../bootstrap.js';
 import type { Bridge } from '../../bridge/index.js';
 import { renderField, escapeHtml } from './widgets.js';
@@ -150,6 +157,25 @@ const panel = bootstrapPanel<PanelData>({
         ]),
       );
     },
+    toggleStringSet: ({ bridge, state, field, member, event }) => {
+      const target = event.target as HTMLInputElement;
+      const data = (state as { data: PanelData }).data;
+      if (data._component === null) return;
+      const fieldName = String(field);
+      const memberName = String(member);
+      const current = getNestedProperty(data._component, fieldName);
+      const set = new Set<string>();
+      if (Array.isArray(current)) {
+        for (const v of current) {
+          if (typeof v === 'string' && v !== '') set.add(v);
+        }
+      }
+      if (target.checked) set.add(memberName);
+      else set.delete(memberName);
+      // Whole-array write — `applyComponentUpdate` handles top-level
+      // array replacements atomically; no dotted-path math needed.
+      dispatchFieldUpdate(bridge, state, fieldName, [...set]);
+    },
     editName: ({ bridge, state, event }) => {
       const target = event.target as HTMLInputElement;
       dispatchFieldUpdate(bridge, state, 'name', target.value);
@@ -222,7 +248,7 @@ function refresh(): void {
   panel.state.data._componentType = component.type;
   panel.state.data._component = component;
   panel.state.data.nameRowHtml = renderNameRow(component);
-  panel.state.data.fieldsHtml = renderFields(schema, component);
+  panel.state.data.fieldsHtml = renderFields(schema, component, file);
   panel.state.data.actionsHtml = renderActions(schema);
 }
 
@@ -260,19 +286,34 @@ function resolveComponentSchema(
 function renderFields(
   schema: ComponentSchemaVersion,
   component: SerializedComponent,
+  file: OmosceneFile,
 ): string {
   if (schema.fields.length === 0) {
     return '<em style="color: var(--vscode-descriptionForeground);">This component has no editable fields.</em>';
   }
   return schema.fields
-    .map((field) =>
+    .map((field) => {
       // `field.name` may be a dotted path (e.g. `config.atlasSize`)
       // surfacing a nested member as its own inspector row. The same
       // path is used as the dispatch property; widget-emitted bindings
       // pass it back to the editor through `componentUpdate`, and the
       // host's `applyComponentUpdate` walks the path on write.
-      renderField(field, getNestedProperty(component, field.name)),
-    )
+      //
+      // Two orthogonal enum resolvers run before rendering:
+      //   - `resolveDynamicEnum` populates options from
+      //     `componentRef`-flagged fields (cross-component scan, e.g.
+      //     sprite's textureMapKeys.* dropdowns).
+      //   - `resolveSameComponentEnum` populates options from
+      //     `valuesFromField`-flagged fields (same-component sibling
+      //     field, e.g. animation-controller's currentAnimation).
+      // Each is a pass-through for fields without its respective hook.
+      const value = getNestedProperty(component, field.name);
+      const resolved = resolveSameComponentEnum(
+        resolveDynamicEnum(field, value, file.scene),
+        component,
+      );
+      return renderField(resolved, value);
+    })
     .join('');
 }
 
