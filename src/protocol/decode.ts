@@ -31,6 +31,7 @@ const KNOWN_KINDS: ReadonlySet<EditorMessageKind> = new Set([
   'preview:ready',
   'preview:log',
   'command:invoke',
+  'image:loaded',
 ] satisfies EditorMessageKind[]);
 
 export function decodeMessage(text: string): EditorMessage {
@@ -166,6 +167,22 @@ export function decodeMessage(text: string): EditorMessage {
         command,
         args: args as readonly JsonValue[],
       };
+    }
+
+    case 'image:loaded': {
+      const dataUri = raw['dataUri'];
+      const sourceFilePath = raw['sourceFilePath'];
+      if (dataUri !== null && typeof dataUri !== 'string') {
+        throw new ProtocolDecodeError(
+          'image:loaded requires `dataUri` to be a string or null',
+        );
+      }
+      if (typeof sourceFilePath !== 'string') {
+        throw new ProtocolDecodeError(
+          'image:loaded requires string `sourceFilePath`',
+        );
+      }
+      return { kind: 'image:loaded', dataUri, sourceFilePath };
     }
   }
 }

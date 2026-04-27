@@ -12,6 +12,8 @@ import { registerSceneEditorProvider } from './scene-editor-provider.js';
 import { registerSceneTreeCommands } from './scene-tree-commands.js';
 import { registerSceneTreeProvider } from './scene-tree-provider.js';
 import { registerAnimationEditor } from '../scene/animation-editor/host.js';
+import { registerTextureMapEditor } from '../scene/texture-map-editor/host.js';
+import { registerFilePickerCommand } from './file-picker-command.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   // Phase 0 sanity command — still useful for confirming activation.
@@ -35,6 +37,8 @@ export function activate(context: vscode.ExtensionContext): void {
   registerPreviewLauncherCommand(context, registry);
   registerSceneEditorProvider(context, registry);
   registerAnimationEditor(context, registry);
+  registerTextureMapEditor(context, registry);
+  registerFilePickerCommand(context, registry);
   registerSceneTreeCommands(context, registry);
 
   // Phase 8.1: forward `command:invoke` messages from any panel through

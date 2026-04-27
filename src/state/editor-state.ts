@@ -123,6 +123,11 @@ export function createEditorState(): EditorState {
         // extension host subscribes to the raw message stream and
         // forwards to `vscode.commands.executeCommand` when it sees one.
         break;
+      case 'image:loaded':
+        // Phase 8.3 host → texture-map-editor push. No store mutation —
+        // the texture-map webview subscribes to the raw message stream
+        // and rebuilds its <img> source from the data URI.
+        break;
       default:
         assertNever(msg);
     }

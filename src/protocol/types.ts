@@ -127,6 +127,26 @@ export interface SceneSaveMessage {
 }
 
 /**
+ * Host → webview push of a loaded image's bytes as a base64 data URI.
+ * Phase 8.3 texture-map editor: webviews can't read workspace files
+ * directly, so the host watches the target component's `filePath` and
+ * pushes the bytes here whenever it changes (or on panel open). A `null`
+ * `dataUri` signals the file was missing or unreadable — the editor
+ * shows a "no image" placeholder. `sourceFilePath` echoes the path the
+ * host loaded from so the webview can ignore stale responses when a fast
+ * typer changes `filePath` mid-load.
+ *
+ * Bridge-layer push: editor-state dispatch is a no-op; the texture-map
+ * webview subscribes to the raw message stream and rebuilds its
+ * `<HTMLImageElement>` source.
+ */
+export interface ImageLoadedMessage {
+  readonly kind: 'image:loaded';
+  readonly dataUri: string | null;
+  readonly sourceFilePath: string;
+}
+
+/**
  * The full editor protocol. Adding a new variant here requires:
  *   1. A new interface (payload shape).
  *   2. A factory in `./factories.ts`.
@@ -146,7 +166,8 @@ export type EditorMessage =
   | SceneSaveMessage
   | PreviewReadyMessage
   | PreviewLogMessage
-  | CommandInvokeMessage;
+  | CommandInvokeMessage
+  | ImageLoadedMessage;
 
 export type EditorMessageKind = EditorMessage['kind'];
 

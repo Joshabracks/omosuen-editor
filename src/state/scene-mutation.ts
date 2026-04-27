@@ -48,6 +48,86 @@ function isSerializedComponent(value: unknown): value is SerializedComponent {
   return isRecord(value) && typeof value['type'] === 'string';
 }
 
+// =====================================================================
+// Nested-path helpers — let `applyComponentUpdate` and
+// `buildDefaultComponent` work with dotted-path field names like
+// `config.atlasSize`. The inspector renders such fields as independent
+// rows but the on-disk shape stays nested ({ config: { atlasSize } }).
+// =====================================================================
+
+/**
+ * Read a value from `obj` by dot-separated path. Returns `undefined`
+ * if any intermediate segment is missing or non-object. Used by the
+ * inspector's renderField + editVector reads.
+ */
+export function getNestedProperty(obj: unknown, path: string): unknown {
+  if (obj === null || typeof obj !== 'object') return undefined;
+  const segments = path.split('.');
+  let cursor: unknown = obj;
+  for (const segment of segments) {
+    if (cursor === null || typeof cursor !== 'object') return undefined;
+    cursor = (cursor as Record<string, unknown>)[segment];
+  }
+  return cursor;
+}
+
+/**
+ * Set a value at `path` in `obj` immutably — every layer along the
+ * path is shallow-cloned, untouched siblings stay reference-shared.
+ * Creates empty `{}` for missing or non-object intermediates so a
+ * dotted write can land in a brand-new component.
+ */
+function setNestedImmutable(
+  obj: Record<string, unknown>,
+  path: string,
+  value: unknown,
+): Record<string, unknown> {
+  const segments = path.split('.');
+  if (segments.length === 1) {
+    return { ...obj, [segments[0]!]: value };
+  }
+  const [head, ...rest] = segments;
+  const headKey = head!;
+  const existing = obj[headKey];
+  const childObj: Record<string, unknown> =
+    existing !== null &&
+    typeof existing === 'object' &&
+    !Array.isArray(existing)
+      ? (existing as Record<string, unknown>)
+      : {};
+  return {
+    ...obj,
+    [headKey]: setNestedImmutable(childObj, rest.join('.'), value),
+  };
+}
+
+/**
+ * Mutating sibling of `setNestedImmutable` for callers that own a
+ * fresh draft object (e.g. `buildDefaultComponent`). Walks `path`,
+ * lazy-creating empty objects for missing intermediates, and assigns
+ * the leaf. Caller must guarantee `obj` is not aliased elsewhere.
+ */
+export function setNestedMutating(
+  obj: Record<string, unknown>,
+  path: string,
+  value: unknown,
+): void {
+  const segments = path.split('.');
+  let cursor = obj;
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    const key = segments[i]!;
+    const next = cursor[key];
+    if (next === null || typeof next !== 'object' || Array.isArray(next)) {
+      const fresh: Record<string, unknown> = {};
+      cursor[key] = fresh;
+      cursor = fresh;
+    } else {
+      cursor = next as Record<string, unknown>;
+    }
+  }
+  cursor[segments[segments.length - 1]!] = value;
+}
+
 /**
  * Walk the scene tree and produce a new tree with the matching component's
  * `property` set to `value`. Immutable: structurally shares unmodified
@@ -116,9 +196,17 @@ function updateNode(
     return node;
   }
 
-  const nextNode: SerializedComponent = { ...node };
+  let nextNode: SerializedComponent = { ...node };
   if (matches) {
-    (nextNode as Record<string, unknown>)[property] = value;
+    // `property` may be a dotted path (e.g. `config.atlasSize`). The
+    // immutable nested setter shallow-clones every layer along the path
+    // and leaves untouched siblings reference-shared, matching the
+    // wider lazy-rebuild discipline of this module.
+    nextNode = setNestedImmutable(
+      nextNode as unknown as Record<string, unknown>,
+      property,
+      value,
+    ) as SerializedComponent;
   }
   if (childrenChanged) {
     (nextNode as Record<string, unknown>)['components'] = nextChildren;

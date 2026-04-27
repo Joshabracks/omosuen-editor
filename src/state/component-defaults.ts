@@ -25,6 +25,7 @@ import {
   type PropertySchema,
 } from '../schema/index.js';
 import type { SerializedComponent } from '../omoscene/index.js';
+import { setNestedMutating } from './scene-mutation.js';
 
 export interface BuildDefaultComponentOptions {
   readonly type: string;
@@ -58,7 +59,13 @@ export function buildDefaultComponent(
 
   for (const field of schema.fields) {
     const seeded = seedField(field);
-    if (seeded !== undefined) base[field.name] = seeded;
+    if (seeded === undefined) continue;
+    // `field.name` may be a dotted path (e.g. `config.atlasSize`).
+    // `setNestedMutating` walks the path, lazily creating empty
+    // intermediates so two sibling fields under the same parent
+    // (`config.atlasSize` + `config.maxAtlases`) merge into one
+    // shared `config` object instead of two flat keys.
+    setNestedMutating(base, field.name, seeded);
   }
 
   return base as SerializedComponent;

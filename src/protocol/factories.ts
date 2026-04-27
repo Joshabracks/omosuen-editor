@@ -9,6 +9,7 @@ import type {
   CommandInvokeMessage,
   ComponentSelectMessage,
   ComponentUpdateMessage,
+  ImageLoadedMessage,
   JsonValue,
   PreviewLogMessage,
   PreviewReadyMessage,
@@ -55,4 +56,11 @@ export function commandInvoke(
   args: readonly JsonValue[] = [],
 ): CommandInvokeMessage {
   return { kind: 'command:invoke', command, args };
+}
+
+export function imageLoaded(
+  dataUri: string | null,
+  sourceFilePath: string,
+): ImageLoadedMessage {
+  return { kind: 'image:loaded', dataUri, sourceFilePath };
 }

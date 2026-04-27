@@ -57,10 +57,24 @@ function renderBody(field: PropertySchema, value: unknown): string {
 
 function renderStringField(field: PropertySchema, value: unknown): string {
   const current = typeof value === 'string' ? value : '';
+  if (field.filePicker === undefined) {
+    return (
+      `<input type="text" value="${escapeAttr(current)}" ` +
+      `style="${SCALAR_INPUT_STYLE} width: 100%; box-sizing: border-box;" ` +
+      `:change=editString(field=${field.name}) />`
+    );
+  }
+  // Path field: text input + Browse… button in a flex row. Button
+  // dispatches `omosuen.browseForImageFile` via command:invoke; the
+  // host command resolves the picked file path scene-relative and
+  // writes it back through the standard component:update flow.
   return (
+    `<div style="display: flex; gap: 0.4em; align-items: stretch;">` +
     `<input type="text" value="${escapeAttr(current)}" ` +
-    `style="${SCALAR_INPUT_STYLE} width: 100%; box-sizing: border-box;" ` +
-    `:change=editString(field=${field.name}) />`
+    `style="${SCALAR_INPUT_STYLE} flex: 1; box-sizing: border-box;" ` +
+    `:change=editString(field=${field.name}) />` +
+    `<button type="button" :click=browseForFile(field=${field.name})>Browse…</button>` +
+    `</div>`
   );
 }
 
@@ -80,7 +94,11 @@ function renderNumberField(field: PropertySchema, value: unknown): string {
 
 function renderBooleanField(field: PropertySchema, value: unknown): string {
   const current = value === true;
-  const checked = current ? ' checked' : '';
+  // State Street's parseSST ATTRIBUTE regex requires `name="value"`
+  // form; bare `checked` (or `selected` on options) is dropped, so
+  // initial state would never reflect the actual value. Use the
+  // value-form to satisfy the parser.
+  const checked = current ? ' checked="checked"' : '';
   return (
     `<label style="display: inline-flex; align-items: center; gap: 0.4em;">` +
     `<input type="checkbox"${checked} :change=editBoolean(field=${field.name}) />` +
@@ -90,17 +108,34 @@ function renderBooleanField(field: PropertySchema, value: unknown): string {
 }
 
 function renderEnumField(field: PropertySchema, value: unknown): string {
-  const current = typeof value === 'string' ? value : '';
   const values = field.values ?? [];
+  // Two flavours of enum: all-string values (e.g. animation-controller's
+  // `state`) and all-number values (e.g. atlas-manager's
+  // `config.atlasSize`). The widget routes through `editEnum` for the
+  // string case and `editEnumNumber` for the numeric case so the
+  // dispatched value lands in the right type — `target.value` from a
+  // `<select>` is always a string, so the numeric handler parses
+  // before forwarding.
+  const isNumeric = values.length > 0 && typeof values[0] === 'number';
+  const currentStr =
+    typeof value === 'string'
+      ? value
+      : typeof value === 'number'
+        ? String(value)
+        : '';
   const options = values
     .map((opt) => {
-      const selected = opt === current ? ' selected' : '';
-      return `<option value="${escapeAttr(opt)}"${selected}>${escapeHtml(opt)}</option>`;
+      const optStr = String(opt);
+      // `selected="selected"` (rather than bare `selected`) — see the
+      // boolean widget above for the parseSST-regex rationale.
+      const selected = optStr === currentStr ? ' selected="selected"' : '';
+      return `<option value="${escapeAttr(optStr)}"${selected}>${escapeHtml(optStr)}</option>`;
     })
     .join('');
+  const handler = isNumeric ? 'editEnumNumber' : 'editEnum';
   return (
     `<select style="${SCALAR_INPUT_STYLE} width: 100%; box-sizing: border-box;" ` +
-    `:change=editEnum(field=${field.name})>` +
+    `:change=${handler}(field=${field.name})>` +
     options +
     `</select>`
   );

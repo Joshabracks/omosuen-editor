@@ -15,6 +15,7 @@ import {
   componentUpdate,
   decodeMessage,
   encodeMessage,
+  imageLoaded,
   previewLog,
   previewReady,
   sceneLoad,
@@ -126,6 +127,19 @@ export function runProtocolTests(): void {
       true,
       null,
     ]);
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: image:loaded (data URI)', () => {
+    const msg = imageLoaded(
+      'data:image/png;base64,iVBORw0KGgo=',
+      'assets/hero.png',
+    );
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: image:loaded (null dataUri = load failed)', () => {
+    const msg = imageLoaded(null, 'assets/missing.png');
     assertDeepEqual(roundTrip(msg), msg);
   });
 
@@ -289,6 +303,23 @@ export function runProtocolTests(): void {
     expectThrow(
       () => encodeMessage(commandInvoke('omosuen.x', [NaN])),
       'ProtocolEncodeError',
+    );
+  });
+
+  test('decode rejects image:loaded with wrong dataUri type', () => {
+    expectThrow(
+      () =>
+        decodeMessage(
+          '{"kind":"image:loaded","dataUri":42,"sourceFilePath":"a.png"}',
+        ),
+      'ProtocolDecodeError',
+    );
+  });
+
+  test('decode rejects image:loaded missing sourceFilePath', () => {
+    expectThrow(
+      () => decodeMessage('{"kind":"image:loaded","dataUri":null}'),
+      'ProtocolDecodeError',
     );
   });
 

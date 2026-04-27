@@ -11,7 +11,9 @@
  */
 
 import {
+  applyComponentUpdate,
   buildDefaultComponent,
+  getNestedProperty,
   insertChildComponent,
   moveComponent,
   nextComponentId,
@@ -345,5 +347,121 @@ export function runSceneMutationTests(): void {
     const file = sampleScene();
     const out = reparentComponent(file, 0, 2);
     if (out !== file) throw new Error('root cannot be reparented');
+  });
+
+  // --- Dotted-path support ---------------------------------------------
+
+  test('getNestedProperty: walks dotted paths and returns undefined on miss', () => {
+    const obj = { config: { atlasSize: 4096, nested: { deep: 'ok' } } };
+    if (getNestedProperty(obj, 'config.atlasSize') !== 4096) {
+      throw new Error('shallow read failed');
+    }
+    if (getNestedProperty(obj, 'config.nested.deep') !== 'ok') {
+      throw new Error('deep read failed');
+    }
+    if (getNestedProperty(obj, 'config.missing') !== undefined) {
+      throw new Error('missing leaf should be undefined');
+    }
+    if (getNestedProperty(obj, 'config.atlasSize.nope') !== undefined) {
+      throw new Error('descend into non-object should be undefined');
+    }
+    if (getNestedProperty(null, 'a.b') !== undefined) {
+      throw new Error('null root should be undefined');
+    }
+  });
+
+  test('applyComponentUpdate: dotted property writes nested object immutably', () => {
+    const file = makeScene({
+      scene: {
+        type: 'nexus',
+        name: 'Root',
+        id: 0,
+        unique: 0,
+        components: [
+          {
+            type: 'atlas-manager',
+            name: 'Atlases',
+            id: 1,
+            unique: 0,
+            config: { atlasSize: 4096, maxAtlases: 8, padding: 1 },
+          },
+        ],
+      },
+    });
+    const out = applyComponentUpdate(
+      file,
+      1,
+      'atlas-manager',
+      'config.atlasSize',
+      8192,
+    );
+    if (out === file) throw new Error('expected new file ref on update');
+    const child = (out.scene.components as readonly SerializedComponent[])[0]!;
+    const config = child['config'] as Record<string, unknown>;
+    if (config['atlasSize'] !== 8192) throw new Error('atlasSize not updated');
+    // Sibling sub-keys preserved through the immutable nested write.
+    if (config['maxAtlases'] !== 8) {
+      throw new Error('maxAtlases must survive sibling update');
+    }
+    if (config['padding'] !== 1) {
+      throw new Error('padding must survive sibling update');
+    }
+  });
+
+  test('applyComponentUpdate: dotted property creates missing intermediate object', () => {
+    const file = makeScene({
+      scene: {
+        type: 'nexus',
+        name: 'Root',
+        id: 0,
+        unique: 0,
+        components: [
+          { type: 'atlas-manager', name: 'A', id: 1, unique: 0 },
+          // no `config` field present yet
+        ],
+      },
+    });
+    const out = applyComponentUpdate(
+      file,
+      1,
+      'atlas-manager',
+      'config.atlasSize',
+      2048,
+    );
+    if (out === file) throw new Error('expected new file ref');
+    const child = (out.scene.components as readonly SerializedComponent[])[0]!;
+    const config = child['config'] as Record<string, unknown>;
+    if (config?.['atlasSize'] !== 2048) {
+      throw new Error('intermediate not created');
+    }
+  });
+
+  test('buildDefaultComponent: dotted-name fields merge into one shared parent', () => {
+    // atlas-manager's schema declares three `config.*` fields with
+    // explicit defaults — all three should land in a single `config`
+    // object on the new component, not as flat dotted keys.
+    const c = buildDefaultComponent({
+      type: 'atlas-manager',
+      id: 7,
+      engineVersion: 'v0.1.30',
+    });
+    const rec = c as Record<string, unknown>;
+    const config = rec['config'] as Record<string, unknown> | undefined;
+    if (config === undefined || typeof config !== 'object') {
+      throw new Error('config object missing');
+    }
+    if (config['atlasSize'] !== 4096) {
+      throw new Error('atlasSize default not seeded');
+    }
+    if (config['maxAtlases'] !== 8) {
+      throw new Error('maxAtlases default not seeded');
+    }
+    if (config['padding'] !== 1) {
+      throw new Error('padding default not seeded');
+    }
+    // Flat dotted keys must NOT exist alongside the nested form.
+    if ('config.atlasSize' in rec) {
+      throw new Error('flat dotted key should not be present');
+    }
   });
 }

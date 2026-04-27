@@ -6,22 +6,25 @@ registerComponentSchemas({
     {
       since: 'v0.1.30',
       fields: [
+        { name: 'textureMapKey', type: 'string', label: 'Texture Map Key' },
         {
-          name: 'textureMapKey',
+          name: 'filePath',
           type: 'string',
-          label: 'Texture Map Key',
-        },
-        { name: 'filePath', type: 'string', label: 'File Path' },
-        { name: 'imageType', type: 'object', label: 'Image Type' },
-        {
-          name: 'originalFrames',
-          type: 'array',
-          label: 'Original Frames',
+          label: 'File Path',
+          filePicker: {
+            extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'],
+          },
         },
       ],
-      // packedFrames/frameIndexMap are atlas-manager output populated after
-      // packing; they're derived from originalFrames + atlas layout.
-      exclude: ['packedFrames', 'frameIndexMap'],
+      // The frame layout (single / grid / framemap) is owned by the
+      // dedicated Frame Editor — leaving it as a JSON textarea here would
+      // let two surfaces fight over the same field. originalFrames is
+      // engine-derived from imageType; packedFrames / frameIndexMap are
+      // atlas-packing output populated at runtime.
+      exclude: ['imageType', 'originalFrames', 'packedFrames', 'frameIndexMap'],
+      actions: [
+        { label: 'Open Frame Editor', command: 'omosuen.openFrameEditor' },
+      ],
     },
   ],
 });

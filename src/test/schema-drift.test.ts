@@ -122,17 +122,29 @@ export async function runSchemaDriftTests(): Promise<void> {
         const fieldSet = new Set(fieldNames);
         const excludeSet = new Set(excludeNames);
 
-        // Duplicate classification: a field can't be both modelled and excluded.
-        const bothClassified = fieldNames.filter((n) => excludeSet.has(n));
+        // Schema field names may be dot-separated paths surfacing a
+        // nested value as its own inspector row (e.g. `config.atlasSize`
+        // for atlas-manager). They classify under their root allowlist
+        // entry — the inspector splits them apart for display, but on
+        // disk they share one parent key. Strip at the first `.` for
+        // every comparison against the allowlist.
+        const fieldRoots = fieldNames.map(rootSegment);
+        const fieldRootSet = new Set(fieldRoots);
+
+        // Duplicate classification: a field can't be both modelled and
+        // excluded. Compare on the rooted form so an excluded `config`
+        // is caught even if the field is `config.foo`.
+        const bothClassified = fieldRoots.filter((n) => excludeSet.has(n));
         if (bothClassified.length > 0) {
           throw new Error(
-            `fields appear in both \`fields\` and \`exclude\`: ${bothClassified.join(', ')}`,
+            `fields appear in both \`fields\` and \`exclude\` (after dotted-path normalization): ${[...new Set(bothClassified)].join(', ')}`,
           );
         }
 
-        // Every allowlist entry must be classified (modelled or excluded).
+        // Every allowlist entry must be classified (modelled — possibly
+        // via a dotted-path field whose root matches — or excluded).
         const unclassified = allowlist.filter(
-          (name) => !fieldSet.has(name) && !excludeSet.has(name),
+          (name) => !fieldRootSet.has(name) && !excludeSet.has(name),
         );
         if (unclassified.length > 0) {
           throw new Error(
@@ -141,7 +153,11 @@ export async function runSchemaDriftTests(): Promise<void> {
         }
 
         // Schema fields can't reference non-existent allowlist entries.
-        const phantomFields = fieldNames.filter((n) => !allowlistSet.has(n));
+        // Compare on the rooted form so dotted paths are evaluated
+        // against the engine's flat allowlist correctly.
+        const phantomFields = fieldNames.filter(
+          (n) => !allowlistSet.has(rootSegment(n)),
+        );
         if (phantomFields.length > 0) {
           throw new Error(
             `schema fields not in engine PROPERTY_ALLOWLIST: ${phantomFields.join(', ')}`,
@@ -158,7 +174,8 @@ export async function runSchemaDriftTests(): Promise<void> {
           );
         }
 
-        // Duplicate field names inside `fields`.
+        // Duplicate field names inside `fields` (full dotted form,
+        // not roots — `config.x` and `config.y` are siblings, not dupes).
         if (fieldSet.size !== fieldNames.length) {
           const counts = new Map<string, number>();
           for (const n of fieldNames) counts.set(n, (counts.get(n) ?? 0) + 1);
@@ -170,4 +187,9 @@ export async function runSchemaDriftTests(): Promise<void> {
       });
     }
   }
+}
+
+function rootSegment(path: string): string {
+  const dot = path.indexOf('.');
+  return dot === -1 ? path : path.slice(0, dot);
 }

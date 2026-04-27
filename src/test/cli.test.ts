@@ -23,6 +23,7 @@ import { runSceneSanitizationTests } from './scene-sanitization.test.js';
 import { runSchemaDriftTests } from './schema-drift.test.js';
 import { runSchemaTests } from './schema.test.js';
 import { runStateTests } from './state.test.js';
+import { runTextureMapEditorTests } from './texture-map-editor.test.js';
 import { runWebsocketHostBridgeTests } from './websocket-host-bridge.test.js';
 
 runAnimationEditorTests();
@@ -41,6 +42,7 @@ runSceneMutationTests();
 runSceneSanitizationTests();
 runSchemaTests();
 runStateTests();
+runTextureMapEditorTests();
 await runEngineFixtureTests();
 await runPreviewServerTests();
 await runSchemaDriftTests();

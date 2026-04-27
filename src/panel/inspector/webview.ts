@@ -24,7 +24,7 @@ import {
 import type { SerializedComponent } from '../../omoscene/index.js';
 import { getComponentSchemas, resolveSchema } from '../../schema/index.js';
 import type { ComponentSchemaVersion } from '../../schema/index.js';
-import { createEditorState } from '../../state/index.js';
+import { createEditorState, getNestedProperty } from '../../state/index.js';
 import { bootstrapPanel } from '../bootstrap.js';
 import type { Bridge } from '../../bridge/index.js';
 import { renderField, escapeHtml } from './widgets.js';
@@ -96,6 +96,12 @@ const panel = bootstrapPanel<PanelData>({
       const target = event.target as HTMLSelectElement;
       dispatchFieldUpdate(bridge, state, field, target.value);
     },
+    editEnumNumber: ({ bridge, state, field, event }) => {
+      const target = event.target as HTMLSelectElement;
+      const parsed = Number.parseFloat(target.value);
+      if (!Number.isFinite(parsed)) return;
+      dispatchFieldUpdate(bridge, state, field, parsed);
+    },
     editVector: ({ bridge, state, field, axis, event }) => {
       const target = event.target as HTMLInputElement;
       const parsed = Number.parseFloat(target.value);
@@ -105,7 +111,11 @@ const panel = bootstrapPanel<PanelData>({
       if (component === null) return;
       const fieldName = String(field);
       const axisName = String(axis);
-      const currentVector = component[fieldName];
+      // `field.name` may be a dotted path (e.g. `transform.position`
+      // would still be flat, but a nested config Vector would land here
+      // too). Read via `getNestedProperty` so flat and nested paths
+      // both resolve uniformly.
+      const currentVector = getNestedProperty(component, fieldName);
       if (!isPlainObject(currentVector)) return;
       // Preserve _vectorType + other axes; override only the named axis.
       const nextVector: JsonValue = {
@@ -129,6 +139,16 @@ const panel = bootstrapPanel<PanelData>({
       const data = (state as { data: PanelData }).data;
       if (data._selectedId === null) return;
       bridge.dispatch(commandInvoke(String(command), [data._selectedId]));
+    },
+    browseForFile: ({ bridge, state, field }) => {
+      const data = (state as { data: PanelData }).data;
+      if (data._selectedId === null) return;
+      bridge.dispatch(
+        commandInvoke('omosuen.browseForImageFile', [
+          data._selectedId,
+          String(field),
+        ]),
+      );
     },
     editName: ({ bridge, state, event }) => {
       const target = event.target as HTMLInputElement;
@@ -245,7 +265,14 @@ function renderFields(
     return '<em style="color: var(--vscode-descriptionForeground);">This component has no editable fields.</em>';
   }
   return schema.fields
-    .map((field) => renderField(field, component[field.name]))
+    .map((field) =>
+      // `field.name` may be a dotted path (e.g. `config.atlasSize`)
+      // surfacing a nested member as its own inspector row. The same
+      // path is used as the dispatch property; widget-emitted bindings
+      // pass it back to the editor through `componentUpdate`, and the
+      // host's `applyComponentUpdate` walks the path on write.
+      renderField(field, getNestedProperty(component, field.name)),
+    )
     .join('');
 }
 

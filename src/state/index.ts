@@ -18,6 +18,7 @@ export { createStore } from './store.js';
 export type { Listener, Store, Unsubscribe, Updater } from './store.js';
 export {
   applyComponentUpdate,
+  getNestedProperty,
   insertChildComponent,
   moveComponent,
   nextComponentId,

@@ -34,7 +34,17 @@ export type PropertyType =
  * Describes one inspector field corresponding to one PROPERTY_ALLOWLIST entry.
  */
 export interface PropertySchema {
-  /** Must match the engine's PROPERTY_ALLOWLIST entry for the target component. */
+  /**
+   * Must match the engine's PROPERTY_ALLOWLIST entry for the target
+   * component, OR be a dot-separated path INTO an allowlist entry to
+   * surface a nested value as its own inspector row (e.g. `config.atlasSize`
+   * targets the `atlasSize` member of the `config` allowlist entry).
+   *
+   * Dotted-path fields collectively cover their root allowlist entry —
+   * the schema-drift test normalizes by stripping at the first `.`
+   * before matching against the allowlist, so `config.atlasSize` +
+   * `config.maxAtlases` are both classified under `config`.
+   */
   name: string;
   /** Value shape hint for the inspector UI. */
   type: PropertyType;
@@ -46,8 +56,24 @@ export interface PropertySchema {
   min?: number;
   max?: number;
   step?: number;
-  /** Allowed values; only meaningful for `type: 'enum'`. */
-  values?: readonly string[];
+  /**
+   * Allowed values for `type: 'enum'`. May be all-string (rendered with
+   * the string value as both option value and label) or all-number (the
+   * widget routes through `editEnumNumber` which dispatches the parsed
+   * `Number(value)` on change).
+   */
+  values?: readonly (string | number)[];
+  /**
+   * Opt-in for `type: 'string'` fields that represent a path on disk.
+   * When present, the inspector renders a "Browse…" button next to the
+   * text input that dispatches `omosuen.browseForImageFile` with the
+   * declared `extensions` as the open-dialog filter. The picked path is
+   * written back as scene-relative through the standard
+   * `component:update` flow. No effect on other `type` values.
+   */
+  filePicker?: {
+    readonly extensions: readonly string[];
+  };
 }
 
 /**

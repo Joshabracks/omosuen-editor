@@ -59,6 +59,51 @@ export function runInspectorWidgetsTests(): void {
     expectIncludes(html, 'value=""', 'empty value on missing input');
   });
 
+  test('widget: plain string field has no Browse button', () => {
+    const html = renderField(
+      { name: 'label', type: 'string', label: 'Label' },
+      'hello',
+    );
+    expectExcludes(html, 'Browse', 'no Browse button without filePicker');
+    expectExcludes(
+      html,
+      ':click=browseForFile',
+      'no browseForFile binding without filePicker',
+    );
+  });
+
+  test('widget: string with filePicker emits Browse button + binding', () => {
+    const html = renderField(
+      {
+        name: 'filePath',
+        type: 'string',
+        label: 'File Path',
+        filePicker: { extensions: ['png', 'jpg'] },
+      },
+      'assets/hero.png',
+    );
+    expectIncludes(html, 'type="text"', 'still has the text input');
+    expectIncludes(
+      html,
+      'value="assets/hero.png"',
+      'preserves the current value',
+    );
+    expectIncludes(html, '<button', 'browse button is rendered');
+    expectIncludes(html, 'Browse', 'button label visible');
+    expectIncludes(
+      html,
+      ':click=browseForFile(field=filePath)',
+      'click binding routes to browseForFile with field name',
+    );
+    // Text-input + button still emit the same `editString` change so a
+    // user typing manually keeps working alongside the picker.
+    expectIncludes(
+      html,
+      ':change=editString(field=filePath)',
+      'text input still fires editString on change',
+    );
+  });
+
   // --- number ------------------------------------------------------------
 
   test('widget: number emits <input type="number"> with :change=editNumber', () => {
@@ -124,8 +169,8 @@ export function runInspectorWidgetsTests(): void {
     expectIncludes(html, '<option value="box"', 'first option');
     expectIncludes(
       html,
-      '<option value="sphere" selected>sphere</option>',
-      'selected option',
+      '<option value="sphere" selected="selected">sphere</option>',
+      'selected option (uses name="value" form so State Street parser keeps it)',
     );
     expectIncludes(html, '<option value="capsule"', 'third option');
   });
@@ -137,6 +182,34 @@ export function runInspectorWidgetsTests(): void {
     );
     expectIncludes(html, '<select', 'select element');
     expectExcludes(html, '<option', 'no options when values undefined');
+  });
+
+  test('widget: numeric enum routes through editEnumNumber, options are stringified', () => {
+    const html = renderField(
+      {
+        name: 'config.atlasSize',
+        type: 'enum',
+        label: 'Atlas Size',
+        values: [1024, 2048, 4096, 8192],
+        default: 4096,
+      },
+      4096,
+    );
+    expectIncludes(html, '<select', 'select element');
+    // Numeric values dispatch through `editEnumNumber` so the handler
+    // can `Number.parseFloat` before calling componentUpdate.
+    expectIncludes(
+      html,
+      ':change=editEnumNumber(field=config.atlasSize)',
+      'numeric enum change binding',
+    );
+    expectIncludes(html, '<option value="1024"', 'first numeric option');
+    expectIncludes(
+      html,
+      '<option value="4096" selected="selected">4096</option>',
+      'selected numeric option',
+    );
+    expectIncludes(html, '<option value="8192"', 'last numeric option');
   });
 
   // --- Vector2D / Vector3D / Vector4D -----------------------------------

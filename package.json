@@ -44,6 +44,14 @@
         "title": "Omosuen: Open Animation Editor"
       },
       {
+        "command": "omosuen.openFrameEditor",
+        "title": "Omosuen: Open Frame Editor"
+      },
+      {
+        "command": "omosuen.browseForImageFile",
+        "title": "Omosuen: Browse for Image File"
+      },
+      {
         "command": "omosuen.addChildComponent",
         "title": "Omosuen: Add Child Component"
       },
