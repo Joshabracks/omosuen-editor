@@ -109,6 +109,16 @@ const panel = bootstrapPanel<PanelData>({
       if (!Number.isFinite(parsed)) return;
       dispatchFieldUpdate(bridge, state, field, parsed);
     },
+    editEnumNullable: ({ bridge, state, field, event }) => {
+      // Dispatches `null` when the empty option is selected so the
+      // engine's `value ?? default` fallback kicks in, instead of an
+      // empty string which would survive the nullish coalesce. Used
+      // by `field.nullable === true` enums (animation-controller's
+      // `currentAnimation`).
+      const target = event.target as HTMLSelectElement;
+      const value: JsonValue = target.value === '' ? null : target.value;
+      dispatchFieldUpdate(bridge, state, field, value);
+    },
     editVector: ({ bridge, state, field, axis, event }) => {
       const target = event.target as HTMLInputElement;
       const parsed = Number.parseFloat(target.value);
@@ -151,7 +161,7 @@ const panel = bootstrapPanel<PanelData>({
       const data = (state as { data: PanelData }).data;
       if (data._selectedId === null) return;
       bridge.dispatch(
-        commandInvoke('omosuen.browseForImageFile', [
+        commandInvoke('omosuen.browseForFile', [
           data._selectedId,
           String(field),
         ]),

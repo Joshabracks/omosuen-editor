@@ -60,6 +60,7 @@ import {
   addFrame,
   defaultState,
   deleteFrame,
+  deriveFrameRects,
   parseImageType,
   resizeRect,
   serializeImageType,
@@ -478,29 +479,11 @@ function renderThumbnails(d: PanelData): string {
 }
 
 function thumbList(s: EditorState): readonly FrameRect[] {
-  if (s.mode === 'grid') {
-    const list: FrameRect[] = [];
-    const max =
-      s.grid.cellCount && s.grid.cellCount > 0
-        ? s.grid.cellCount
-        : s.grid.cols * s.grid.rows;
-    let idx = 0;
-    for (let row = 0; row < s.grid.rows; row += 1) {
-      for (let col = 0; col < s.grid.cols; col += 1) {
-        if (idx >= max) return list;
-        list.push({
-          x: col * s.grid.cellWidth,
-          y: row * s.grid.cellHeight,
-          w: s.grid.cellWidth,
-          h: s.grid.cellHeight,
-        });
-        idx += 1;
-      }
-    }
-    return list;
-  }
-  if (s.mode === 'framemap') return s.frames;
-  return [];
+  // Single-mode thumbnails are skipped here — the texture-map editor
+  // doesn't render a thumbnail strip for Single mode (one whole-image
+  // frame isn't useful as a strip). The animation-editor's call site
+  // passes imageDims so it gets the full-image rect for Single mode.
+  return deriveFrameRects(s);
 }
 
 function findById(

@@ -4,6 +4,7 @@
  */
 
 import { runAnimationEditorTests } from './animation-editor.test.js';
+import { runAudioEditorTests } from './audio-editor.test.js';
 import { runBootstrapTests } from './bootstrap.test.js';
 import { runBridgeTests } from './bridge.test.js';
 import { runComponentRefsTests } from './component-refs.test.js';
@@ -28,6 +29,7 @@ import { runTextureMapEditorTests } from './texture-map-editor.test.js';
 import { runWebsocketHostBridgeTests } from './websocket-host-bridge.test.js';
 
 runAnimationEditorTests();
+runAudioEditorTests();
 runBootstrapTests();
 runBridgeTests();
 runComponentRefsTests();

@@ -12,6 +12,7 @@ import { registerSceneEditorProvider } from './scene-editor-provider.js';
 import { registerSceneTreeCommands } from './scene-tree-commands.js';
 import { registerSceneTreeProvider } from './scene-tree-provider.js';
 import { registerAnimationEditor } from '../scene/animation-editor/host.js';
+import { registerAudioEditor } from '../scene/audio-editor/host.js';
 import { registerTextureMapEditor } from '../scene/texture-map-editor/host.js';
 import { registerFilePickerCommand } from './file-picker-command.js';
 
@@ -38,6 +39,7 @@ export function activate(context: vscode.ExtensionContext): void {
   registerSceneEditorProvider(context, registry);
   registerAnimationEditor(context, registry);
   registerTextureMapEditor(context, registry);
+  registerAudioEditor(context, registry);
   registerFilePickerCommand(context, registry);
   registerSceneTreeCommands(context, registry);
 

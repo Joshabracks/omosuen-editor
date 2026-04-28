@@ -32,6 +32,7 @@ const KNOWN_KINDS: ReadonlySet<EditorMessageKind> = new Set([
   'preview:log',
   'command:invoke',
   'image:loaded',
+  'audio:tracks',
 ] satisfies EditorMessageKind[]);
 
 export function decodeMessage(text: string): EditorMessage {
@@ -183,6 +184,57 @@ export function decodeMessage(text: string): EditorMessage {
         );
       }
       return { kind: 'image:loaded', dataUri, sourceFilePath };
+    }
+
+    case 'audio:tracks': {
+      const tracks = raw['tracks'];
+      if (!Array.isArray(tracks)) {
+        throw new ProtocolDecodeError(
+          'audio:tracks requires `tracks` to be an array',
+        );
+      }
+      const validated: {
+        id: number;
+        name: string;
+        filePath: string;
+        uri: string | null;
+      }[] = [];
+      const trackList = tracks as readonly unknown[];
+      for (let i = 0; i < trackList.length; i += 1) {
+        const t = trackList[i];
+        if (typeof t !== 'object' || t === null) {
+          throw new ProtocolDecodeError(
+            `audio:tracks tracks[${i}] must be an object`,
+          );
+        }
+        const entry = t as Record<string, unknown>;
+        const id = entry['id'];
+        const name = entry['name'];
+        const filePath = entry['filePath'];
+        const uri = entry['uri'];
+        if (typeof id !== 'number' || !Number.isFinite(id)) {
+          throw new ProtocolDecodeError(
+            `audio:tracks tracks[${i}].id must be a finite number`,
+          );
+        }
+        if (typeof name !== 'string') {
+          throw new ProtocolDecodeError(
+            `audio:tracks tracks[${i}].name must be a string`,
+          );
+        }
+        if (typeof filePath !== 'string') {
+          throw new ProtocolDecodeError(
+            `audio:tracks tracks[${i}].filePath must be a string`,
+          );
+        }
+        if (uri !== null && typeof uri !== 'string') {
+          throw new ProtocolDecodeError(
+            `audio:tracks tracks[${i}].uri must be a string or null`,
+          );
+        }
+        validated.push({ id, name, filePath, uri });
+      }
+      return { kind: 'audio:tracks', tracks: validated };
     }
   }
 }

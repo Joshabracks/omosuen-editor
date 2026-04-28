@@ -10,6 +10,7 @@
 import {
   ProtocolDecodeError,
   ProtocolEncodeError,
+  audioTracks,
   commandInvoke,
   componentSelect,
   componentUpdate,
@@ -140,6 +141,24 @@ export function runProtocolTests(): void {
 
   test('round-trip: image:loaded (null dataUri = load failed)', () => {
     const msg = imageLoaded(null, 'assets/missing.png');
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: audio:tracks (populated)', () => {
+    const msg = audioTracks([
+      {
+        id: 1,
+        name: 'bgm',
+        filePath: 'audio/bgm.ogg',
+        uri: 'https://w.example/audio/bgm.ogg',
+      },
+      { id: 2, name: 'sfx-jump', filePath: 'audio/jump.wav', uri: null },
+    ]);
+    assertDeepEqual(roundTrip(msg), msg);
+  });
+
+  test('round-trip: audio:tracks (empty)', () => {
+    const msg = audioTracks([]);
     assertDeepEqual(roundTrip(msg), msg);
   });
 
@@ -319,6 +338,34 @@ export function runProtocolTests(): void {
   test('decode rejects image:loaded missing sourceFilePath', () => {
     expectThrow(
       () => decodeMessage('{"kind":"image:loaded","dataUri":null}'),
+      'ProtocolDecodeError',
+    );
+  });
+
+  test('decode rejects audio:tracks without tracks array', () => {
+    expectThrow(
+      () => decodeMessage('{"kind":"audio:tracks"}'),
+      'ProtocolDecodeError',
+    );
+    expectThrow(
+      () => decodeMessage('{"kind":"audio:tracks","tracks":null}'),
+      'ProtocolDecodeError',
+    );
+  });
+
+  test('decode rejects audio:tracks track entry missing fields', () => {
+    expectThrow(
+      () =>
+        decodeMessage(
+          '{"kind":"audio:tracks","tracks":[{"id":1,"name":"x","filePath":"a"}]}',
+        ),
+      'ProtocolDecodeError',
+    );
+    expectThrow(
+      () =>
+        decodeMessage(
+          '{"kind":"audio:tracks","tracks":[{"id":"not-a-number","name":"x","filePath":"a","uri":null}]}',
+        ),
       'ProtocolDecodeError',
     );
   });

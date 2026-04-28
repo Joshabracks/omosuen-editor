@@ -67,7 +67,7 @@ export interface PropertySchema {
   /**
    * Opt-in for `type: 'string'` fields that represent a path on disk.
    * When present, the inspector renders a "Browse…" button next to the
-   * text input that dispatches `omosuen.browseForImageFile` with the
+   * text input that dispatches `omosuen.browseForFile` with the
    * declared `extensions` as the open-dialog filter. The picked path is
    * written back as scene-relative through the standard
    * `component:update` flow. No effect on other `type` values.
@@ -123,6 +123,16 @@ export interface PropertySchema {
    * present (animation-controller's `albedo` channel).
    */
   alwaysOn?: readonly string[];
+  /**
+   * For `type: 'enum'` only. When true, the empty `''` option is
+   * labelled `(none)` and the change handler dispatches `null` (not
+   * `''`) for the empty selection — matches engines that distinguish
+   * "no value" from "the empty-string value." Saved values that are
+   * present but not in the resolved options list also render as
+   * `<value> (missing)` (disabled, still selected) so the user can
+   * see what's stored before picking a replacement.
+   */
+  nullable?: boolean;
 }
 
 /**

@@ -40,6 +40,8 @@ const webviewConfig = {
     'animation-editor': 'src/scene/animation-editor/webview.ts',
     // Phase 8.3: texture-map (frame) editor webview.
     'texture-map-editor': 'src/scene/texture-map-editor/webview.ts',
+    // Phase 8.4: audio editor webview.
+    'audio-editor': 'src/scene/audio-editor/webview.ts',
     // Post-8 gap-fill: Project activity-bar view.
     project: 'src/panel/project/webview.ts',
   },

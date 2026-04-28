@@ -48,8 +48,12 @@
         "title": "Omosuen: Open Frame Editor"
       },
       {
-        "command": "omosuen.browseForImageFile",
-        "title": "Omosuen: Browse for Image File"
+        "command": "omosuen.browseForFile",
+        "title": "Omosuen: Browse for File"
+      },
+      {
+        "command": "omosuen.openAudioEditor",
+        "title": "Omosuen: Open Audio Editor"
       },
       {
         "command": "omosuen.addChildComponent",

@@ -127,6 +127,32 @@ export interface SceneSaveMessage {
 }
 
 /**
+ * Host → webview push of the scene's audio-track inventory. Each
+ * entry pairs a component id with the webview-resource URI of its
+ * source file (resolved via `webview.asWebviewUri` so the browser
+ * can `fetch()` / `decodeAudioData()` it without the file:// scheme
+ * the webview iframe can't access). Phase 8.4 audio editor consumer:
+ * the track-selector dropdown + Phase B's playback decoder.
+ *
+ * Bridge-layer push: editor-state dispatch is a no-op (matches
+ * `image:loaded` / `preview:*` / `command:invoke`); the audio editor
+ * webview subscribes via `wireIncoming` and refreshes its dropdown.
+ */
+export interface AudioTrackEntry {
+  readonly id: number;
+  readonly name: string;
+  /** Path as stored on the audio-track component (workspace-relative). */
+  readonly filePath: string;
+  /** Webview-resource URI; null if the file is missing or unreadable. */
+  readonly uri: string | null;
+}
+
+export interface AudioTracksMessage {
+  readonly kind: 'audio:tracks';
+  readonly tracks: readonly AudioTrackEntry[];
+}
+
+/**
  * Host → webview push of a loaded image's bytes as a base64 data URI.
  * Phase 8.3 texture-map editor: webviews can't read workspace files
  * directly, so the host watches the target component's `filePath` and
@@ -167,7 +193,8 @@ export type EditorMessage =
   | PreviewReadyMessage
   | PreviewLogMessage
   | CommandInvokeMessage
-  | ImageLoadedMessage;
+  | ImageLoadedMessage
+  | AudioTracksMessage;
 
 export type EditorMessageKind = EditorMessage['kind'];
 

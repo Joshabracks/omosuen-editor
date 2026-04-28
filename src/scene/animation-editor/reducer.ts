@@ -119,6 +119,61 @@ export function appendFrame(
   );
 }
 
+/**
+ * Insert a frame index BEFORE the given timeline position. Mirrors
+ * `_old`'s palette-click-with-timeline-selection semantics
+ * (`_old/src/editors/animation-editor.ts:734-749`): when the user has
+ * a timeline frame selected, clicking the palette inserts before the
+ * selection rather than appending. Position past-end appends; negative
+ * appends as well (defensive — UI should never pass that).
+ */
+export function insertFrame(
+  animations: readonly AnimationEntry[],
+  name: string,
+  position: number,
+  frameIndex: number,
+): AnimationEntry[] {
+  if (!Number.isFinite(frameIndex) || frameIndex < 0) return [...animations];
+  return animations.map((a) => {
+    if (a.name !== name) return a;
+    const clamped =
+      !Number.isFinite(position) || position < 0 || position > a.frames.length
+        ? a.frames.length
+        : Math.floor(position);
+    const next = [...a.frames];
+    next.splice(clamped, 0, frameIndex);
+    return { ...a, frames: next };
+  });
+}
+
+/**
+ * Set the `onComplete` callback name on an animation. Empty string
+ * removes the field entirely (matches the parser's "drop empty string"
+ * behaviour and the engine's expectation that absent === unset).
+ */
+export function setOnComplete(
+  animations: readonly AnimationEntry[],
+  name: string,
+  onComplete: string,
+): AnimationEntry[] {
+  return animations.map((a) => {
+    if (a.name !== name) return a;
+    const trimmed = onComplete.trim();
+    if (trimmed === '') {
+      // Strip the field entirely so absent === unset (matches the
+      // tolerant parser, which drops empty-string `onComplete`).
+      const next: AnimationEntry = {
+        name: a.name,
+        frames: a.frames,
+        frameRate: a.frameRate,
+        loop: a.loop,
+      };
+      return next;
+    }
+    return { ...a, onComplete: trimmed };
+  });
+}
+
 export function removeFrameAt(
   animations: readonly AnimationEntry[],
   name: string,

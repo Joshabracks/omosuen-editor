@@ -7,6 +7,8 @@
  */
 
 export type {
+  AudioTrackEntry,
+  AudioTracksMessage,
   CommandInvokeMessage,
   ComponentSelectMessage,
   ComponentUpdateMessage,
@@ -24,6 +26,7 @@ export { assertNever } from './types.js';
 export { encodeMessage, ProtocolEncodeError } from './encode.js';
 export { decodeMessage, ProtocolDecodeError } from './decode.js';
 export {
+  audioTracks,
   commandInvoke,
   componentSelect,
   componentUpdate,

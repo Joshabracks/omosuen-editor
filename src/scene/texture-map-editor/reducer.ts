@@ -2,122 +2,47 @@
  * Pure reducer for the texture-map frame editor (Phase 8.3).
  *
  * Operates on the `imageType` field serialized on a `texture-map`
- * component. Three on-disk shapes:
+ * component. The on-disk shape parsing (single / grid / framemap)
+ * and frame-rect derivation live in `state/image-type.ts` and are
+ * shared with the animation editor. This module owns the editor-
+ * specific mutators (mode switching, frame add/move/resize/delete,
+ * grid input edits) and serialization back to JsonValue.
  *
- *   - Single: `null` / `undefined` — entire image is one frame.
- *   - Grid:   `{ mode: 'grid', cellWidth, cellHeight, cols, rows, cellCount? }`
- *   - Frame:  `{ mode: 'framemap', frames: [{ x, y, w, h }, …] }`
- *
- * The on-disk shape (this module) uses `cellWidth`/`cellHeight`/`cols`/
- * `rows`/`{x,y,w,h}` — flat keys. The engine's runtime type uses
- * `cellSize`/`gridSize` Vector2D and `Vector4D` rectangles. Conversion
- * happens inside the engine's `deserializeTextureMap`, so on the editor
- * side we only ever see — and write — the flat shape.
- *
- * Every operation returns a new state object (no in-place mutation),
- * mirroring `animation-editor/reducer.ts`. Coordinates are integer-
- * pixel snapped on every write; minimum frame size is 1×1.
+ * Every mutator returns a new state object (no in-place mutation).
+ * Coordinates are integer-pixel snapped on every write; minimum
+ * frame size is 1×1.
  *
  * DOM-free, vscode-free. Unit tests run under tsx with no runtime deps.
  */
 
-export type Mode = 'single' | 'grid' | 'framemap';
+import {
+  defaultImageTypeState,
+  deriveFrameRects,
+  parseImageType,
+  type FrameRect,
+  type GridConfig,
+  type ImageTypeState,
+  type Mode,
+} from '../../state/image-type.js';
 
-export interface FrameRect {
-  readonly x: number;
-  readonly y: number;
-  readonly w: number;
-  readonly h: number;
-}
+// Re-export the shared types so existing callers can keep importing
+// `FrameRect`/`Mode`/`ImageDims` from the texture-map editor's
+// reducer without churning every callsite when the parsing helpers
+// moved to `state/image-type.ts`.
+export type {
+  FrameRect,
+  GridConfig,
+  ImageDims,
+  Mode,
+} from '../../state/image-type.js';
 
-export interface GridConfig {
-  readonly cellWidth: number;
-  readonly cellHeight: number;
-  readonly cols: number;
-  readonly rows: number;
-  readonly cellCount?: number;
-}
+/** Texture-map editor's working state — same shape as `ImageTypeState`. */
+export type EditorState = ImageTypeState;
 
-/**
- * Parsed editor state for a texture-map's `imageType`. Kept flat by
- * design — the active mode picks which sub-state is meaningful to
- * serialize, but switching modes preserves the other side's last input
- * so flipping back and forth doesn't wipe user work.
- */
-export interface EditorState {
-  readonly mode: Mode;
-  readonly grid: GridConfig;
-  readonly frames: readonly FrameRect[];
-}
-
-const DEFAULT_GRID: GridConfig = {
-  cellWidth: 32,
-  cellHeight: 32,
-  cols: 4,
-  rows: 4,
-};
+export { deriveFrameRects, parseImageType };
 
 export function defaultState(): EditorState {
-  return { mode: 'single', grid: DEFAULT_GRID, frames: [] };
-}
-
-/**
- * Normalize an unknown imageType value off a serialized component into
- * editor state. Tolerant on purpose: hand-edited scenes can have
- * missing fields, string numbers, etc. Anything unrecoverable falls
- * back to the default for that field — never throws.
- */
-export function parseImageType(raw: unknown): EditorState {
-  // null / undefined → single frame, no overlay.
-  if (raw === null || raw === undefined) return defaultState();
-
-  if (typeof raw !== 'object') return defaultState();
-  const rec = raw as Record<string, unknown>;
-
-  if (rec['mode'] === 'grid') {
-    const grid: GridConfig = {
-      cellWidth: numericOr(rec['cellWidth'], DEFAULT_GRID.cellWidth),
-      cellHeight: numericOr(rec['cellHeight'], DEFAULT_GRID.cellHeight),
-      cols: numericOr(rec['cols'], DEFAULT_GRID.cols),
-      rows: numericOr(rec['rows'], DEFAULT_GRID.rows),
-    };
-    const cellCount = rec['cellCount'];
-    const finalGrid: GridConfig =
-      typeof cellCount === 'number' && Number.isFinite(cellCount)
-        ? { ...grid, cellCount }
-        : grid;
-    return { mode: 'grid', grid: finalGrid, frames: [] };
-  }
-
-  if (rec['mode'] === 'framemap') {
-    const rawFrames = Array.isArray(rec['frames']) ? rec['frames'] : [];
-    const frames: FrameRect[] = [];
-    for (const item of rawFrames) {
-      if (typeof item !== 'object' || item === null) continue;
-      const f = item as Record<string, unknown>;
-      const x = numericOr(f['x'], 0);
-      const y = numericOr(f['y'], 0);
-      const w = numericOr(f['w'], 0);
-      const h = numericOr(f['h'], 0);
-      // Drop degenerate rectangles. The user can't see or interact
-      // with a zero-area frame; the engine would extract a zero-pixel
-      // texture anyway.
-      if (w < 1 || h < 1) continue;
-      frames.push({
-        x: Math.round(x),
-        y: Math.round(y),
-        w: Math.round(w),
-        h: Math.round(h),
-      });
-    }
-    return { mode: 'framemap', grid: DEFAULT_GRID, frames };
-  }
-
-  return defaultState();
-}
-
-function numericOr(v: unknown, fallback: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  return defaultImageTypeState();
 }
 
 /**

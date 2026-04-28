@@ -175,13 +175,66 @@ export function runInspectorWidgetsTests(): void {
     expectIncludes(html, '<option value="capsule"', 'third option');
   });
 
-  test('widget: enum with missing values emits empty select', () => {
+  test('widget: enum with missing values still preserves saved value as (missing)', () => {
     const html = renderField(
       { name: 'mode', type: 'enum', label: 'Mode' },
       'anything',
     );
     expectIncludes(html, '<select', 'select element');
-    expectExcludes(html, '<option', 'no options when values undefined');
+    // Saved value is preserved as a disabled selected option so the
+    // user can see what's stored even when the resolved values list
+    // is empty (e.g. dynamic source returned nothing).
+    expectIncludes(html, 'anything (missing)', 'stale value preserved');
+    expectIncludes(html, ' disabled="disabled"', 'stale value disabled');
+  });
+
+  test('widget: enum with empty current value + no values emits empty select', () => {
+    const html = renderField({ name: 'mode', type: 'enum', label: 'Mode' }, '');
+    expectIncludes(html, '<select', 'select element');
+    expectExcludes(html, '<option', 'no options when nothing to show');
+  });
+
+  test('widget: nullable enum labels empty option as (none) and dispatches via editEnumNullable', () => {
+    const html = renderField(
+      {
+        name: 'currentAnimation',
+        type: 'enum',
+        label: 'Current Animation',
+        nullable: true,
+        values: ['', 'walk', 'idle'],
+      },
+      'walk',
+    );
+    expectIncludes(html, '<option value="">(none)</option>', '(none) label');
+    expectIncludes(
+      html,
+      ':change=editEnumNullable(field=currentAnimation)',
+      'nullable change handler binding',
+    );
+    expectIncludes(
+      html,
+      '<option value="walk" selected="selected">walk</option>',
+      'walk option selected',
+    );
+  });
+
+  test('widget: nullable enum renders stale saved value as (missing)', () => {
+    const html = renderField(
+      {
+        name: 'currentAnimation',
+        type: 'enum',
+        label: 'Current Animation',
+        nullable: true,
+        values: ['', 'walk', 'idle'],
+      },
+      'jump',
+    );
+    expectIncludes(html, 'jump (missing)', 'stale value labeled missing');
+    expectIncludes(
+      html,
+      'value="jump" selected="selected" disabled="disabled"',
+      'stale value selected + disabled',
+    );
   });
 
   test('widget: numeric enum routes through editEnumNumber, options are stringified', () => {

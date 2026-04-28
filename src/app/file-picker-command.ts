@@ -1,19 +1,24 @@
 /**
- * `omosuen.browseForImageFile` host command (Phase 8.3 follow-on).
+ * `omosuen.browseForFile` host command (Phase 8.3 follow-on, Phase 8.4
+ * generalisation).
  *
  * Webview-side trigger: an inspector field with schema `filePicker:
  * { extensions }` renders a "Browse…" button next to its text input;
- * clicking emits `commandInvoke('omosuen.browseForImageFile',
+ * clicking emits `commandInvoke('omosuen.browseForFile',
  * [componentId, fieldName])` which the extension-host forwarder routes
- * here.
+ * here. The dialog's filter label is derived from the schema's
+ * extensions (audio types → "Audio Files"; image types → "Image
+ * Files"; other → "Files") so a single command serves every
+ * filePicker-flagged field type.
  *
  * Path convention: paths are stored **workspace-root-relative**
  * (matches `_old/src/panels/inspector.ts:265` —
- * `path.relative(workspaceRoot, selectedPath)`). The texture-map host
- * resolves them back via `vscode.Uri.joinPath(workspaceRoot, filePath)`.
- * This is the project-relative form the user expects ("assets/hero.png"
- * for an image at the workspace's `assets/` folder, regardless of where
- * the .omoscene file lives inside the project).
+ * `path.relative(workspaceRoot, selectedPath)`). Editor-side
+ * consumers resolve them back via
+ * `vscode.Uri.joinPath(workspaceRoot, filePath)`. This is the
+ * project-relative form the user expects ("assets/hero.png" for an
+ * image at the workspace's `assets/` folder, regardless of where the
+ * .omoscene file lives inside the project).
  *
  * What this command does:
  *   1. Resolve the active controller + target component by id.
@@ -35,21 +40,32 @@ import {
   type PropertySchema,
 } from '../schema/index.js';
 
-const FALLBACK_EXTENSIONS: readonly string[] = [
+const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
   'png',
   'jpg',
   'jpeg',
   'gif',
   'webp',
   'bmp',
-];
+]);
+const AUDIO_EXTENSIONS: ReadonlySet<string> = new Set([
+  'mp3',
+  'wav',
+  'ogg',
+  'flac',
+  'aac',
+  'webm',
+  'm4a',
+]);
+
+const FALLBACK_EXTENSIONS: readonly string[] = [...IMAGE_EXTENSIONS];
 
 export function registerFilePickerCommand(
   ctx: vscode.ExtensionContext,
   registry: DocumentRegistry,
 ): void {
   const cmd = vscode.commands.registerCommand(
-    'omosuen.browseForImageFile',
+    'omosuen.browseForFile',
     async (componentIdRaw: unknown, fieldNameRaw: unknown): Promise<void> => {
       if (
         typeof componentIdRaw !== 'number' ||
@@ -105,7 +121,7 @@ export function registerFilePickerCommand(
         canSelectMany: false,
         canSelectFiles: true,
         canSelectFolders: false,
-        filters: { 'Image Files': [...extensions] },
+        filters: { [filterLabelFor(extensions)]: [...extensions] },
         defaultUri: workspaceRoot,
         openLabel: 'Select',
       });
@@ -143,6 +159,19 @@ function computeStoredPath(
     return pickedPath.replace(/\\/g, '/');
   }
   return rel.replace(/\\/g, '/');
+}
+
+/**
+ * Pick a friendly label for the open-dialog filter group. Heuristic:
+ * if every declared extension is in a known category set, use that
+ * category's name; otherwise fall back to a generic "Files".
+ */
+function filterLabelFor(extensions: readonly string[]): string {
+  if (extensions.length === 0) return 'Files';
+  const lower = extensions.map((e) => e.toLowerCase());
+  if (lower.every((e) => IMAGE_EXTENSIONS.has(e))) return 'Image Files';
+  if (lower.every((e) => AUDIO_EXTENSIONS.has(e))) return 'Audio Files';
+  return 'Files';
 }
 
 function lookupFilePickerExtensions(

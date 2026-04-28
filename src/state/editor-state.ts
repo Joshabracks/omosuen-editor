@@ -128,6 +128,11 @@ export function createEditorState(): EditorState {
         // the texture-map webview subscribes to the raw message stream
         // and rebuilds its <img> source from the data URI.
         break;
+      case 'audio:tracks':
+        // Phase 8.4 host → audio-editor push. No store mutation —
+        // the audio editor subscribes to the raw message stream and
+        // refreshes its track-selector dropdown.
+        break;
       default:
         assertNever(msg);
     }

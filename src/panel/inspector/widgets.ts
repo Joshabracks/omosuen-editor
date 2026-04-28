@@ -67,7 +67,7 @@ function renderStringField(field: PropertySchema, value: unknown): string {
     );
   }
   // Path field: text input + Browse… button in a flex row. Button
-  // dispatches `omosuen.browseForImageFile` via command:invoke; the
+  // dispatches `omosuen.browseForFile` via command:invoke; the
   // host command resolves the picked file path scene-relative and
   // writes it back through the standard component:update flow.
   return (
@@ -111,34 +111,56 @@ function renderBooleanField(field: PropertySchema, value: unknown): string {
 
 function renderEnumField(field: PropertySchema, value: unknown): string {
   const values = field.values ?? [];
-  // Two flavours of enum: all-string values (e.g. animation-controller's
-  // `state`) and all-number values (e.g. atlas-manager's
-  // `config.atlasSize`). The widget routes through `editEnum` for the
-  // string case and `editEnumNumber` for the numeric case so the
-  // dispatched value lands in the right type — `target.value` from a
-  // `<select>` is always a string, so the numeric handler parses
-  // before forwarding.
+  // Three flavours of enum:
+  //   - All-string values (e.g. animation-controller's `state`).
+  //   - All-number values (e.g. atlas-manager's `config.atlasSize`)
+  //     — routed through `editEnumNumber` so `target.value` (always a
+  //     string from `<select>`) is parsed back to a number.
+  //   - Nullable string enums (e.g. animation-controller's
+  //     `currentAnimation`) — empty option labelled `(none)`,
+  //     dispatched as literal `null`, with `(missing)` rendering for
+  //     stale saved values.
   const isNumeric = values.length > 0 && typeof values[0] === 'number';
+  const isNullable = field.nullable === true;
   const currentStr =
     typeof value === 'string'
       ? value
       : typeof value === 'number'
         ? String(value)
         : '';
-  const options = values
-    .map((opt) => {
-      const optStr = String(opt);
-      // `selected="selected"` (rather than bare `selected`) — see the
-      // boolean widget above for the parseSST-regex rationale.
-      const selected = optStr === currentStr ? ' selected="selected"' : '';
-      return `<option value="${escapeAttr(optStr)}"${selected}>${escapeHtml(optStr)}</option>`;
-    })
-    .join('');
-  const handler = isNumeric ? 'editEnumNumber' : 'editEnum';
+  const optionsList: string[] = [];
+  let matchedCurrent = false;
+  for (const opt of values) {
+    const optStr = String(opt);
+    const isMatch = optStr === currentStr;
+    if (isMatch) matchedCurrent = true;
+    // `selected="selected"` (rather than bare `selected`) — see the
+    // boolean widget above for the parseSST-regex rationale.
+    const selected = isMatch ? ' selected="selected"' : '';
+    const label = isNullable && optStr === '' ? '(none)' : optStr;
+    optionsList.push(
+      `<option value="${escapeAttr(optStr)}"${selected}>${escapeHtml(label)}</option>`,
+    );
+  }
+  // Stale-value preservation: the saved value points to something
+  // not in the resolved options list (e.g. an animation that's been
+  // deleted by name). Render it as a disabled selected option so the
+  // user sees what's stored and can pick a replacement instead of
+  // having the dropdown silently default to the first option.
+  if (currentStr !== '' && !matchedCurrent) {
+    optionsList.push(
+      `<option value="${escapeAttr(currentStr)}" selected="selected" disabled="disabled">${escapeHtml(currentStr + ' (missing)')}</option>`,
+    );
+  }
+  const handler = isNullable
+    ? 'editEnumNullable'
+    : isNumeric
+      ? 'editEnumNumber'
+      : 'editEnum';
   return (
     `<select style="${SCALAR_INPUT_STYLE} width: 100%; box-sizing: border-box;" ` +
     `:change=${handler}(field=${field.name})>` +
-    options +
+    optionsList.join('') +
     `</select>`
   );
 }

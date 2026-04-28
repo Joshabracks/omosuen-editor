@@ -11,6 +11,7 @@
 import {
   addAnimation,
   appendFrame,
+  insertFrame,
   moveFrame,
   parseAnimations,
   removeAnimation,
@@ -19,8 +20,11 @@ import {
   serializeAnimations,
   setFrameRate,
   setLoop,
+  setOnComplete,
   type AnimationEntry,
 } from '../scene/animation-editor/reducer.js';
+import { resolveTextureContext } from '../scene/animation-editor/texture-context.js';
+import type { SerializedComponent } from '../omoscene/index.js';
 import { assertDeepEqual, test } from './harness.js';
 
 function fixture(): AnimationEntry[] {
@@ -187,5 +191,256 @@ export function runAnimationEditorTests(): void {
         throw new Error('undefined onComplete should not be serialized');
       }
     }
+  });
+
+  // --- insertFrame -------------------------------------------------------
+
+  test('insertFrame: inserts at the given position', () => {
+    const out = insertFrame(fixture(), 'walk', 1, 99);
+    assertDeepEqual(out[1]!.frames, [3, 99, 4, 5, 6]);
+  });
+
+  test('insertFrame: position 0 inserts at the start', () => {
+    const out = insertFrame(fixture(), 'walk', 0, 99);
+    assertDeepEqual(out[1]!.frames, [99, 3, 4, 5, 6]);
+  });
+
+  test('insertFrame: past-end position appends', () => {
+    const out = insertFrame(fixture(), 'walk', 99, 7);
+    assertDeepEqual(out[1]!.frames, [3, 4, 5, 6, 7]);
+  });
+
+  test('insertFrame: negative frameIndex is rejected', () => {
+    const start = fixture();
+    const out = insertFrame(start, 'walk', 0, -1);
+    assertDeepEqual(out[1]!.frames, [3, 4, 5, 6]);
+  });
+
+  test('insertFrame: empty animation supports insertion', () => {
+    const empty: AnimationEntry[] = [
+      { name: 'a', frames: [], frameRate: 12, loop: true },
+    ];
+    assertDeepEqual(insertFrame(empty, 'a', 0, 5)[0]!.frames, [5]);
+  });
+
+  // --- setOnComplete -----------------------------------------------------
+
+  test('setOnComplete: sets the callback name', () => {
+    const out = setOnComplete(fixture(), 'walk', 'onWalkDone');
+    if (out[1]!.onComplete !== 'onWalkDone') {
+      throw new Error(`got: ${String(out[1]!.onComplete)}`);
+    }
+  });
+
+  test('setOnComplete: empty string strips the field', () => {
+    const withCb: AnimationEntry[] = [
+      {
+        name: 'walk',
+        frames: [0],
+        frameRate: 12,
+        loop: true,
+        onComplete: 'foo',
+      },
+    ];
+    const out = setOnComplete(withCb, 'walk', '');
+    if ('onComplete' in out[0]!) {
+      throw new Error('onComplete should be stripped on empty input');
+    }
+  });
+
+  test('setOnComplete: trims whitespace', () => {
+    const out = setOnComplete(fixture(), 'walk', '  onDone  ');
+    if (out[1]!.onComplete !== 'onDone') {
+      throw new Error(`got: ${String(out[1]!.onComplete)}`);
+    }
+  });
+
+  // --- resolveTextureContext --------------------------------------------
+
+  function makeScene(): SerializedComponent {
+    return {
+      type: 'nexus',
+      name: 'Root',
+      id: 0,
+      components: [
+        {
+          type: 'texture-map',
+          name: 'tm-hero',
+          id: 1,
+          textureMapKey: 'hero',
+          filePath: 'assets/hero.png',
+          imageType: {
+            mode: 'grid',
+            cellWidth: 32,
+            cellHeight: 32,
+            cols: 4,
+            rows: 4,
+          },
+        },
+        {
+          type: 'nexus',
+          name: 'group',
+          id: 2,
+          components: [
+            {
+              type: 'animation-controller',
+              name: 'ac',
+              id: 3,
+              animations: [],
+            },
+            {
+              type: 'sprite',
+              name: 'spr',
+              id: 4,
+              textureMapKeys: { albedo: 'hero' },
+            },
+          ],
+        },
+      ],
+    } as unknown as SerializedComponent;
+  }
+
+  test('resolveTextureContext: finds sibling sprite + matching texture-map', () => {
+    const ctx = resolveTextureContext(makeScene(), 3);
+    if (ctx === null) throw new Error('expected non-null context');
+    if (ctx.spriteName !== 'spr') {
+      throw new Error(`spriteName: ${String(ctx.spriteName)}`);
+    }
+    if (ctx.textureMapKey !== 'hero') {
+      throw new Error(`textureMapKey: ${ctx.textureMapKey}`);
+    }
+    if (ctx.filePath !== 'assets/hero.png') {
+      throw new Error(`filePath: ${ctx.filePath}`);
+    }
+    if (ctx.frames.length !== 16) {
+      throw new Error(
+        `expected 16 frames (4x4 grid), got ${ctx.frames.length}`,
+      );
+    }
+  });
+
+  test('resolveTextureContext: returns null when no sibling sprite', () => {
+    const scene: SerializedComponent = {
+      type: 'nexus',
+      name: 'Root',
+      id: 0,
+      components: [
+        {
+          type: 'animation-controller',
+          name: 'ac',
+          id: 3,
+          animations: [],
+        },
+      ],
+    } as unknown as SerializedComponent;
+    if (resolveTextureContext(scene, 3) !== null) {
+      throw new Error('expected null for orphaned animation-controller');
+    }
+  });
+
+  test('resolveTextureContext: returns null when sprite has no albedo key', () => {
+    const scene: SerializedComponent = {
+      type: 'nexus',
+      name: 'Root',
+      id: 0,
+      components: [
+        {
+          type: 'nexus',
+          name: 'group',
+          id: 2,
+          components: [
+            {
+              type: 'animation-controller',
+              name: 'ac',
+              id: 3,
+              animations: [],
+            },
+            {
+              type: 'sprite',
+              name: 'spr',
+              id: 4,
+              textureMapKeys: {},
+            },
+          ],
+        },
+      ],
+    } as unknown as SerializedComponent;
+    if (resolveTextureContext(scene, 3) !== null) {
+      throw new Error('expected null when albedo key is empty');
+    }
+  });
+
+  test('resolveTextureContext: returns null when no matching texture-map', () => {
+    const scene: SerializedComponent = {
+      type: 'nexus',
+      name: 'Root',
+      id: 0,
+      components: [
+        {
+          type: 'nexus',
+          name: 'group',
+          id: 2,
+          components: [
+            {
+              type: 'animation-controller',
+              name: 'ac',
+              id: 3,
+              animations: [],
+            },
+            {
+              type: 'sprite',
+              name: 'spr',
+              id: 4,
+              textureMapKeys: { albedo: 'ghost' },
+            },
+          ],
+        },
+      ],
+    } as unknown as SerializedComponent;
+    if (resolveTextureContext(scene, 3) !== null) {
+      throw new Error('expected null when no texture-map matches the key');
+    }
+  });
+
+  test('resolveTextureContext: framemap mode passes frame rects through', () => {
+    const scene: SerializedComponent = {
+      type: 'nexus',
+      name: 'Root',
+      id: 0,
+      components: [
+        {
+          type: 'texture-map',
+          name: 'tm',
+          id: 1,
+          textureMapKey: 'hero',
+          filePath: 'a.png',
+          imageType: {
+            mode: 'framemap',
+            frames: [
+              { x: 0, y: 0, w: 16, h: 16 },
+              { x: 16, y: 0, w: 16, h: 16 },
+            ],
+          },
+        },
+        {
+          type: 'animation-controller',
+          name: 'ac',
+          id: 2,
+          animations: [],
+        },
+        {
+          type: 'sprite',
+          name: 'spr',
+          id: 3,
+          textureMapKeys: { albedo: 'hero' },
+        },
+      ],
+    } as unknown as SerializedComponent;
+    const ctx = resolveTextureContext(scene, 2);
+    if (ctx === null) throw new Error('expected non-null context');
+    assertDeepEqual(ctx.frames, [
+      { x: 0, y: 0, w: 16, h: 16 },
+      { x: 16, y: 0, w: 16, h: 16 },
+    ]);
   });
 }

@@ -6,6 +6,8 @@
 
 import type { OmosceneFile } from '../omoscene/index.js';
 import type {
+  AudioTrackEntry,
+  AudioTracksMessage,
   CommandInvokeMessage,
   ComponentSelectMessage,
   ComponentUpdateMessage,
@@ -63,4 +65,10 @@ export function imageLoaded(
   sourceFilePath: string,
 ): ImageLoadedMessage {
   return { kind: 'image:loaded', dataUri, sourceFilePath };
+}
+
+export function audioTracks(
+  tracks: readonly AudioTrackEntry[],
+): AudioTracksMessage {
+  return { kind: 'audio:tracks', tracks };
 }
