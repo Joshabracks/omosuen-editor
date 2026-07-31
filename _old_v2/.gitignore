@@ -1,0 +1,8 @@
+.design
+node_modules/
+dist/
+out/
+*.vsix
+_old/
+.vscode/
+src/test/local_releases/

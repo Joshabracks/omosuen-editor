@@ -1,391 +1,67 @@
 {
   "name": "omosuen-editor",
-  "displayName": "Omosuen Editor",
-  "description": "VS Code editor extension for the Omosuen axonometric game engine",
-  "version": "0.2.0",
-  "publisher": "omosuen",
+  "productName": "Omosuen Editor",
+  "version": "0.3.0",
+  "description": "Official Omosuen scene editor (Electron desktop app)",
+  "author": "omosuen",
   "license": "MIT",
-  "icon": "./media/icons/logo.png",
-  "type": "module",
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "workspaceContains:**/*.omoscene"
-  ],
-  "main": "./dist/extension.cjs",
-  "contributes": {
-    "commands": [
-      {
-        "command": "omosuen.hello",
-        "title": "Omosuen: Hello"
-      },
-      {
-        "command": "omosuen.openScene",
-        "title": "Omosuen: Open Scene…"
-      },
-      {
-        "command": "omosuen.saveScene",
-        "title": "Omosuen: Save Scene"
-      },
-      {
-        "command": "omosuen.newProject",
-        "title": "Omosuen: New Project…"
-      },
-      {
-        "command": "omosuen.previewScene",
-        "title": "Omosuen: Preview Scene"
-      },
-      {
-        "command": "omosuen.openAnimationEditor",
-        "title": "Omosuen: Open Animation Editor"
-      },
-      {
-        "command": "omosuen.openFrameEditor",
-        "title": "Omosuen: Open Frame Editor"
-      },
-      {
-        "command": "omosuen.browseForFile",
-        "title": "Omosuen: Browse for File"
-      },
-      {
-        "command": "omosuen.openAudioEditor",
-        "title": "Omosuen: Open Audio Editor"
-      },
-      {
-        "command": "omosuen.addChildComponent",
-        "title": "Omosuen: Add Child Component"
-      },
-      {
-        "command": "omosuen.deleteComponent",
-        "title": "Omosuen: Delete Component"
-      },
-      {
-        "command": "omosuen.moveComponent",
-        "title": "Omosuen: Move Component"
-      },
-      {
-        "command": "omosuen.reparentComponent",
-        "title": "Omosuen: Reparent Component"
-      },
-      {
-        "command": "omosuen.sceneTree.delete",
-        "title": "Delete",
-        "icon": "$(trash)"
-      },
-      {
-        "command": "omosuen.sceneTree.moveUp",
-        "title": "Move Up",
-        "icon": "$(arrow-up)"
-      },
-      {
-        "command": "omosuen.sceneTree.moveDown",
-        "title": "Move Down",
-        "icon": "$(arrow-down)"
-      },
-      {
-        "command": "omosuen.addComponent.animation-controller",
-        "title": "animation-controller"
-      },
-      {
-        "command": "omosuen.addComponent.atlas-manager",
-        "title": "atlas-manager"
-      },
-      {
-        "command": "omosuen.addComponent.audio-effect",
-        "title": "audio-effect"
-      },
-      {
-        "command": "omosuen.addComponent.audio-player",
-        "title": "audio-player"
-      },
-      {
-        "command": "omosuen.addComponent.audio-track",
-        "title": "audio-track"
-      },
-      {
-        "command": "omosuen.addComponent.camera",
-        "title": "camera"
-      },
-      {
-        "command": "omosuen.addComponent.cell-map",
-        "title": "cell-map"
-      },
-      {
-        "command": "omosuen.addComponent.collider",
-        "title": "collider"
-      },
-      {
-        "command": "omosuen.addComponent.data-layer",
-        "title": "data-layer"
-      },
-      {
-        "command": "omosuen.addComponent.event-collider",
-        "title": "event-collider"
-      },
-      {
-        "command": "omosuen.addComponent.flag-manager",
-        "title": "flag-manager"
-      },
-      {
-        "command": "omosuen.addComponent.input-controller",
-        "title": "input-controller"
-      },
-      {
-        "command": "omosuen.addComponent.light",
-        "title": "light"
-      },
-      {
-        "command": "omosuen.addComponent.messenger",
-        "title": "messenger"
-      },
-      {
-        "command": "omosuen.addComponent.nexus",
-        "title": "nexus"
-      },
-      {
-        "command": "omosuen.addComponent.sprite",
-        "title": "sprite"
-      },
-      {
-        "command": "omosuen.addComponent.texture-map",
-        "title": "texture-map"
-      },
-      {
-        "command": "omosuen.addComponent.timer",
-        "title": "timer"
-      },
-      {
-        "command": "omosuen.addComponent.transform",
-        "title": "transform"
-      },
-      {
-        "command": "omosuen.addComponent.ui-overlay",
-        "title": "ui-overlay"
-      },
-      {
-        "command": "omosuen.addComponent.viewport",
-        "title": "viewport"
-      }
-    ],
-    "submenus": [
-      {
-        "id": "omosuen.addComponentSubmenu",
-        "label": "Add Component"
-      }
-    ],
-    "menus": {
-      "view/item/context": [
-        {
-          "submenu": "omosuen.addComponentSubmenu",
-          "when": "view == omosuen.sceneTree && (viewItem == nexus || viewItem == root)",
-          "group": "0_add"
-        },
-        {
-          "command": "omosuen.sceneTree.moveUp",
-          "when": "view == omosuen.sceneTree && viewItem != root",
-          "group": "1_reorder@1"
-        },
-        {
-          "command": "omosuen.sceneTree.moveDown",
-          "when": "view == omosuen.sceneTree && viewItem != root",
-          "group": "1_reorder@2"
-        },
-        {
-          "command": "omosuen.sceneTree.delete",
-          "when": "view == omosuen.sceneTree && viewItem != root",
-          "group": "9_destructive"
-        }
-      ],
-      "omosuen.addComponentSubmenu": [
-        {
-          "command": "omosuen.addComponent.animation-controller",
-          "group": "1_add@01"
-        },
-        {
-          "command": "omosuen.addComponent.atlas-manager",
-          "group": "1_add@02"
-        },
-        {
-          "command": "omosuen.addComponent.audio-effect",
-          "group": "1_add@03"
-        },
-        {
-          "command": "omosuen.addComponent.audio-player",
-          "group": "1_add@04"
-        },
-        {
-          "command": "omosuen.addComponent.audio-track",
-          "group": "1_add@05"
-        },
-        {
-          "command": "omosuen.addComponent.camera",
-          "group": "1_add@06"
-        },
-        {
-          "command": "omosuen.addComponent.cell-map",
-          "group": "1_add@07"
-        },
-        {
-          "command": "omosuen.addComponent.collider",
-          "group": "1_add@08"
-        },
-        {
-          "command": "omosuen.addComponent.data-layer",
-          "group": "1_add@09"
-        },
-        {
-          "command": "omosuen.addComponent.event-collider",
-          "group": "1_add@10"
-        },
-        {
-          "command": "omosuen.addComponent.flag-manager",
-          "group": "1_add@11"
-        },
-        {
-          "command": "omosuen.addComponent.input-controller",
-          "group": "1_add@12"
-        },
-        {
-          "command": "omosuen.addComponent.light",
-          "group": "1_add@13"
-        },
-        {
-          "command": "omosuen.addComponent.messenger",
-          "group": "1_add@14"
-        },
-        {
-          "command": "omosuen.addComponent.nexus",
-          "group": "1_add@15"
-        },
-        {
-          "command": "omosuen.addComponent.sprite",
-          "group": "1_add@16"
-        },
-        {
-          "command": "omosuen.addComponent.texture-map",
-          "group": "1_add@17"
-        },
-        {
-          "command": "omosuen.addComponent.timer",
-          "group": "1_add@18"
-        },
-        {
-          "command": "omosuen.addComponent.transform",
-          "group": "1_add@19"
-        },
-        {
-          "command": "omosuen.addComponent.ui-overlay",
-          "group": "1_add@20"
-        },
-        {
-          "command": "omosuen.addComponent.viewport",
-          "group": "1_add@21"
-        }
-      ]
-    },
-    "configuration": {
-      "title": "Omosuen",
-      "properties": {
-        "omosuen.previewPort": {
-          "type": "number",
-          "default": 9421,
-          "minimum": 1024,
-          "maximum": 65535,
-          "description": "Port the Omosuen preview server binds on localhost. Must be free when running `Omosuen: Preview Scene`."
-        }
-      }
-    },
-    "languages": [
-      {
-        "id": "omoscene",
-        "aliases": [
-          "Omoscene"
-        ],
-        "extensions": [
-          ".omoscene"
-        ],
-        "icon": {
-          "light": "./media/icons/omoscene-file.svg",
-          "dark": "./media/icons/omoscene-file.svg"
-        }
-      }
-    ],
-    "customEditors": [
-      {
-        "viewType": "omosuen.sceneEditor",
-        "displayName": "Omosuen Scene Editor",
-        "selector": [
-          {
-            "filenamePattern": "*.omoscene"
-          }
-        ],
-        "priority": "default"
-      }
-    ],
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "omosuen",
-          "title": "Omosuen",
-          "icon": "./media/icons/activity-bar.svg"
-        }
-      ]
-    },
-    "views": {
-      "omosuen": [
-        {
-          "id": "omosuen.project",
-          "name": "Project",
-          "type": "webview",
-          "contextualTitle": "Omosuen"
-        },
-        {
-          "id": "omosuen.sceneTree",
-          "name": "Scene",
-          "contextualTitle": "Omosuen"
-        },
-        {
-          "id": "omosuen.inspector",
-          "name": "Inspector",
-          "type": "webview",
-          "contextualTitle": "Omosuen"
-        }
-      ]
-    }
-  },
+  "private": true,
+  "main": "dist/electron/main.js",
   "scripts": {
-    "typecheck": "tsc --noEmit -p ./",
-    "build:dev": "npm run typecheck && node esbuild.js",
-    "build:prod": "npm run typecheck && node esbuild.js --production",
-    "build": "npm run build:dev && npm run build:prod",
-    "watch": "concurrently --names esbuild,tsc --prefix-colors cyan,magenta \"node esbuild.js --watch\" \"tsc --noEmit --watch -p ./\"",
-    "lint": "eslint src",
-    "format": "prettier --write \"src/**/*.ts\" \"*.js\" \"*.json\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"*.js\" \"*.json\"",
-    "test:cli": "tsx src/test/cli.test.ts",
-    "package": "npm run build:prod"
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "start": "npm run build && electron .",
+    "dev": "node scripts/build.mjs && concurrently -k -n build,app -c cyan,magenta \"node scripts/build.mjs --watch\" \"electronmon .\"",
+    "test": "tsx --test \"src/test/**/*.test.ts\"",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "electronmon": {
+    "patterns": [
+      "dist/**/*",
+      "!dist/**/*.map"
+    ]
+  },
+  "build": {
+    "appId": "com.omosuen.editor",
+    "productName": "Omosuen Editor",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    }
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/vscode": "^1.85.0",
-    "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "@typescript-eslint/parser": "^8.0.0",
     "concurrently": "^9.0.0",
-    "esbuild": "^0.20.0",
-    "eslint": "^9.0.0",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.5",
-    "prettier": "^3.8.1",
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.0",
+    "electronmon": "^2.0.3",
+    "esbuild": "^0.25.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.8.0"
   },
   "dependencies": {
-    "state-street": "npm:@state-street/state-street@1.1.2",
-    "ws": "^8.20.0"
+    "@state-street/state-street": "^2.4.1"
   }
 }

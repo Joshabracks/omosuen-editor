@@ -1,0 +1,508 @@
+{
+  "name": "omosuen-editor",
+  "displayName": "Omosuen Editor",
+  "description": "VS Code editor extension for the Omosuen axonometric game engine",
+  "version": "0.1.0",
+  "publisher": "omosuen",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:json",
+    "onLanguage:typescript",
+    "onLanguage:javascript",
+    "workspaceContains:**/*.omoscene",
+    "workspaceContains:**/*.omocomp",
+    "onCommand:omosuen.createProject"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "themes": [
+      {
+        "label": "Omosuen Retro",
+        "uiTheme": "vs-dark",
+        "path": "./themes/omosuen-retro.json"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "omosuen.omosceneEditor",
+        "displayName": "Omosuen Scene Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.omoscene"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "omosuen.omocompEditor",
+        "displayName": "Omosuen Component Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.omocomp"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "omosuen",
+          "title": "Omosuen",
+          "icon": "$(symbol-misc)"
+        }
+      ]
+    },
+    "views": {
+      "omosuen": [
+        {
+          "id": "omosuen.sceneTree",
+          "name": "Scene Tree",
+          "icon": "$(list-tree)",
+          "contextualTitle": "Omosuen Scene Tree"
+        },
+        {
+          "id": "omosuen.inspector",
+          "name": "Inspector",
+          "type": "webview",
+          "icon": "$(symbol-property)",
+          "contextualTitle": "Omosuen Inspector"
+        },
+        {
+          "id": "omosuen.assetBrowser",
+          "name": "Asset Browser",
+          "icon": "$(folder-library)",
+          "contextualTitle": "Omosuen Asset Browser"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "omosuen.launchPreview",
+        "title": "Omosuen: Launch Preview",
+        "icon": "$(play)"
+      },
+      {
+        "command": "omosuen.stopPreview",
+        "title": "Omosuen: Stop Preview",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "omosuen.refreshSceneTree",
+        "title": "Omosuen: Refresh Scene Tree",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "omosuen.createProject",
+        "title": "Omosuen: Create New Project",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "omosuen.changeVersion",
+        "title": "Omosuen: Change Engine Version",
+        "icon": "$(versions)"
+      },
+      {
+        "command": "omosuen.addComponent.nexus",
+        "title": "Nexus",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.transform",
+        "title": "Transform",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.sprite",
+        "title": "Sprite",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.camera",
+        "title": "Camera",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.viewport",
+        "title": "Viewport",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.collider",
+        "title": "Collider",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.event-collider",
+        "title": "Event Collider",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.light",
+        "title": "Light",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.timer",
+        "title": "Timer",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.messenger",
+        "title": "Messenger",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.input-controller",
+        "title": "Input Controller",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.audio-track",
+        "title": "Audio Track",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.audio-player",
+        "title": "Audio Player",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.audio-effect",
+        "title": "Audio Effect",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.animation-controller",
+        "title": "Animation Controller",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.ui-overlay",
+        "title": "UI Overlay",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.data-layer",
+        "title": "Data Layer",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.flag-manager",
+        "title": "Flag Manager",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.texture-map",
+        "title": "Texture Map",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.atlas-manager",
+        "title": "Atlas Manager",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.addComponent.cell-map",
+        "title": "Cell Map",
+        "category": "Omosuen: Add"
+      },
+      {
+        "command": "omosuen.deleteComponent",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "omosuen.duplicateComponent",
+        "title": "Duplicate",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "omosuen.renameComponent",
+        "title": "Rename",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "omosuen.moveComponentUp",
+        "title": "Move Up",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "omosuen.moveComponentDown",
+        "title": "Move Down",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "omosuen.exportRuntimeScene",
+        "title": "Omosuen: Export Runtime Scene",
+        "icon": "$(export)"
+      },
+      {
+        "command": "omosuen.newOmocomp",
+        "title": "New Component File",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "omosuen.openAsset",
+        "title": "Open Asset"
+      },
+      {
+        "command": "omosuen.refreshAssetBrowser",
+        "title": "Refresh Asset Browser",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "omosuen.openFrameEditor",
+        "title": "Omosuen: Edit Texture Frames",
+        "icon": "$(symbol-array)"
+      },
+      {
+        "command": "omosuen.openAudioEditor",
+        "title": "Omosuen: Open Audio Editor",
+        "icon": "$(waveform)"
+      },
+      {
+        "command": "omosuen.searchSceneTree",
+        "title": "Omosuen: Search Scene Tree",
+        "icon": "$(search)"
+      },
+      {
+        "command": "omosuen.pausePreview",
+        "title": "Omosuen: Pause Preview",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "omosuen.resumePreview",
+        "title": "Omosuen: Resume Preview",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "omosuen.stepFrame",
+        "title": "Omosuen: Step Frame",
+        "icon": "$(debug-step-over)"
+      },
+      {
+        "command": "omosuen.togglePerformanceOverlay",
+        "title": "Omosuen: Toggle Performance Overlay",
+        "icon": "$(dashboard)"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "omosuen.addComponentSubmenu",
+        "label": "Add Component"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "omosuen",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "The build task to run",
+            "enum": ["build:dev", "build:prod", "watch"]
+          }
+        },
+        "required": ["task"]
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "omosuen.deleteComponent",
+        "key": "delete",
+        "when": "focusedView == 'omosuen.sceneTree' && listFocus"
+      },
+      {
+        "command": "omosuen.renameComponent",
+        "key": "f2",
+        "when": "focusedView == 'omosuen.sceneTree' && listFocus"
+      },
+      {
+        "command": "omosuen.duplicateComponent",
+        "key": "ctrl+d",
+        "when": "focusedView == 'omosuen.sceneTree' && listFocus"
+      },
+      {
+        "command": "omosuen.moveComponentUp",
+        "key": "alt+up",
+        "when": "focusedView == 'omosuen.sceneTree' && listFocus"
+      },
+      {
+        "command": "omosuen.moveComponentDown",
+        "key": "alt+down",
+        "when": "focusedView == 'omosuen.sceneTree' && listFocus"
+      },
+      {
+        "command": "omosuen.launchPreview",
+        "key": "f5",
+        "when": "!omosuen.previewRunning && resourceExtname == '.omoscene'"
+      },
+      {
+        "command": "omosuen.stopPreview",
+        "key": "shift+f5",
+        "when": "omosuen.previewRunning"
+      },
+      {
+        "command": "omosuen.searchSceneTree",
+        "key": "ctrl+f",
+        "when": "focusedView == 'omosuen.sceneTree'"
+      },
+      {
+        "command": "omosuen.pausePreview",
+        "key": "f6",
+        "when": "omosuen.previewRunning && !omosuen.previewPaused"
+      },
+      {
+        "command": "omosuen.resumePreview",
+        "key": "f6",
+        "when": "omosuen.previewRunning && omosuen.previewPaused"
+      },
+      {
+        "command": "omosuen.stepFrame",
+        "key": "f10",
+        "when": "omosuen.previewRunning && omosuen.previewPaused"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "omosuen.searchSceneTree",
+          "when": "view == omosuen.sceneTree",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.refreshSceneTree",
+          "when": "view == omosuen.sceneTree",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.launchPreview",
+          "when": "view == omosuen.sceneTree && !omosuen.previewRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.stopPreview",
+          "when": "view == omosuen.sceneTree && omosuen.previewRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.pausePreview",
+          "when": "view == omosuen.sceneTree && omosuen.previewRunning && !omosuen.previewPaused",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.resumePreview",
+          "when": "view == omosuen.sceneTree && omosuen.previewRunning && omosuen.previewPaused",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.stepFrame",
+          "when": "view == omosuen.sceneTree && omosuen.previewRunning && omosuen.previewPaused",
+          "group": "navigation"
+        },
+        {
+          "command": "omosuen.refreshAssetBrowser",
+          "when": "view == omosuen.assetBrowser",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "omosuen.moveComponentUp",
+          "when": "view == omosuen.sceneTree",
+          "group": "0_reorder@1"
+        },
+        {
+          "command": "omosuen.moveComponentDown",
+          "when": "view == omosuen.sceneTree",
+          "group": "0_reorder@2"
+        },
+        {
+          "submenu": "omosuen.addComponentSubmenu",
+          "when": "view == omosuen.sceneTree && viewItem == nexus",
+          "group": "1_modify@1"
+        },
+        {
+          "command": "omosuen.duplicateComponent",
+          "when": "view == omosuen.sceneTree",
+          "group": "1_modify@2"
+        },
+        {
+          "command": "omosuen.renameComponent",
+          "when": "view == omosuen.sceneTree",
+          "group": "1_modify@3"
+        },
+        {
+          "command": "omosuen.deleteComponent",
+          "when": "view == omosuen.sceneTree",
+          "group": "2_danger@1"
+        },
+        {
+          "command": "omosuen.newOmocomp",
+          "when": "view == omosuen.assetBrowser",
+          "group": "1_create@1"
+        }
+      ],
+      "omosuen.addComponentSubmenu": [
+        { "command": "omosuen.addComponent.nexus",                "group": "1_core@1" },
+        { "command": "omosuen.addComponent.transform",            "group": "1_core@2" },
+        { "command": "omosuen.addComponent.sprite",               "group": "1_core@3" },
+        { "command": "omosuen.addComponent.camera",               "group": "1_core@4" },
+        { "command": "omosuen.addComponent.viewport",             "group": "1_core@5" },
+        { "command": "omosuen.addComponent.collider",             "group": "2_physics@1" },
+        { "command": "omosuen.addComponent.event-collider",       "group": "2_physics@2" },
+        { "command": "omosuen.addComponent.light",                "group": "2_physics@3" },
+        { "command": "omosuen.addComponent.timer",                "group": "3_behavior@1" },
+        { "command": "omosuen.addComponent.messenger",            "group": "3_behavior@2" },
+        { "command": "omosuen.addComponent.input-controller",     "group": "3_behavior@3" },
+        { "command": "omosuen.addComponent.audio-track",            "group": "4_media@1" },
+        { "command": "omosuen.addComponent.audio-player",         "group": "4_media@2", "when": "!omosuen.exists.audio-player" },
+        { "command": "omosuen.addComponent.audio-effect",         "group": "4_media@3" },
+        { "command": "omosuen.addComponent.animation-controller", "group": "4_media@4" },
+        { "command": "omosuen.addComponent.ui-overlay",           "group": "5_system@1" },
+        { "command": "omosuen.addComponent.data-layer",           "group": "5_system@2" },
+        { "command": "omosuen.addComponent.flag-manager",         "group": "5_system@3", "when": "!omosuen.exists.flag-manager" },
+        { "command": "omosuen.addComponent.texture-map",          "group": "5_system@4" },
+        { "command": "omosuen.addComponent.atlas-manager",        "group": "5_system@5", "when": "!omosuen.exists.atlas-manager" },
+        { "command": "omosuen.addComponent.cell-map",             "group": "5_system@6" }
+      ]
+    },
+    "snippets": [
+      {
+        "language": "typescript",
+        "path": "./snippets/omosuen.code-snippets"
+      },
+      {
+        "language": "javascript",
+        "path": "./snippets/omosuen.code-snippets"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "esbuild": "node esbuild.js",
+    "esbuild-watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production",
+    "vscode:prepublish": "npm run package",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.16.0"
+  }
+}

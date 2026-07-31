@@ -1,0 +1,351 @@
+:root {
+  color-scheme: dark;
+  --bg: #1a1b1e;
+  --chrome: #121316;
+  --panel: #1e1f24;
+  --border: #2c2e33;
+  --text: #e8e8ea;
+  --muted: #9a9ca3;
+  --accent: #6ea8fe;
+  --accent-dim: rgba(110, 168, 254, 0.28);
+  --btn: #2a2c31;
+  --btn-hover: #35383f;
+  --splitter: #2c2e33;
+  --splitter-hover: #4a4e58;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr) 24px;
+  height: 100%;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  user-select: none;
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.workspace-label {
+  color: var(--muted);
+  font-size: 12px;
+  max-width: 48%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.toolbar-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--btn);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.toolbar-btn:hover {
+  background: var(--btn-hover);
+}
+
+.toolbar-hint {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock-region,
+.dock-interaction-root {
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  background: var(--bg);
+}
+
+.dock-region {
+  padding: 0;
+  display: block;
+  height: 100%;
+  overflow: hidden;
+}
+
+.dock-host-pool {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dock-view-host {
+  height: 100%;
+  width: 100%;
+}
+
+.dock-chrome {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  z-index: 1;
+}
+
+.dock-chrome-empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dock-split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.dock-split-horizontal {
+  flex-direction: row;
+}
+
+.dock-split-vertical {
+  flex-direction: column;
+}
+
+.dock-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dock-pane > .dock-split,
+.dock-pane > .dock-panel {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+
+.dock-splitter {
+  position: relative;
+  flex: 0 0 4px;
+  background: var(--splitter);
+  z-index: 2;
+}
+
+/* Wider invisible hit target so resize is easier than a 4px line. */
+.dock-splitter::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.dock-splitter-horizontal {
+  cursor: col-resize;
+}
+
+.dock-splitter-horizontal::before {
+  left: -4px;
+  right: -4px;
+}
+
+.dock-splitter-vertical {
+  cursor: row-resize;
+}
+
+.dock-splitter-vertical::before {
+  top: -4px;
+  bottom: -4px;
+}
+
+.dock-splitter:hover,
+.dock-splitter:active {
+  background: var(--splitter-hover);
+}
+
+.dock-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.dock-titlebar {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 28px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+  cursor: default;
+}
+
+.dock-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dock-tab {
+  appearance: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 10px;
+  cursor: grab;
+  white-space: nowrap;
+}
+
+.dock-tab:hover {
+  color: var(--text);
+  background: var(--btn);
+}
+
+.dock-tab-active {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.dock-titlebar-actions {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.dock-popout,
+.dock-close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  width: 28px;
+  cursor: pointer;
+}
+
+.dock-close {
+  font-size: 16px;
+}
+
+.dock-popout:hover,
+.dock-close:hover {
+  color: var(--text);
+  background: var(--btn-hover);
+}
+
+.dock-no-popout .dock-popout {
+  display: none;
+}
+
+.dock-panel-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.dock-view-root {
+  height: 100%;
+}
+
+.dock-view-placeholder {
+  padding: 16px;
+  color: var(--muted);
+}
+
+.dock-view-placeholder h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.dock-view-placeholder p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.dock-drop-overlay {
+  position: absolute;
+  pointer-events: none;
+  z-index: 20;
+  border: 2px solid var(--accent);
+  background: var(--accent-dim);
+  border-radius: 2px;
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  background: var(--chrome);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.status-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

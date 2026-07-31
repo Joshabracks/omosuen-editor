@@ -1,8 +1,11 @@
-.design
+# Electron editor build artifacts
 node_modules/
 dist/
-out/
-*.vsix
-_old/
-.vscode/
-src/test/local_releases/
+release/
+*.log
+.DS_Store
+Thumbs.db
+
+# Remake-era ignores live under _old_v2/.gitignore.
+_old_v2
+.design

@@ -1,0 +1,79 @@
+{
+  "New Component": {
+    "prefix": "omo-component",
+    "body": [
+      "const ${1:component} = await newComponent('${2|nexus,transform,sprite,camera,viewport,collider,event-collider,light,timer,messenger,input-controller,audio-track,audio-player,audio-effect,animation-controller,ui-overlay,data-layer,flag-manager,texture-map,atlas-manager,cell-map|}', {",
+      "\tname: '${3:${1}}',",
+      "\t$0",
+      "}, ${4:parent});"
+    ],
+    "description": "Create a new Omosuen component"
+  },
+  "New Nexus": {
+    "prefix": "omo-nexus",
+    "body": [
+      "const ${1:nexus} = await newComponent('nexus', { name: '${2:${1}}' });"
+    ],
+    "description": "Create a new nexus component"
+  },
+  "Scene Setup": {
+    "prefix": "omo-scene",
+    "body": [
+      "const ${1:root} = await newComponent('nexus', { name: '${2:SceneRoot}' });",
+      "",
+      "const viewport = await newComponent('viewport', {",
+      "\tname: '${3:mainViewport}',",
+      "\twidth: ${4:800},",
+      "\theight: ${5:600},",
+      "}, ${1});",
+      "",
+      "const camera = await newComponent('camera', {",
+      "\tname: '${6:mainCamera}',",
+      "\tviewportRef: '${3}',",
+      "}, ${1});",
+      "",
+      "registerScene('${7:MyScene}', ${1});",
+      "$0"
+    ],
+    "description": "Create a basic scene with viewport and camera"
+  },
+  "New Sprite": {
+    "prefix": "omo-sprite",
+    "body": [
+      "const ${1:sprite} = await newComponent('sprite', {",
+      "\tname: '${2:${1}}',",
+      "\ttextureMapKeys: { albedo: '${3:key}' },",
+      "}, ${4:parent});"
+    ],
+    "description": "Create a sprite component with texture map reference"
+  },
+  "Switch Scene": {
+    "prefix": "omo-switch",
+    "body": [
+      "const scene = await switchScene('${1:sceneName}');",
+      "if (!scene) {",
+      "\tconsole.error('Failed to load scene: ${1}');",
+      "\t$0",
+      "}"
+    ],
+    "description": "Switch scene with error handling"
+  },
+  "Register Scene": {
+    "prefix": "omo-register",
+    "body": [
+      "registerScene('${1:sceneName}', ${2:rootNexus});"
+    ],
+    "description": "Register a scene in the scene registry"
+  },
+  "New Timer": {
+    "prefix": "omo-timer",
+    "body": [
+      "const ${1:timer} = await newComponent('timer', {",
+      "\tname: '${2:${1}}',",
+      "\tduration: ${3:1000},",
+      "\trepeat: ${4|false,true|},",
+      "}, ${5:parent});"
+    ],
+    "description": "Create a timer component"
+  }
+}
