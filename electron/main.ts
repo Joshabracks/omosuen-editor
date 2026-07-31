@@ -1,5 +1,9 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../src/bridge/channels';
+import {
+  SHELL_POPOUTS_KEY,
+  readPersistedPopOuts,
+} from '../src/dock/persist';
 import { chooseWorkspaceFolder } from './dialogs';
 import { registerWorkspaceIpc } from './fs-ipc';
 import { installAppMenu } from './menu';
@@ -15,6 +19,9 @@ app.whenReady().then(async () => {
   registerWorkspaceIpc(workspace);
 
   const windows = new WindowManager();
+  windows.setPopOutsChangedListener(() => {
+    void settings.set(SHELL_POPOUTS_KEY, windows.snapshotPopOuts());
+  });
   windows.registerIpc();
 
   ipcMain.handle(IPC.ping, () => 'pong');
@@ -41,6 +48,14 @@ app.whenReady().then(async () => {
   });
 
   windows.createPrimary();
+
+  const savedPopOuts = readPersistedPopOuts(await settings.get(SHELL_POPOUTS_KEY));
+  if (savedPopOuts.length > 0) {
+    // Defer until primary has registered IPC handlers in its renderer.
+    setTimeout(() => {
+      windows.restorePopOuts(savedPopOuts);
+    }, 400);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

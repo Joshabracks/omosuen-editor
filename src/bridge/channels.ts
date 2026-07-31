@@ -24,6 +24,9 @@ export const IPC = {
   windowDragLeave: 'window:dragLeave',
   windowDragAttach: 'window:dragAttach',
   windowDragAttachAck: 'window:dragAttachAck',
+  windowCloseAllPopouts: 'window:closeAllPopouts',
+  windowSyncViews: 'window:syncViews',
+  windowReturnView: 'window:returnView',
   shellBusPublish: 'shell:bus:publish',
   shellBusMessage: 'shell:bus:message',
 } as const;
@@ -33,6 +36,7 @@ export type IpcChannel = (typeof IPC)[keyof typeof IPC];
 export const MENU_COMMANDS = [
   'file.newProject',
   'file.openFolder',
+  'view.resetLayout',
   'help.about',
 ] as const;
 
@@ -61,9 +65,18 @@ export interface PopOutResult {
 
 export interface WindowClosedEvent {
   readonly windowId: string;
-  readonly viewId: string;
+  /** Views that should be restored into another shell window. */
+  readonly viewIds: readonly string[];
   /** Always redock into another shell window — views are not discarded. */
   readonly reason: 'redock';
+}
+
+export interface WindowSyncViewsRequest {
+  readonly viewIds: readonly string[];
+}
+
+export interface WindowReturnViewRequest {
+  readonly viewId: string;
 }
 
 export interface WindowDragStartRequest {

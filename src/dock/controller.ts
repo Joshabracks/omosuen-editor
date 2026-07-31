@@ -20,6 +20,7 @@ import {
   type DropTarget,
   type ViewId,
 } from './types';
+import { dragLog } from '../debug/drag-log';
 
 export interface DockShellHandle {
   getLayout(): DockLayout;
@@ -51,6 +52,11 @@ export interface DockControllerOptions {
   readonly newId?: IdFactory;
   /** Instant pop-out (⧉) without a live drag session. */
   readonly onPopOut?: (viewId: ViewId, screenX: number, screenY: number) => void;
+  /**
+   * When set, closing a tab calls this instead of discarding the view
+   * (pop-out windows return the view to the primary shell).
+   */
+  readonly onReturnView?: (viewId: ViewId) => void;
   /** Cross-window live drag session (main-process float window). */
   readonly windowDrag?: WindowDragBridge;
   /** When false, hide pop-out chrome affordances. */
@@ -71,6 +77,7 @@ export class DockController {
     screenX: number,
     screenY: number,
   ) => void;
+  private readonly onReturnView?: (viewId: ViewId) => void;
   private readonly windowDrag?: WindowDragBridge;
   private readonly allowPopOut: boolean;
   private readonly mounted = new Set<ViewId>();
@@ -94,6 +101,8 @@ export class DockController {
     parentRect: DOMRect;
   } | null = null;
   private externalViewId: ViewId | null = null;
+  private dragMoveCount = 0;
+  private lastLoggedOutside: boolean | null = null;
 
   constructor(options: DockControllerOptions) {
     this.shell = options.shell;
@@ -101,6 +110,7 @@ export class DockController {
     this.root = options.interactionRoot;
     this.newId = options.newId ?? createIdFactory('dock');
     this.onPopOut = options.onPopOut;
+    this.onReturnView = options.onReturnView;
     this.windowDrag = options.windowDrag;
     this.allowPopOut = options.allowPopOut ?? true;
     this.root.classList.add('dock-interaction-root');
@@ -233,7 +243,17 @@ export class DockController {
       event.preventDefault();
       event.stopPropagation();
       if (this.allowPopOut && this.onPopOut) {
+        dragLog('controller', 'pop-out button click', {
+          viewId: popout.dataset.viewId,
+          screenX: event.screenX,
+          screenY: event.screenY,
+        });
         this.onPopOut(popout.dataset.viewId, event.screenX, event.screenY);
+      } else {
+        dragLog('controller', 'pop-out button ignored', {
+          allowPopOut: this.allowPopOut,
+          hasHandler: Boolean(this.onPopOut),
+        });
       }
       return;
     }
@@ -241,7 +261,12 @@ export class DockController {
     const close = target.closest<HTMLElement>('[data-dock-close]');
     if (close?.dataset.viewId) {
       event.preventDefault();
-      this.applyLayout(closeTab(this.shell.getLayout(), close.dataset.viewId));
+      const viewId = close.dataset.viewId;
+      if (this.onReturnView) {
+        this.onReturnView(viewId);
+        return;
+      }
+      this.applyLayout(closeTab(this.shell.getLayout(), viewId));
       return;
     }
 
@@ -323,10 +348,26 @@ export class DockController {
       captureEl,
       sessionStarted: false,
     };
+    this.dragMoveCount = 0;
+    this.lastLoggedOutside = null;
+    dragLog('controller', 'tab pointerdown → beginTabDrag', {
+      viewId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      screenX: event.screenX,
+      screenY: event.screenY,
+      hasWindowDrag: Boolean(this.windowDrag),
+      allowPopOut: this.allowPopOut,
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+    });
     try {
       captureEl.setPointerCapture(event.pointerId);
-    } catch {
-      // ignore
+      dragLog('controller', 'setPointerCapture ok', { pointerId: event.pointerId });
+    } catch (err) {
+      dragLog('controller', 'setPointerCapture failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -339,28 +380,68 @@ export class DockController {
     const dx = event.clientX - this.drag.originX;
     const dy = event.clientY - this.drag.originY;
     if (!this.drag.started && dx * dx + dy * dy < 25) return;
+    if (!this.drag.started) {
+      dragLog('controller', 'drag threshold reached → started', {
+        viewId: this.drag.viewId,
+        dx,
+        dy,
+      });
+    }
     this.drag.started = true;
+    this.dragMoveCount += 1;
+
+    const inside =
+      event.clientX >= 0 &&
+      event.clientY >= 0 &&
+      event.clientX <= window.innerWidth &&
+      event.clientY <= window.innerHeight;
+    const outside = !inside;
+
+    if (
+      this.dragMoveCount === 1 ||
+      this.dragMoveCount % 15 === 0 ||
+      this.lastLoggedOutside !== outside
+    ) {
+      dragLog('controller', 'pointermove', {
+        n: this.dragMoveCount,
+        viewId: this.drag.viewId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        screenX: event.screenX,
+        screenY: event.screenY,
+        outsideWindow: outside,
+        sessionStarted: this.drag.sessionStarted,
+        hasWindowDrag: Boolean(this.windowDrag),
+      });
+      this.lastLoggedOutside = outside;
+    }
 
     if (this.windowDrag && !this.drag.sessionStarted) {
       this.drag.sessionStarted = true;
       const title = this.registry.get(this.drag.viewId)?.title ?? this.drag.viewId;
-      void this.windowDrag.begin(
-        this.drag.viewId,
+      dragLog('controller', 'windowDrag.begin →', {
+        viewId: this.drag.viewId,
         title,
-        event.screenX,
-        event.screenY,
-      );
+        screenX: event.screenX,
+        screenY: event.screenY,
+      });
+      void this.windowDrag
+        .begin(this.drag.viewId, title, event.screenX, event.screenY)
+        .then(() => {
+          dragLog('controller', 'windowDrag.begin ok');
+        })
+        .catch((err: unknown) => {
+          dragLog('controller', 'windowDrag.begin failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
     } else if (this.windowDrag && this.drag.sessionStarted) {
       this.windowDrag.move(event.screenX, event.screenY);
+    } else if (!this.windowDrag && this.dragMoveCount === 1) {
+      dragLog('controller', 'no windowDrag bridge — cross-window drag disabled');
     }
 
-    // Local overlay while pointer is still over this window's dock.
-    if (
-      event.clientX >= 0 &&
-      event.clientY >= 0 &&
-      event.clientX <= window.innerWidth &&
-      event.clientY <= window.innerHeight
-    ) {
+    if (inside) {
       this.updateDropOverlay(event.clientX, event.clientY);
     } else {
       this.clearDropOverlay();
@@ -394,6 +475,16 @@ export class DockController {
     if (!this.drag) return;
     const drag = this.drag;
     this.drag = null;
+    dragLog('controller', cancelled ? 'pointercancel' : 'pointerup', {
+      viewId: drag.viewId,
+      started: drag.started,
+      sessionStarted: drag.sessionStarted,
+      moveCount: this.dragMoveCount,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      screenX: event.screenX,
+      screenY: event.screenY,
+    });
     try {
       drag.captureEl.releasePointerCapture(drag.pointerId);
     } catch {
@@ -408,25 +499,38 @@ export class DockController {
     this.clearDropOverlay();
 
     if (cancelled) {
+      dragLog('controller', 'cancel → windowDrag.cancel()');
       this.windowDrag?.cancel();
       return;
     }
 
     if (this.windowDrag && drag.sessionStarted) {
-      const result = await this.windowDrag.end(event.screenX, event.screenY);
-      if (result === 'local') {
-        const drop = this.hitTestDropTarget(event.clientX, event.clientY);
-        if (drop) {
-          this.applyLayout(
-            moveView(this.shell.getLayout(), drag.viewId, drop, this.newId),
-          );
+      dragLog('controller', 'windowDrag.end →', {
+        screenX: event.screenX,
+        screenY: event.screenY,
+      });
+      try {
+        const result = await this.windowDrag.end(event.screenX, event.screenY);
+        dragLog('controller', 'windowDrag.end ←', { result });
+        if (result === 'local') {
+          const drop = this.hitTestDropTarget(event.clientX, event.clientY);
+          dragLog('controller', 'local drop', { drop });
+          if (drop) {
+            this.applyLayout(
+              moveView(this.shell.getLayout(), drag.viewId, drop, this.newId),
+            );
+          }
         }
+      } catch (err) {
+        dragLog('controller', 'windowDrag.end failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
-      // settled / attached: layout already updated via detach + other window attach
       return;
     }
 
     const drop = this.hitTestDropTarget(event.clientX, event.clientY);
+    dragLog('controller', 'in-window-only drop (no session)', { drop });
     if (drop) {
       this.applyLayout(
         moveView(this.shell.getLayout(), drag.viewId, drop, this.newId),

@@ -70,6 +70,15 @@ contextBridge.exposeInMainWorld('omosuen', {
 
   dragCancel: (): Promise<void> => ipcRenderer.invoke(IPC.windowDragCancel),
 
+  closeAllPopouts: (): Promise<void> =>
+    ipcRenderer.invoke(IPC.windowCloseAllPopouts),
+
+  syncViews: (viewIds: string[]): Promise<void> =>
+    ipcRenderer.invoke(IPC.windowSyncViews, { viewIds }),
+
+  returnView: (viewId: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.windowReturnView, { viewId }),
+
   ackDragAttach: (ack: WindowDragAttachAck): void => {
     ipcRenderer.send(IPC.windowDragAttachAck, ack);
   },

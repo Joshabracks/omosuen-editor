@@ -75,6 +75,19 @@ export function createSingleViewLayout(
   return { root: createTabGroup(groupId, [viewId], viewId) };
 }
 
+/** Pop-out layout hosting one or more views as a tab group. */
+export function createPopOutLayout(
+  viewIds: readonly ViewId[],
+  groupId = 'tabs-popout',
+): DockLayout {
+  if (viewIds.length === 0) {
+    return { root: null };
+  }
+  return {
+    root: createTabGroup(groupId, [...viewIds], viewIds[0]),
+  };
+}
+
 /**
  * Insert a view that is not currently in the layout (re-dock after pop-out).
  * Prefer appending to the first tab group; otherwise split beside the root.

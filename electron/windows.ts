@@ -22,11 +22,16 @@ import {
   type WindowInfo,
   type WindowRole,
 } from '../src/bridge/channels';
+import type { PersistedPopOut } from '../src/dock/persist';
+import { dragLog } from '../src/debug/drag-log';
+
+const APP_TITLE = 'Omosuen Editor';
 
 interface TrackedWindow {
   id: string;
   role: WindowRole;
-  viewId: string | null;
+  /** Views currently hosted in this window (synced from renderer layout). */
+  viewIds: string[];
   floating: boolean;
   readonly win: BrowserWindow;
 }
@@ -86,18 +91,90 @@ export class WindowManager {
   private readonly byContents = new Map<number, string>();
   private primaryId: string | null = null;
   private drag: DragSession | null = null;
+  private readonly suppressRedock = new Set<string>();
+  private onPopOutsChanged: (() => void) | null = null;
   private attachWaiters = new Map<
     string,
     { resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> }
   >();
+
+  /** Called whenever the settled pop-out list changes (persist from main). */
+  setPopOutsChangedListener(listener: (() => void) | null): void {
+    this.onPopOutsChanged = listener;
+  }
 
   createPrimary(): BrowserWindow {
     return this.createWindow({
       role: 'primary',
       width: 1280,
       height: 800,
-      title: 'Omosuen Editor',
+      title: APP_TITLE,
     }).win;
+  }
+
+  snapshotPopOuts(): PersistedPopOut[] {
+    const out: PersistedPopOut[] = [];
+    for (const tracked of this.byId.values()) {
+      if (
+        tracked.role !== 'popout' ||
+        tracked.floating ||
+        tracked.viewIds.length === 0
+      ) {
+        continue;
+      }
+      if (tracked.win.isDestroyed()) continue;
+      try {
+        const b = tracked.win.getBounds();
+        out.push({
+          viewIds: [...tracked.viewIds],
+          x: b.x,
+          y: b.y,
+          width: b.width,
+          height: b.height,
+        });
+      } catch {
+        // skip
+      }
+    }
+    return out;
+  }
+
+  restorePopOuts(entries: readonly PersistedPopOut[]): void {
+    for (const entry of entries) {
+      if (entry.viewIds.length === 0) continue;
+      // Skip if any of these views already live in a pop-out.
+      if (entry.viewIds.some((id) => this.findPopOutHosting(id))) continue;
+      this.createWindow({
+        role: 'popout',
+        viewIds: [...entry.viewIds],
+        width: entry.width,
+        height: entry.height,
+        x: entry.x,
+        y: entry.y,
+        title: APP_TITLE,
+      });
+    }
+    this.notifyPopOutsChanged();
+  }
+
+  /** Close settled pop-outs. When `redock` is false (Reset Layout), views stay in primary. */
+  closeAllPopOuts(options: { redock: boolean }): void {
+    const targets = [...this.byId.values()].filter(
+      (t) => t.role === 'popout' && !t.floating && !t.win.isDestroyed(),
+    );
+    for (const tracked of targets) {
+      if (!options.redock) this.suppressRedock.add(tracked.id);
+      tracked.win.close();
+    }
+    this.notifyPopOutsChanged();
+  }
+
+  private notifyPopOutsChanged(): void {
+    try {
+      this.onPopOutsChanged?.();
+    } catch {
+      // persistence must not break window ops
+    }
   }
 
   registerIpc(): void {
@@ -113,16 +190,12 @@ export class WindowManager {
           throw new Error('window:popOut requires viewId');
         }
 
-        const existing = this.findPopOutByView(request.viewId);
+        const existing = this.findPopOutHosting(request.viewId);
         if (existing && !existing.floating) {
           this.focusWindow(existing);
           return { windowId: existing.id, created: false };
         }
 
-        const title =
-          typeof request.title === 'string' && request.title
-            ? request.title
-            : request.viewId;
         const point = screen.getCursorScreenPoint();
         const screenX =
           typeof request.screenX === 'number' ? request.screenX : point.x;
@@ -131,18 +204,63 @@ export class WindowManager {
 
         const tracked = this.createWindow({
           role: 'popout',
-          viewId: request.viewId,
+          viewIds: [request.viewId],
           width: FLOAT_W,
           height: FLOAT_H,
-          title: `${title} — Omosuen`,
+          title: APP_TITLE,
           x: Math.round(screenX - FLOAT_GRAB_X),
           y: Math.round(screenY - FLOAT_GRAB_Y),
+        });
+        dragLog('main', 'window:popOut created', {
+          windowId: tracked.id,
+          viewId: request.viewId,
+          from: source.id,
+          role: source.role,
         });
         safeSend(source.win, IPC.windowDragDetach, {
           viewId: request.viewId,
           sessionId: `pop-${tracked.id}`,
         } satisfies WindowDragDetachEvent);
+        this.removeViewFromTracked(source, request.viewId);
+        this.closeIfEmptyPopOut(source);
+        this.notifyPopOutsChanged();
         return { windowId: tracked.id, created: true };
+      },
+    );
+
+    ipcMain.handle(IPC.windowCloseAllPopouts, (): void => {
+      this.closeAllPopOuts({ redock: false });
+    });
+
+    ipcMain.handle(
+      IPC.windowSyncViews,
+      (event, request: { viewIds?: unknown }): void => {
+        const tracked = this.trackedFor(event.sender);
+        const viewIds = Array.isArray(request?.viewIds)
+          ? request.viewIds.filter(
+              (id): id is string => typeof id === 'string' && id.length > 0,
+            )
+          : [];
+        tracked.viewIds = viewIds;
+        if (tracked.role === 'popout' && !tracked.floating) {
+          this.notifyPopOutsChanged();
+        }
+      },
+    );
+
+    ipcMain.handle(
+      IPC.windowReturnView,
+      (event, request: { viewId?: unknown }): void => {
+        const source = this.trackedFor(event.sender);
+        if (typeof request?.viewId !== 'string' || !request.viewId) {
+          throw new Error('window:returnView requires viewId');
+        }
+        const viewId = request.viewId;
+        // Source renderer already removed (or will remove) the tab; redock to primary.
+        this.removeViewFromTracked(source, viewId);
+        this.broadcastRedock([viewId], source.id);
+        this.closeIfEmptyPopOut(source);
+        this.notifyPopOutsChanged();
       },
     );
 
@@ -169,6 +287,15 @@ export class WindowManager {
           lastScreenY: request.screenY,
           detached: false,
         };
+        dragLog('main', 'window:dragStart', {
+          sessionId,
+          viewId: request.viewId,
+          sourceWindowId: source.id,
+          sourceRole: source.role,
+          sourceViewIds: [...source.viewIds],
+          screenX: request.screenX,
+          screenY: request.screenY,
+        });
         return { sessionId };
       },
     );
@@ -177,23 +304,47 @@ export class WindowManager {
       IPC.windowDragMove,
       (event, request: WindowDragMoveRequest): void => {
         const session = this.drag;
-        if (!session) return;
+        if (!session) {
+          dragLog('main', 'window:dragMove ignored — no session');
+          return;
+        }
         const source = this.trackedFor(event.sender);
-        if (source.id !== session.sourceWindowId) return;
+        if (source.id !== session.sourceWindowId) {
+          dragLog('main', 'window:dragMove ignored — sender mismatch', {
+            sender: source.id,
+            expected: session.sourceWindowId,
+          });
+          return;
+        }
         if (typeof request?.screenX !== 'number') return;
 
         session.lastScreenX = request.screenX;
         session.lastScreenY = request.screenY;
 
         const sourceBounds = this.contentBounds(source.win);
+        const pad = 2;
         const outside =
           !sourceBounds ||
-          request.screenX < sourceBounds.x ||
-          request.screenY < sourceBounds.y ||
-          request.screenX > sourceBounds.x + sourceBounds.width ||
-          request.screenY > sourceBounds.y + sourceBounds.height;
+          request.screenX < sourceBounds.x + pad ||
+          request.screenY < sourceBounds.y + pad ||
+          request.screenX > sourceBounds.x + sourceBounds.width - pad ||
+          request.screenY > sourceBounds.y + sourceBounds.height - pad;
 
-        if (outside && !session.floatWindowId) {
+        const shouldSpawn = outside && !session.floatWindowId;
+        if (shouldSpawn || (outside && session.floatWindowId == null)) {
+          dragLog('main', 'window:dragMove outside check', {
+            outside,
+            hasFloat: Boolean(session.floatWindowId),
+            willSpawn: shouldSpawn,
+            screenX: request.screenX,
+            screenY: request.screenY,
+            sourceBounds,
+            sourceRole: source.role,
+            sourceDestroyed: source.win.isDestroyed(),
+          });
+        }
+
+        if (shouldSpawn) {
           this.spawnFloatForDrag(session, request.screenX, request.screenY);
         }
 
@@ -205,6 +356,10 @@ export class WindowManager {
               Math.round(request.screenY - FLOAT_GRAB_Y),
               false,
             );
+          } else if (shouldSpawn) {
+            dragLog('main', 'float missing after spawn attempt', {
+              floatWindowId: session.floatWindowId,
+            });
           }
         }
 
@@ -216,22 +371,38 @@ export class WindowManager {
       IPC.windowDragEnd,
       async (event, request: WindowDragEndRequest): Promise<WindowDragEndResult> => {
         const session = this.drag;
-        if (!session) return { kind: 'cancelled' };
+        if (!session) {
+          dragLog('main', 'window:dragEnd — no session');
+          return { kind: 'cancelled' };
+        }
         const source = this.trackedFor(event.sender);
-        if (source.id !== session.sourceWindowId) return { kind: 'cancelled' };
+        if (source.id !== session.sourceWindowId) {
+          dragLog('main', 'window:dragEnd — sender mismatch');
+          return { kind: 'cancelled' };
+        }
 
         const screenX = request?.screenX ?? session.lastScreenX;
         const screenY = request?.screenY ?? session.lastScreenY;
+        dragLog('main', 'window:dragEnd', {
+          sessionId: session.sessionId,
+          viewId: session.viewId,
+          floatWindowId: session.floatWindowId,
+          hoverWindowId: session.hoverWindowId,
+          detached: session.detached,
+          screenX,
+          screenY,
+        });
         this.updateDragHover(session, screenX, screenY);
 
         if (!session.floatWindowId) {
           this.clearDragHover(session);
           this.drag = null;
+          dragLog('main', 'window:dragEnd → local (no float)');
           return { kind: 'local' };
         }
 
         const hoverId = session.hoverWindowId;
-        if (hoverId) {
+        if (hoverId && hoverId !== session.floatWindowId) {
           const hover = this.byId.get(hoverId);
           if (hover && !hover.win.isDestroyed()) {
             const bounds = this.contentBounds(hover.win);
@@ -243,10 +414,16 @@ export class WindowManager {
                 screenY - bounds.y,
               );
               if (accepted) {
+                if (!hover.viewIds.includes(session.viewId)) {
+                  hover.viewIds = [...hover.viewIds, session.viewId];
+                }
                 this.destroyFloat(session, { redockBroadcast: false });
+                this.closeEmptySource(session);
                 this.clearDragHover(session);
                 const windowId = hoverId;
                 this.drag = null;
+                this.notifyPopOutsChanged();
+                dragLog('main', 'window:dragEnd → attached', { windowId });
                 return { kind: 'attached', windowId };
               }
             }
@@ -254,9 +431,11 @@ export class WindowManager {
         }
 
         this.settleFloat(session);
+        this.closeEmptySource(session);
         this.clearDragHover(session);
         const windowId = session.floatWindowId!;
         this.drag = null;
+        dragLog('main', 'window:dragEnd → settled', { windowId });
         return { kind: 'settled', windowId };
       },
     );
@@ -300,12 +479,28 @@ export class WindowManager {
     screenX: number,
     screenY: number,
   ): void {
+    const source = this.byId.get(session.sourceWindowId);
+    if (!source || source.win.isDestroyed()) {
+      dragLog('main', 'spawnFloatForDrag aborted — source missing/destroyed', {
+        sourceWindowId: session.sourceWindowId,
+      });
+      return;
+    }
+
+    dragLog('main', 'spawnFloatForDrag → createWindow', {
+      viewId: session.viewId,
+      from: source.id,
+      fromRole: source.role,
+      screenX,
+      screenY,
+    });
+
     const tracked = this.createWindow({
       role: 'popout',
-      viewId: session.viewId,
+      viewIds: [session.viewId],
       width: FLOAT_W,
       height: FLOAT_H,
-      title: `${session.title} — Omosuen`,
+      title: APP_TITLE,
       x: Math.round(screenX - FLOAT_GRAB_X),
       y: Math.round(screenY - FLOAT_GRAB_Y),
       floating: true,
@@ -313,16 +508,23 @@ export class WindowManager {
     tracked.win.setIgnoreMouseEvents(true);
     tracked.win.setFocusable(false);
     session.floatWindowId = tracked.id;
+    dragLog('main', 'spawnFloatForDrag ← float ready', {
+      floatWindowId: tracked.id,
+      floating: tracked.floating,
+    });
 
     if (!session.detached) {
       session.detached = true;
-      const source = this.byId.get(session.sourceWindowId);
-      if (source) {
-        safeSend(source.win, IPC.windowDragDetach, {
-          viewId: session.viewId,
-          sessionId: session.sessionId,
-        } satisfies WindowDragDetachEvent);
-      }
+      dragLog('main', 'detach view from source', {
+        viewId: session.viewId,
+        sourceId: source.id,
+      });
+      safeSend(source.win, IPC.windowDragDetach, {
+        viewId: session.viewId,
+        sessionId: session.sessionId,
+      } satisfies WindowDragDetachEvent);
+      this.removeViewFromTracked(source, session.viewId);
+      // Do NOT close an empty source here — that would destroy pointer capture.
     }
   }
 
@@ -334,23 +536,23 @@ export class WindowManager {
     float.win.setIgnoreMouseEvents(false);
     float.win.setFocusable(true);
     float.win.setSkipTaskbar(false);
+    this.notifyPopOutsChanged();
   }
 
   private destroyFloat(
     session: DragSession,
-    options: { redockBroadcast: boolean },
+    _options: { redockBroadcast: boolean },
   ): void {
     if (!session.floatWindowId) return;
     const float = this.byId.get(session.floatWindowId);
     session.floatWindowId = null;
     if (!float) return;
+    this.suppressRedock.add(float.id);
     this.forget(float);
     if (!float.win.isDestroyed()) {
       float.win.destroy();
     }
-    if (options.redockBroadcast && float.viewId) {
-      // Caller handles attach; no broadcast.
-    }
+    this.notifyPopOutsChanged();
   }
 
   private cancelDragSession(_reason: 'cancelled'): void {
@@ -359,13 +561,70 @@ export class WindowManager {
     this.clearDragHover(session);
     const wasDetached = session.detached;
     const viewId = session.viewId;
+    const sourceId = session.sourceWindowId;
     if (session.floatWindowId) {
       this.destroyFloat(session, { redockBroadcast: false });
     }
     this.drag = null;
     if (wasDetached) {
-      this.broadcastRedock(viewId, session.sourceWindowId);
+      const source = this.byId.get(sourceId);
+      if (source && !source.win.isDestroyed()) {
+        // Put the view back into the still-open source window.
+        const bounds = this.contentBounds(source.win);
+        const cx = bounds ? bounds.width / 2 : 10;
+        const cy = bounds ? bounds.height / 2 : 10;
+        void this.requestAttach(
+          source,
+          {
+            sessionId: session.sessionId,
+            viewId,
+            title: session.title,
+            sourceWindowId: sourceId,
+            floatWindowId: null,
+            hoverWindowId: null,
+            lastScreenX: session.lastScreenX,
+            lastScreenY: session.lastScreenY,
+            detached: true,
+          },
+          cx,
+          cy,
+        ).then((accepted) => {
+          if (accepted) {
+            if (!source.viewIds.includes(viewId)) {
+              source.viewIds = [...source.viewIds, viewId];
+            }
+          } else {
+            this.broadcastRedock([viewId], sourceId);
+          }
+          this.closeEmptySourceById(sourceId);
+          this.notifyPopOutsChanged();
+        });
+      } else {
+        this.broadcastRedock([viewId], sourceId);
+      }
     }
+  }
+
+  private closeEmptySource(session: DragSession): void {
+    this.closeEmptySourceById(session.sourceWindowId);
+  }
+
+  private closeEmptySourceById(sourceWindowId: string): void {
+    const source = this.byId.get(sourceWindowId);
+    if (!source) return;
+    this.closeIfEmptyPopOut(source);
+  }
+
+  private removeViewFromTracked(tracked: TrackedWindow, viewId: string): void {
+    tracked.viewIds = tracked.viewIds.filter((id) => id !== viewId);
+  }
+
+  private closeIfEmptyPopOut(tracked: TrackedWindow): void {
+    if (tracked.role !== 'popout' || tracked.floating) return;
+    if (tracked.viewIds.length > 0) return;
+    if (tracked.win.isDestroyed()) return;
+    this.suppressRedock.add(tracked.id);
+    tracked.win.close();
   }
 
   private updateDragHover(
@@ -457,7 +716,7 @@ export class WindowManager {
 
   private createWindow(options: {
     role: WindowRole;
-    viewId?: string;
+    viewIds?: string[];
     width: number;
     height: number;
     title: string;
@@ -474,7 +733,7 @@ export class WindowManager {
       y: options.y,
       minWidth: options.role === 'primary' ? 800 : 320,
       minHeight: options.role === 'primary' ? 600 : 240,
-      title: options.title,
+      title: APP_TITLE,
       show: false,
       skipTaskbar: floating,
       focusable: !floating,
@@ -486,11 +745,11 @@ export class WindowManager {
       },
     });
 
-    const viewId = options.viewId ?? null;
+    const viewIds = options.viewIds ? [...options.viewIds] : [];
     const tracked: TrackedWindow = {
       id,
       role: options.role,
-      viewId,
+      viewIds,
       floating,
       win,
     };
@@ -500,17 +759,43 @@ export class WindowManager {
       this.primaryId = id;
     }
 
+    dragLog('main', 'createWindow', {
+      id,
+      role: options.role,
+      viewIds,
+      floating,
+      x: options.x,
+      y: options.y,
+      width: options.width,
+      height: options.height,
+    });
+
     const query: Record<string, string> = {
       role: options.role,
       windowId: id,
     };
-    if (viewId) query.viewId = viewId;
-    if (floating) query.floating = '1';
+    if (viewIds.length > 0) {
+      query.viewIds = viewIds.join(',');
+      query.viewId = viewIds[0]!;
+    }
+    // Do NOT put floating in the URL. The renderer must boot with full dock/drag
+    // handlers; main-only `tracked.floating` drives ignoreMouseEvents during drag.
 
     void win.loadFile(htmlPath(), { query });
     win.once('ready-to-show', () => {
-      if (!win.isDestroyed()) win.showInactive();
+      if (!win.isDestroyed()) {
+        win.setTitle(APP_TITLE);
+        win.showInactive();
+      }
     });
+
+    if (options.role === 'popout') {
+      const persistBounds = (): void => {
+        if (!tracked.floating) this.notifyPopOutsChanged();
+      };
+      win.on('moved', persistBounds);
+      win.on('resized', persistBounds);
+    }
 
     win.on('closed', () => {
       this.handleWindowClosed(id);
@@ -529,23 +814,32 @@ export class WindowManager {
       return;
     }
 
-    const viewId = current.viewId;
-    const wasPopout = current.role === 'popout' && viewId;
+    const viewIds = [...current.viewIds];
+    const wasPopout = current.role === 'popout' && viewIds.length > 0;
+    const skipRedock = this.suppressRedock.has(id);
+    this.suppressRedock.delete(id);
     this.forget(current);
     if (current.role === 'primary') {
       this.primaryId = null;
     }
 
-    // Preserve the view: redock into primary (or any remaining shell window).
-    if (wasPopout && viewId) {
-      this.broadcastRedock(viewId, id);
+    if (current.role === 'popout') {
+      this.notifyPopOutsChanged();
+    }
+
+    if (wasPopout && !skipRedock) {
+      this.broadcastRedock(viewIds, id);
     }
   }
 
-  private broadcastRedock(viewId: string, closedWindowId: string): void {
+  private broadcastRedock(
+    viewIds: readonly string[],
+    closedWindowId: string,
+  ): void {
+    if (viewIds.length === 0) return;
     const evt: WindowClosedEvent = {
       windowId: closedWindowId,
-      viewId,
+      viewIds: [...viewIds],
       reason: 'redock',
     };
     const primary =
@@ -556,6 +850,7 @@ export class WindowManager {
     }
     for (const tracked of this.byId.values()) {
       if (tracked.floating || tracked.win.isDestroyed()) continue;
+      if (tracked.id === closedWindowId) continue;
       safeSend(tracked.win, IPC.windowClosed, evt);
       return;
     }
@@ -576,12 +871,12 @@ export class WindowManager {
     }
   }
 
-  private findPopOutByView(viewId: string): TrackedWindow | undefined {
+  private findPopOutHosting(viewId: string): TrackedWindow | undefined {
     for (const tracked of this.byId.values()) {
       if (
         tracked.role === 'popout' &&
-        tracked.viewId === viewId &&
-        !tracked.win.isDestroyed()
+        !tracked.win.isDestroyed() &&
+        tracked.viewIds.includes(viewId)
       ) {
         return tracked;
       }
@@ -630,7 +925,7 @@ export class WindowManager {
     return {
       role: tracked.role,
       windowId: tracked.id,
-      viewId: tracked.viewId,
+      viewId: tracked.viewIds[0] ?? null,
       floating: tracked.floating,
     };
   }

@@ -92,6 +92,14 @@ export function installAppMenu(handlers: AppMenuHandlers): void {
     {
       label: 'View',
       submenu: [
+        {
+          label: 'Reset Layout',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: (_item, browserWindow) => {
+            sendMenuCommand(browserWindow, 'view.resetLayout');
+          },
+        },
+        { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },

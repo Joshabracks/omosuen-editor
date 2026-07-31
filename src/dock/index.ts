@@ -21,6 +21,7 @@ export {
   closeTab,
   collectViewIds,
   createIdFactory,
+  createPopOutLayout,
   createSingleViewLayout,
   findFirstTabGroup,
   findNode,
@@ -33,6 +34,13 @@ export {
 export { parseLayout, serializeLayout, validateLayout } from './serialize';
 export { hitTestDropZone } from './drop';
 export { createDefaultLayout } from './default-layout';
+export {
+  SHELL_DOCK_LAYOUT_KEY,
+  SHELL_POPOUTS_KEY,
+  readPersistedLayout,
+  readPersistedPopOuts,
+  type PersistedPopOut,
+} from './persist';
 export {
   DockViewRegistry,
   registerPlaceholderViews,

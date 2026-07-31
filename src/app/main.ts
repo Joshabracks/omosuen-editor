@@ -20,17 +20,24 @@ import { isMenuCommandId } from '../bridge/channels';
 import {
   DockController,
   DockViewRegistry,
+  SHELL_DOCK_LAYOUT_KEY,
+  closeTab,
   collectViewIds,
   createDefaultLayout,
   createIdFactory,
-  createSingleViewLayout,
+  createPopOutLayout,
   insertView,
+  readPersistedLayout,
   registerPlaceholderViews,
   renderDockNode,
   viewHostElementId,
   type DockLayout,
 } from '../dock/index';
-import { parseWindowInfoFromLocation } from './window-info';
+import {
+  parseViewIdsFromLocation,
+  parseWindowInfoFromLocation,
+} from './window-info';
+import { dragLog } from '../debug/drag-log';
 
 export {};
 
@@ -58,6 +65,9 @@ declare global {
       dragMove: (request: WindowDragMoveRequest) => Promise<void>;
       dragEnd: (request: WindowDragEndRequest) => Promise<WindowDragEndResult>;
       dragCancel: () => Promise<void>;
+      closeAllPopouts: () => Promise<void>;
+      syncViews: (viewIds: string[]) => Promise<void>;
+      returnView: (viewId: string) => Promise<void>;
       ackDragAttach: (ack: WindowDragAttachAck) => void;
       publishShellBus: (message: {
         type: string;
@@ -161,16 +171,43 @@ const layoutIds = createIdFactory('dock');
 let shellState: InstanceType<typeof State> & { data: ShellData };
 let dock: DockController;
 let tearingDown = false;
+let layoutSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let persistLayoutEnabled = false;
 
 void boot();
 
 async function boot(): Promise<void> {
   const info = await resolveWindowInfo();
   const isPopout = info.role === 'popout';
-  const isFloating = info.floating;
   const popViewId = info.viewId;
   const popTitle =
     (popViewId && registry.get(popViewId)?.title) || popViewId || 'Pop-out';
+
+  dragLog('renderer', 'boot', {
+    role: info.role,
+    windowId: info.windowId,
+    viewId: info.viewId,
+    queryFloating: info.floating,
+    willEnableWindowDrag: true,
+  });
+
+  const apiEarly = window.omosuen;
+  let initialLayout = createDefaultLayout();
+  if (!isPopout && apiEarly) {
+    try {
+      const saved = readPersistedLayout(
+        await apiEarly.getSetting(SHELL_DOCK_LAYOUT_KEY),
+      );
+      if (saved) initialLayout = saved;
+    } catch {
+      // fall back to default
+    }
+  } else if (isPopout) {
+    const viewIds = parseViewIdsFromLocation(window.location.search);
+    initialLayout = createPopOutLayout(
+      viewIds.length > 0 ? viewIds : popViewId ? [popViewId] : [],
+    );
+  }
 
   shellState = new State(
     template,
@@ -182,10 +219,7 @@ async function boot(): Promise<void> {
       statusMessage: isPopout ? `Pop-out: ${popTitle}` : 'Ready',
       bridgeStatus: 'bridge: …',
       workspaceLabel: 'No folder open',
-      layout:
-        isPopout && popViewId
-          ? createSingleViewLayout(popViewId)
-          : createDefaultLayout(),
+      layout: initialLayout,
       isPopout,
       popoutViewTitle: popTitle,
     } satisfies ShellData,
@@ -222,9 +256,18 @@ async function boot(): Promise<void> {
       }) => {
         state.data.statusMessage = 'Menu stub: file.newProject';
       },
+      resetLayout: ({
+        state,
+      }: {
+        state: { data: ShellData };
+      }) => {
+        void resetLayoutToDefault(state);
+      },
     },
     { mountTarget: '#app' },
   ) as InstanceType<typeof State> & { data: ShellData };
+
+  persistLayoutEnabled = !isPopout;
 
   const dockRoot = document.getElementById('dock-root');
   if (!dockRoot) {
@@ -236,34 +279,60 @@ async function boot(): Promise<void> {
     registry,
     interactionRoot: dockRoot,
     newId: layoutIds,
-    allowPopOut: !isFloating,
-    onPopOut: isFloating
-      ? undefined
-      : (viewId, screenX, screenY) => {
+    allowPopOut: Boolean(api),
+    onPopOut: api
+      ? (viewId, screenX, screenY) => {
           void popOutView(viewId, screenX, screenY);
-        },
-    windowDrag:
-      !isFloating && api
-        ? {
+        }
+      : undefined,
+    onReturnView: isPopout
+      ? (viewId) => {
+          void returnViewToPrimary(viewId);
+        }
+      : undefined,
+    windowDrag: api
+      ? {
             begin: async (viewId, title, screenX, screenY) => {
-              await api.dragStart({ viewId, title, screenX, screenY });
+              dragLog('renderer', 'api.dragStart →', {
+                viewId,
+                title,
+                screenX,
+                screenY,
+                role: info.role,
+              });
+              const result = await api.dragStart({
+                viewId,
+                title,
+                screenX,
+                screenY,
+              });
+              dragLog('renderer', 'api.dragStart ←', result as unknown as Record<string, unknown>);
             },
             move: (screenX, screenY) => {
-              void api.dragMove({ screenX, screenY });
+              void api.dragMove({ screenX, screenY }).catch((err: unknown) => {
+                dragLog('renderer', 'api.dragMove failed', {
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              });
             },
             end: async (screenX, screenY) => {
+              dragLog('renderer', 'api.dragEnd →', { screenX, screenY });
               const result = await api.dragEnd({ screenX, screenY });
+              dragLog('renderer', 'api.dragEnd ←', result as unknown as Record<string, unknown>);
               return result.kind;
             },
             cancel: () => {
+              dragLog('renderer', 'api.dragCancel');
               void api.dragCancel();
             },
           }
-        : undefined,
+      : undefined,
     shell: {
       getLayout: () => shellState.data.layout as DockLayout,
       setLayout: (layout) => {
         shellState.data.layout = layout;
+        scheduleLayoutPersist();
+        scheduleViewSync();
       },
       flush: () => {
         shellState.forceUpdate();
@@ -272,6 +341,7 @@ async function boot(): Promise<void> {
   });
 
   dock.bootstrap();
+  scheduleViewSync();
   wireTeardown();
   await bootBridge(info);
 }
@@ -289,6 +359,71 @@ function applyLayout(next: DockLayout): void {
   shellState.data.layout = next;
   shellState.forceUpdate();
   dock.reconcileHosts();
+  scheduleLayoutPersist();
+  scheduleViewSync();
+}
+
+function scheduleViewSync(): void {
+  if (tearingDown) return;
+  const api = window.omosuen;
+  if (!api?.syncViews) return;
+  const ids = collectViewIds((shellState.data.layout as DockLayout).root);
+  void api.syncViews(ids).catch(() => {
+    // non-fatal
+  });
+}
+
+function scheduleLayoutPersist(): void {
+  if (!persistLayoutEnabled || tearingDown) return;
+  const api = window.omosuen;
+  if (!api) return;
+  if (layoutSaveTimer) clearTimeout(layoutSaveTimer);
+  layoutSaveTimer = setTimeout(() => {
+    layoutSaveTimer = null;
+    const plain = JSON.parse(
+      JSON.stringify(shellState.data.layout),
+    ) as DockLayout;
+    void api.setSetting(SHELL_DOCK_LAYOUT_KEY, plain).catch(() => {
+      // non-fatal
+    });
+  }, 200);
+}
+
+async function returnViewToPrimary(viewId: string): Promise<void> {
+  const api = window.omosuen;
+  applyLayout(closeTab(shellState.data.layout as DockLayout, viewId));
+  if (!api?.returnView) return;
+  try {
+    await api.returnView(viewId);
+    const title = registry.get(viewId)?.title ?? viewId;
+    shellState.data.statusMessage = `Returned ${title}`;
+  } catch (err) {
+    shellState.data.statusMessage =
+      err instanceof Error ? err.message : 'Return view failed';
+  }
+}
+
+async function resetLayoutToDefault(state: {
+  data: ShellData;
+}): Promise<void> {
+  if (state.data.isPopout) return;
+  const api = window.omosuen;
+  try {
+    if (api?.closeAllPopouts) {
+      await api.closeAllPopouts();
+    }
+    applyLayout(createDefaultLayout());
+    if (api) {
+      await api.setSetting(
+        SHELL_DOCK_LAYOUT_KEY,
+        JSON.parse(JSON.stringify(createDefaultLayout())),
+      );
+    }
+    state.data.statusMessage = 'Layout reset to default';
+  } catch (err) {
+    state.data.statusMessage =
+      err instanceof Error ? err.message : 'Reset Layout failed';
+  }
 }
 
 async function popOutView(
@@ -303,13 +438,18 @@ async function popOutView(
   }
   try {
     const title = registry.get(viewId)?.title;
+    dragLog('renderer', 'popOutView →', { viewId, title, screenX, screenY });
     const result = await api.popOutView({ viewId, title, screenX, screenY });
+    dragLog('renderer', 'popOutView ←', result as unknown as Record<string, unknown>);
     if (result.created) {
       shellState.data.statusMessage = `Popped out ${title ?? viewId}`;
     } else {
       shellState.data.statusMessage = `Focused existing pop-out: ${title ?? viewId}`;
     }
   } catch (err) {
+    dragLog('renderer', 'popOutView failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     shellState.data.statusMessage =
       err instanceof Error ? err.message : 'Pop-out failed';
   }
@@ -339,6 +479,7 @@ function describeMenuCommand(command: string): string {
   const labels: Record<typeof command, string> = {
     'file.openFolder': 'Open Folder…',
     'file.newProject': 'Menu stub: file.newProject (New Project…)',
+    'view.resetLayout': 'Reset Layout',
     'help.about': 'Omosuen Editor — Electron shell (Phase 0)',
   };
   return labels[command];
@@ -370,6 +511,10 @@ async function bootBridge(info: WindowInfo): Promise<void> {
 
   api.onMenuCommand((command) => {
     if (command === 'file.openFolder') return;
+    if (command === 'view.resetLayout') {
+      void resetLayoutToDefault(shellState);
+      return;
+    }
     shellState.data.statusMessage = describeMenuCommand(command);
   });
 
@@ -390,6 +535,10 @@ async function bootBridge(info: WindowInfo): Promise<void> {
   });
 
   api.onDragDetach((event) => {
+    dragLog('renderer', 'onDragDetach', {
+      viewId: event.viewId,
+      sessionId: event.sessionId,
+    });
     dock.detachView(event.viewId);
     shellState.data.statusMessage = `Dragging ${event.viewId}…`;
   });
@@ -403,11 +552,18 @@ async function bootBridge(info: WindowInfo): Promise<void> {
   });
 
   api.onDragAttach((event) => {
+    dragLog('renderer', 'onDragAttach', {
+      viewId: event.viewId,
+      sessionId: event.sessionId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
     const accepted = dock.acceptExternalAttach(
       event.viewId,
       event.clientX,
       event.clientY,
     );
+    dragLog('renderer', 'onDragAttach result', { accepted });
     api.ackDragAttach({
       sessionId: event.sessionId,
       viewId: event.viewId,
@@ -419,17 +575,28 @@ async function bootBridge(info: WindowInfo): Promise<void> {
     }
   });
 
-  // Closing a pop-out redocks the view into this shell (primary preferred).
+  // Closing a pop-out redocks all of its views into this shell (primary preferred).
   api.onWindowClosed((event) => {
     if (event.reason !== 'redock') return;
-    if (collectViewIds((shellState.data.layout as DockLayout).root).includes(event.viewId)) {
-      return;
+    const viewIds =
+      'viewIds' in event && Array.isArray(event.viewIds)
+        ? event.viewIds
+        : [];
+    if (viewIds.length === 0) return;
+
+    let layout = shellState.data.layout as DockLayout;
+    let restored = 0;
+    for (const viewId of viewIds) {
+      if (collectViewIds(layout.root).includes(viewId)) continue;
+      layout = insertView(layout, viewId, layoutIds);
+      restored += 1;
     }
-    applyLayout(
-      insertView(shellState.data.layout as DockLayout, event.viewId, layoutIds),
-    );
-    const title = registry.get(event.viewId)?.title ?? event.viewId;
-    shellState.data.statusMessage = `Restored ${title}`;
+    if (restored === 0) return;
+    applyLayout(layout);
+    shellState.data.statusMessage =
+      restored === 1
+        ? `Restored ${registry.get(viewIds[0]!)?.title ?? viewIds[0]}`
+        : `Restored ${restored} views`;
   });
 
   try {
