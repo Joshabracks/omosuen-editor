@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { DEFAULT_DIR_IGNORE, shouldIgnoreDirEntry } from '../fs/ignore';
 import { listDirectory } from '../fs/list-dir';
 import { resolveOpenTarget } from '../views/text-buffer/open-target';
+import { withTempDir } from './helpers';
 
 test('shouldIgnoreDirEntry skips node_modules and .git by default', () => {
   assert.equal(shouldIgnoreDirEntry('node_modules'), true);
@@ -15,8 +15,7 @@ test('shouldIgnoreDirEntry skips node_modules and .git by default', () => {
 });
 
 test('listDirectory ignores node_modules and .git by default', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'omosuen-ignore-'));
-  try {
+  await withTempDir('omosuen-ignore-', async (dir) => {
     await fs.mkdir(path.join(dir, 'node_modules'));
     await fs.mkdir(path.join(dir, '.git'));
     await fs.mkdir(path.join(dir, 'src'));
@@ -26,20 +25,15 @@ test('listDirectory ignores node_modules and .git by default', async () => {
       entries.map((e) => `${e.kind}:${e.name}`),
       ['directory:src', 'file:readme.md'],
     );
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true });
-  }
+  });
 });
 
 test('listDirectory can disable ignore set', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'omosuen-ignore-off-'));
-  try {
+  await withTempDir('omosuen-ignore-off-', async (dir) => {
     await fs.mkdir(path.join(dir, 'node_modules'));
     const entries = await listDirectory(dir, { ignore: new Set() });
     assert.ok(entries.some((e) => e.name === 'node_modules'));
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true });
-  }
+  });
 });
 
 test('resolveOpenTarget reuses last interacted buffer on single-click', () => {

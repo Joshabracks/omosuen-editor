@@ -22,6 +22,8 @@ export interface FileExplorerDeps {
   readonly onWorkspaceChanged: (
     callback: (root: string | null) => void,
   ) => () => void;
+  /** Main-process chokidar → soft refresh while preserving expansion. */
+  readonly onFsChanged?: (callback: () => void) => () => void;
   readonly revealInOs?: (relativePath: string) => Promise<void>;
   readonly requestOpenFile: (
     relativePath: string,
@@ -42,18 +44,11 @@ export function mountFileExplorer(
 ): () => void {
   container.classList.add('file-explorer');
   container.innerHTML = `
-    <div class="file-explorer-toolbar">
-      <span class="file-explorer-title">Files</span>
-      <button type="button" class="file-explorer-refresh" title="Refresh" aria-label="Refresh">↻</button>
-    </div>
     <div class="file-explorer-empty" hidden>No folder open</div>
     <div class="file-explorer-tree" role="tree"></div>
     <div class="file-explorer-error" hidden></div>
   `;
 
-  const toolbarRefresh = container.querySelector(
-    '.file-explorer-refresh',
-  ) as HTMLButtonElement;
   const emptyEl = container.querySelector(
     '.file-explorer-empty',
   ) as HTMLElement;
@@ -66,13 +61,13 @@ export function mountFileExplorer(
   let hasRoot = false;
   let disposed = false;
   let pendingOpenTimer: ReturnType<typeof setTimeout> | null = null;
+  let refreshInFlight: Promise<void> | null = null;
 
   const unsubWorkspace = deps.onWorkspaceChanged((root) => {
     void reloadRoot(root);
   });
-
-  toolbarRefresh.addEventListener('click', () => {
-    void reloadRoot();
+  const unsubFs = deps.onFsChanged?.(() => {
+    void softRefresh();
   });
 
   treeEl.addEventListener('click', (event) => {
@@ -141,6 +136,24 @@ export function mountFileExplorer(
 
   void reloadRoot();
 
+  async function softRefresh(): Promise<void> {
+    if (disposed || !hasRoot) return;
+    if (refreshInFlight) return refreshInFlight;
+    const expanded = collectExpandedPaths(rootEntries);
+    refreshInFlight = (async () => {
+      await reloadRoot();
+      for (const rel of expanded) {
+        if (disposed) return;
+        const node = findNode(rootEntries, rel);
+        if (!node || node.entry.kind !== 'directory') continue;
+        await expandDir(node);
+      }
+    })().finally(() => {
+      refreshInFlight = null;
+    });
+    return refreshInFlight;
+  }
+
   async function reloadRoot(knownRoot?: string | null): Promise<void> {
     if (disposed) return;
     showError(null);
@@ -149,7 +162,6 @@ export function mountFileExplorer(
     hasRoot = Boolean(root);
     emptyEl.hidden = hasRoot;
     treeEl.hidden = !hasRoot;
-    toolbarRefresh.disabled = !hasRoot;
     if (!hasRoot) {
       rootEntries = [];
       renderTree();
@@ -173,6 +185,11 @@ export function mountFileExplorer(
       renderTree();
       return;
     }
+    await expandDir(node);
+  }
+
+  async function expandDir(node: TreeNodeState): Promise<void> {
+    if (node.loading) return;
     if (node.children) {
       node.expanded = true;
       renderTree();
@@ -247,9 +264,20 @@ export function mountFileExplorer(
     disposed = true;
     clearPendingOpen();
     unsubWorkspace();
+    unsubFs?.();
     container.classList.remove('file-explorer');
     container.innerHTML = '';
   };
+}
+
+function collectExpandedPaths(nodes: TreeNodeState[]): string[] {
+  const out: string[] = [];
+  for (const node of nodes) {
+    if (node.entry.kind !== 'directory' || !node.expanded) continue;
+    out.push(node.entry.relativePath);
+    if (node.children) out.push(...collectExpandedPaths(node.children));
+  }
+  return out;
 }
 
 function toNode(entry: DirEntryDto): TreeNodeState {

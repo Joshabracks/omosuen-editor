@@ -49,7 +49,7 @@ const configs = [
     format: 'cjs',
     bundle: true,
     sourcemap: true,
-    external: ['electron'],
+    external: ['electron', 'chokidar'],
     target: 'node20',
   },
   {

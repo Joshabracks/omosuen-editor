@@ -2,6 +2,7 @@ import { State } from '@state-street/state-street';
 import type {
   DirEntryDto,
   FileFilter,
+  FsChangedEvent,
   PopOutRequest,
   PopOutResult,
   ShellBusEnvelope,
@@ -92,6 +93,7 @@ declare global {
       onWorkspaceChanged: (
         callback: (root: string | null) => void,
       ) => () => void;
+      onFsChanged: (callback: (event: FsChangedEvent) => void) => () => void;
       onMenuCommand: (callback: (command: string) => void) => () => void;
       onWindowClosed: (
         callback: (event: WindowClosedEvent) => void,
@@ -114,14 +116,10 @@ declare global {
 }
 
 interface ShellData {
-  title: string;
-  toolbarLabel: string;
   statusMessage: string;
   bridgeStatus: string;
-  workspaceLabel: string;
   layout: DockLayout;
   isPopout: boolean;
-  popoutViewTitle: string;
 }
 
 const registry = new DockViewRegistry();
@@ -154,6 +152,13 @@ registerShellViews(
       const api = window.omosuen;
       if (!api) return () => {};
       return api.onWorkspaceChanged(callback);
+    },
+    onFsChanged: (callback) => {
+      const api = window.omosuen;
+      if (!api?.onFsChanged) return () => {};
+      return api.onFsChanged(() => {
+        callback();
+      });
     },
     revealInOs: async (relativePath) => {
       const api = window.omosuen;
@@ -215,7 +220,6 @@ const hostPoolHtml = registry
 
 const template = /* html */ `
 <div class="app-shell">
-  <Toolbar/>
   <main id="dock-root" class="dock-region" aria-label="Dock content">
     <DockChrome/>
     <div class="dock-host-pool" aria-hidden="true">${hostPoolHtml}</div>
@@ -225,30 +229,6 @@ const template = /* html */ `
 `;
 
 const components = {
-  Toolbar: ({ state }: { state: { data: ShellData } }) => {
-    if (state.data.isPopout) {
-      return /* html */ `
-        <header class="toolbar" role="toolbar" aria-label="Pop-out toolbar">
-          <span class="brand">{{popoutViewTitle}}</span>
-          <div class="toolbar-actions">
-            <span class="toolbar-hint">{{toolbarLabel}}</span>
-          </div>
-          <span class="workspace-label" title="{{workspaceLabel}}">{{workspaceLabel}}</span>
-        </header>
-      `;
-    }
-    return /* html */ `
-      <header class="toolbar" role="toolbar" aria-label="Editor toolbar">
-        <span class="brand">{{title}}</span>
-        <div class="toolbar-actions">
-          <button type="button" class="toolbar-btn" :click=openFolder()>Open Folder</button>
-          <button type="button" class="toolbar-btn" :click=stubNewProject()>New Project</button>
-          <span class="toolbar-hint">{{toolbarLabel}}</span>
-        </div>
-        <span class="workspace-label" title="{{workspaceLabel}}">{{workspaceLabel}}</span>
-      </header>
-    `;
-  },
   StatusBar: () => /* html */ `
     <footer class="statusbar" role="status" aria-live="polite">
       <span class="status-bridge">{{bridgeStatus}}</span>
@@ -298,50 +278,13 @@ async function boot(): Promise<void> {
   shellState = new State(
     template,
     {
-      title: 'Omosuen Editor',
-      toolbarLabel: isPopout
-        ? 'drag tab into another window to dock'
-        : 'drag tabs across windows · ⧉ pop out · edge=split · center=tab',
       statusMessage: isPopout ? `Pop-out: ${popTitle}` : 'Ready',
       bridgeStatus: 'bridge: …',
-      workspaceLabel: 'No folder open',
       layout: initialLayout,
       isPopout,
-      popoutViewTitle: popTitle,
     } satisfies ShellData,
     components,
     {
-      openFolder: ({
-        state,
-      }: {
-        state: { data: ShellData };
-      }) => {
-        void (async () => {
-          const api = window.omosuen;
-          if (!api) {
-            state.data.statusMessage = 'bridge unavailable';
-            return;
-          }
-          try {
-            const root = await api.openFolder();
-            if (!root) {
-              state.data.statusMessage = 'Open Folder canceled';
-              return;
-            }
-            await refreshWorkspace(root);
-          } catch (err) {
-            state.data.statusMessage =
-              err instanceof Error ? err.message : 'Open Folder failed';
-          }
-        })();
-      },
-      stubNewProject: ({
-        state,
-      }: {
-        state: { data: ShellData };
-      }) => {
-        state.data.statusMessage = 'Menu stub: file.newProject';
-      },
       resetLayout: ({
         state,
       }: {
@@ -625,12 +568,10 @@ function describeMenuCommand(command: string): string {
 async function refreshWorkspace(root: string | null): Promise<void> {
   const api = window.omosuen;
   if (!root || !api) {
-    shellState.data.workspaceLabel = 'No folder open';
     dock?.reconcileHosts();
     return;
   }
 
-  shellState.data.workspaceLabel = root;
   try {
     const entries = await api.listDir();
     shellState.data.statusMessage = `Workspace: ${entries.length} items`;

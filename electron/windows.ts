@@ -23,8 +23,9 @@ import {
   type WindowRole,
 } from '../src/bridge/channels';
 import type { PersistedPopOut } from '../src/dock/persist';
+import { APP_TITLE } from '../src/shell/window-title';
 
-const APP_TITLE = 'Omosuen Editor';
+export { formatPrimaryWindowTitle } from '../src/shell/window-title';
 
 interface TrackedWindow {
   id: string;
@@ -102,13 +103,21 @@ export class WindowManager {
     this.onPopOutsChanged = listener;
   }
 
-  createPrimary(): BrowserWindow {
+  createPrimary(title: string = APP_TITLE): BrowserWindow {
     return this.createWindow({
       role: 'primary',
       width: 1280,
       height: 800,
-      title: APP_TITLE,
+      title,
     }).win;
+  }
+
+  /** Update the primary window title (workspace path lives here, not in chrome). */
+  setPrimaryTitle(title: string): void {
+    if (!this.primaryId) return;
+    const tracked = this.byId.get(this.primaryId);
+    if (!tracked || tracked.win.isDestroyed()) return;
+    tracked.win.setTitle(title);
   }
 
   snapshotPopOuts(): PersistedPopOut[] {
@@ -655,7 +664,7 @@ export class WindowManager {
       y: options.y,
       minWidth: options.role === 'primary' ? 800 : 320,
       minHeight: options.role === 'primary' ? 600 : 240,
-      title: APP_TITLE,
+      title: options.title,
       show: false,
       skipTaskbar: floating,
       focusable: !floating,
@@ -695,7 +704,7 @@ export class WindowManager {
     void win.loadFile(htmlPath(), { query });
     win.once('ready-to-show', () => {
       if (!win.isDestroyed()) {
-        win.setTitle(APP_TITLE);
+        win.setTitle(options.title);
         win.showInactive();
       }
     });

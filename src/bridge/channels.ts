@@ -13,6 +13,7 @@ export const IPC = {
   fsReadText: 'fs:readText',
   fsWriteText: 'fs:writeText',
   fsReveal: 'fs:reveal',
+  fsChanged: 'fs:changed',
   windowGetInfo: 'window:getInfo',
   windowPopOut: 'window:popOut',
   windowClosed: 'window:closed',
@@ -144,6 +145,10 @@ export interface DirEntryDto {
   readonly name: string;
   readonly kind: 'file' | 'directory';
   readonly relativePath: string;
+}
+
+export interface FsChangedEvent {
+  readonly root: string;
 }
 
 export function isIpcChannel(value: string): value is IpcChannel {

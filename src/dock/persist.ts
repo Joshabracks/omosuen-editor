@@ -12,6 +12,8 @@ export { validateLayout } from './serialize';
 /** userData/settings.json keys for shell session. */
 export const SHELL_DOCK_LAYOUT_KEY = 'shell.dockLayout';
 export const SHELL_POPOUTS_KEY = 'shell.popOuts';
+/** Absolute path of the last successfully opened workspace folder. */
+export const SHELL_WORKSPACE_ROOT_KEY = 'shell.workspaceRoot';
 
 /** Placeholder ids replaced by real shell views. */
 const VIEW_ID_ALIASES: Readonly<Record<string, ViewId>> = {
@@ -109,4 +111,11 @@ export function readPersistedPopOuts(value: unknown): PersistedPopOut[] {
     });
   }
   return out;
+}
+
+/** Parse a settings value into a workspace absolute path, or null. */
+export function readPersistedWorkspaceRoot(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }

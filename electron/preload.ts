@@ -3,6 +3,7 @@ import {
   IPC,
   type DirEntryDto,
   type FileFilter,
+  type FsChangedEvent,
   type PopOutRequest,
   type PopOutResult,
   type ShellBusEnvelope,
@@ -53,6 +54,19 @@ contextBridge.exposeInMainWorld('omosuen', {
 
   revealInOs: (relativePath: string): Promise<void> =>
     ipcRenderer.invoke(IPC.fsReveal, relativePath),
+
+  onFsChanged: (callback: (event: FsChangedEvent) => void): (() => void) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      payload: FsChangedEvent,
+    ): void => {
+      callback(payload);
+    };
+    ipcRenderer.on(IPC.fsChanged, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC.fsChanged, listener);
+    };
+  },
 
   getWindowInfo: (): Promise<WindowInfo> =>
     ipcRenderer.invoke(IPC.windowGetInfo),

@@ -37,8 +37,10 @@ export { createDefaultLayout } from './default-layout';
 export {
   SHELL_DOCK_LAYOUT_KEY,
   SHELL_POPOUTS_KEY,
+  SHELL_WORKSPACE_ROOT_KEY,
   readPersistedLayout,
   readPersistedPopOuts,
+  readPersistedWorkspaceRoot,
   type PersistedPopOut,
 } from './persist';
 export {

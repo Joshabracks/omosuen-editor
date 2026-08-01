@@ -63,6 +63,7 @@
   },
   "dependencies": {
     "@state-street/state-street": "^2.4.1",
+    "chokidar": "^4.0.3",
     "monaco-editor": "^0.56.0"
   }
 }

@@ -4,13 +4,17 @@ import { createDefaultLayout } from '../dock/default-layout';
 import {
   SHELL_DOCK_LAYOUT_KEY,
   SHELL_POPOUTS_KEY,
+  SHELL_WORKSPACE_ROOT_KEY,
   readPersistedLayout,
   readPersistedPopOuts,
+  readPersistedWorkspaceRoot,
 } from '../dock/persist';
+import { LEGACY_BOTTOM_TABS_LAYOUT } from './fixtures/legacy-bottom-tabs';
 
 test('settings keys are stable', () => {
   assert.equal(SHELL_DOCK_LAYOUT_KEY, 'shell.dockLayout');
   assert.equal(SHELL_POPOUTS_KEY, 'shell.popOuts');
+  assert.equal(SHELL_WORKSPACE_ROOT_KEY, 'shell.workspaceRoot');
 });
 
 test('readPersistedLayout accepts default layout object', () => {
@@ -20,15 +24,7 @@ test('readPersistedLayout accepts default layout object', () => {
 });
 
 test('readPersistedLayout migrates empty-d/empty-e to output/problems', () => {
-  const legacy = {
-    root: {
-      type: 'tabs',
-      id: 'tabs-bottom',
-      tabs: ['empty-d', 'empty-e'],
-      active: 'empty-d',
-    },
-  };
-  const migrated = readPersistedLayout(legacy);
+  const migrated = readPersistedLayout(LEGACY_BOTTOM_TABS_LAYOUT);
   assert.ok(migrated);
   assert.equal(migrated.root?.type, 'tabs');
   if (migrated.root?.type === 'tabs') {
@@ -59,4 +55,15 @@ test('readPersistedPopOuts filters invalid entries', () => {
   assert.equal(list.length, 2);
   assert.deepEqual(list[0]!.viewIds, ['empty-a', 'empty-b']);
   assert.deepEqual(list[1]!.viewIds, ['legacy-c']);
+});
+
+test('readPersistedWorkspaceRoot accepts absolute paths', () => {
+  assert.equal(
+    readPersistedWorkspaceRoot('D:\\idk_pros\\colony-forever'),
+    'D:\\idk_pros\\colony-forever',
+  );
+  assert.equal(readPersistedWorkspaceRoot('  /tmp/game  '), '/tmp/game');
+  assert.equal(readPersistedWorkspaceRoot(''), null);
+  assert.equal(readPersistedWorkspaceRoot(null), null);
+  assert.equal(readPersistedWorkspaceRoot(42), null);
 });
