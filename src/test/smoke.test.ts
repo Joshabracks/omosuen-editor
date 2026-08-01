@@ -16,6 +16,12 @@ test('IPC catalog includes workspace, fs, and window channels', () => {
   assert.equal(IPC.fsReadText, 'fs:readText');
   assert.equal(IPC.fsWriteText, 'fs:writeText');
   assert.equal(IPC.fsChanged, 'fs:changed');
+  assert.equal(IPC.projectCreate, 'project:create');
+  assert.equal(IPC.projectGetManifest, 'project:getManifest');
+  assert.equal(IPC.projectListEngineVersions, 'project:listEngineVersions');
+  assert.equal(IPC.projectChangeEngineVersion, 'project:changeEngineVersion');
+  assert.equal(IPC.engineEnsure, 'engine:ensure');
+  assert.equal(IPC.engineResolve, 'engine:resolve');
   assert.equal(IPC.windowPopOut, 'window:popOut');
   assert.equal(IPC.windowDragStart, 'window:dragStart');
   assert.equal(IPC.windowDragEnd, 'window:dragEnd');
@@ -30,9 +36,13 @@ test('IPC catalog includes workspace, fs, and window channels', () => {
 
 test('menu command ids are enumerated', () => {
   assert.equal(MENU_COMMANDS.includes('file.openFolder'), true);
+  assert.equal(MENU_COMMANDS.includes('file.closeProject'), true);
+  assert.equal(MENU_COMMANDS.includes('file.changeEngineVersion'), true);
+  assert.equal(MENU_COMMANDS.includes('file.newProject'), true);
   assert.equal(MENU_COMMANDS.includes('file.save'), true);
   assert.equal(MENU_COMMANDS.includes('view.resetLayout'), true);
   assert.equal(isMenuCommandId('file.openFolder'), true);
+  assert.equal(isMenuCommandId('file.closeProject'), true);
   assert.equal(isMenuCommandId('file.save'), true);
   assert.equal(isMenuCommandId('view.resetLayout'), true);
   assert.equal(isMenuCommandId('file.missing'), false);

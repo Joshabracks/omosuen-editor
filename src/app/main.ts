@@ -74,6 +74,43 @@ declare global {
       readTextFile: (relativePath: string) => Promise<string>;
       writeTextFile: (relativePath: string, contents: string) => Promise<string>;
       revealInOs: (relativePath: string) => Promise<void>;
+      listEngineVersions: () => Promise<
+        ReadonlyArray<{
+          readonly tag: string;
+          readonly label: string;
+          readonly prerelease?: boolean;
+        }>
+      >;
+      getProjectManifest: () => Promise<{
+        name: string;
+        engineVersion: string;
+        mainScene: string;
+      } | null>;
+      createProject: (request: {
+        name: string;
+        engineVersion?: string;
+      }) => Promise<{
+        projectDir: string;
+        slug: string;
+        manifest: { name: string; engineVersion: string };
+      } | null>;
+      changeEngineVersion: () => Promise<{ version: string } | null>;
+      ensureEngine: (version?: string) => Promise<{
+        version: string;
+        cacheDir: string;
+        umdPath: string;
+        umdUrl: string;
+        extraPaths: readonly string[];
+        downloaded: boolean;
+      }>;
+      resolveEngine: (version: string) => Promise<{
+        version: string;
+        cacheDir: string;
+        umdPath: string;
+        umdUrl: string;
+        extraPaths: readonly string[];
+        downloaded: boolean;
+      }>;
       getWindowInfo: () => Promise<WindowInfo>;
       popOutView: (request: PopOutRequest) => Promise<PopOutResult>;
       dragStart: (
@@ -557,7 +594,9 @@ function describeMenuCommand(command: string): string {
   if (!isMenuCommandId(command)) return `Menu: ${command}`;
   const labels: Record<typeof command, string> = {
     'file.openFolder': 'Open Folder…',
-    'file.newProject': 'Menu stub: file.newProject (New Project…)',
+    'file.newProject': 'New Project…',
+    'file.closeProject': 'Close Project',
+    'file.changeEngineVersion': 'Change Engine Version…',
     'file.save': 'Save',
     'view.resetLayout': 'Reset Layout',
     'help.about': 'Omosuen Editor — Electron shell (Phase 0)',
@@ -568,13 +607,23 @@ function describeMenuCommand(command: string): string {
 async function refreshWorkspace(root: string | null): Promise<void> {
   const api = window.omosuen;
   if (!root || !api) {
+    if (!root) {
+      shellState.data.statusMessage = 'No project open';
+    }
     dock?.reconcileHosts();
     return;
   }
 
   try {
-    const entries = await api.listDir();
-    shellState.data.statusMessage = `Workspace: ${entries.length} items`;
+    const manifest = api.getProjectManifest
+      ? await api.getProjectManifest()
+      : null;
+    if (manifest && typeof manifest.name === 'string') {
+      shellState.data.statusMessage = `Project: ${manifest.name} · engine ${manifest.engineVersion}`;
+    } else {
+      const entries = await api.listDir();
+      shellState.data.statusMessage = `Workspace: ${entries.length} items`;
+    }
   } catch (err) {
     shellState.data.statusMessage =
       err instanceof Error ? err.message : 'Failed to list workspace';
@@ -597,7 +646,15 @@ async function bootBridge(info: WindowInfo): Promise<void> {
   }
 
   api.onMenuCommand((command) => {
-    if (command === 'file.openFolder') return;
+    // New Project / Open Folder / Close Project are handled in the main process.
+    if (
+      command === 'file.openFolder' ||
+      command === 'file.newProject' ||
+      command === 'file.closeProject' ||
+      command === 'file.changeEngineVersion'
+    ) {
+      return;
+    }
     if (command === 'file.save') {
       void getEditorsHandle()?.saveActive();
       return;

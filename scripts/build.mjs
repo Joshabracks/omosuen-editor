@@ -21,6 +21,14 @@ function copyRendererStatic() {
     path.join(root, 'dist/renderer/styles.css'),
   );
   copyFileSync(
+    path.join(root, 'electron/prompt.html'),
+    path.join(root, 'dist/electron/prompt.html'),
+  );
+  copyFileSync(
+    path.join(root, 'electron/choice.html'),
+    path.join(root, 'dist/electron/choice.html'),
+  );
+  copyFileSync(
     path.join(
       root,
       'node_modules/monaco-editor/min/vs/editor/editor.main.css',
@@ -55,6 +63,16 @@ const configs = [
   {
     entryPoints: [path.join(root, 'electron/preload.ts')],
     outfile: path.join(root, 'dist/electron/preload.js'),
+    platform: 'node',
+    format: 'cjs',
+    bundle: true,
+    sourcemap: true,
+    external: ['electron'],
+    target: 'node20',
+  },
+  {
+    entryPoints: [path.join(root, 'electron/prompt-preload.ts')],
+    outfile: path.join(root, 'dist/electron/prompt-preload.js'),
     platform: 'node',
     format: 'cjs',
     bundle: true,

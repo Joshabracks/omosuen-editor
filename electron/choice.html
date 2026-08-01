@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Choose</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; font: 13px/1.4 system-ui, sans-serif;
+      background: #1e1f24; color: #e8e8ea;
+      display: flex; flex-direction: column; height: 100vh;
+      padding: 16px; box-sizing: border-box; gap: 12px;
+    }
+    label { color: #9a9ca3; }
+    select {
+      width: 100%; box-sizing: border-box; padding: 8px 10px;
+      border: 1px solid #2c2e33; border-radius: 4px;
+      background: #121316; color: inherit; font: inherit;
+    }
+    .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; }
+    button {
+      appearance: none; border: 1px solid #2c2e33; background: #2a2c31;
+      color: inherit; font: inherit; padding: 6px 14px; cursor: pointer; border-radius: 4px;
+    }
+    button.primary { background: #3a5f9a; border-color: #4a6fad; }
+  </style>
+</head>
+<body>
+  <label for="value" id="label">Choose</label>
+  <select id="value" size="8"></select>
+  <div class="actions">
+    <button type="button" id="cancel">Cancel</button>
+    <button type="button" class="primary" id="ok">OK</button>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const channel = params.get('channel') || '';
+    const select = document.getElementById('value');
+    document.getElementById('label').textContent = params.get('label') || 'Choose';
+    document.title = params.get('title') || 'Choose';
+    document.getElementById('ok').textContent = params.get('okLabel') || 'OK';
+    let options = [];
+    try {
+      options = JSON.parse(params.get('options') || '[]');
+    } catch {
+      options = [];
+    }
+    const selected = params.get('selected') || '';
+    for (const opt of options) {
+      if (!opt || typeof opt.value !== 'string') continue;
+      const el = document.createElement('option');
+      el.value = opt.value;
+      el.textContent = typeof opt.label === 'string' ? opt.label : opt.value;
+      if (opt.value === selected) el.selected = true;
+      select.appendChild(el);
+    }
+    if (!select.value && select.options.length > 0) {
+      select.selectedIndex = 0;
+    }
+    const submit = (value) => window.omosuenPrompt.submit(channel, value);
+    document.getElementById('ok').onclick = () => {
+      void submit(select.value || null);
+    };
+    document.getElementById('cancel').onclick = () => { void submit(null); };
+    select.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); void submit(select.value || null); }
+      if (e.key === 'Escape') { e.preventDefault(); void submit(null); }
+    });
+    select.focus();
+  </script>
+</body>
+</html>

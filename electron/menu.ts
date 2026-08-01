@@ -8,6 +8,9 @@ import { IPC, type MenuCommandId } from '../src/bridge/channels';
 
 export interface AppMenuHandlers {
   openFolder: (win?: BrowserWindow) => void | Promise<void>;
+  newProject: (win?: BrowserWindow) => void | Promise<void>;
+  closeProject: () => void | Promise<void>;
+  changeEngineVersion: (win?: BrowserWindow) => void | Promise<void>;
 }
 
 function asBrowserWindow(
@@ -63,7 +66,7 @@ export function installAppMenu(handlers: AppMenuHandlers): void {
           label: 'New Project…',
           accelerator: 'CmdOrCtrl+Shift+N',
           click: (_item, browserWindow) => {
-            sendMenuCommand(browserWindow, 'file.newProject');
+            void handlers.newProject(asBrowserWindow(browserWindow));
           },
         },
         {
@@ -71,6 +74,18 @@ export function installAppMenu(handlers: AppMenuHandlers): void {
           accelerator: 'CmdOrCtrl+O',
           click: (_item, browserWindow) => {
             void handlers.openFolder(asBrowserWindow(browserWindow));
+          },
+        },
+        {
+          label: 'Close Project',
+          click: () => {
+            void handlers.closeProject();
+          },
+        },
+        {
+          label: 'Change Engine Version…',
+          click: (_item, browserWindow) => {
+            void handlers.changeEngineVersion(asBrowserWindow(browserWindow));
           },
         },
         {

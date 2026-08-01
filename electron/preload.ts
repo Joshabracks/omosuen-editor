@@ -55,6 +55,51 @@ contextBridge.exposeInMainWorld('omosuen', {
   revealInOs: (relativePath: string): Promise<void> =>
     ipcRenderer.invoke(IPC.fsReveal, relativePath),
 
+  listEngineVersions: (): Promise<
+    ReadonlyArray<{
+      readonly tag: string;
+      readonly label: string;
+      readonly prerelease?: boolean;
+    }>
+  > => ipcRenderer.invoke(IPC.projectListEngineVersions),
+
+  getProjectManifest: (): Promise<unknown | null> =>
+    ipcRenderer.invoke(IPC.projectGetManifest),
+
+  createProject: (request: {
+    name: string;
+    engineVersion?: string;
+  }): Promise<{
+    projectDir: string;
+    slug: string;
+    manifest: unknown;
+  } | null> => ipcRenderer.invoke(IPC.projectCreate, request),
+
+  changeEngineVersion: (): Promise<{ version: string } | null> =>
+    ipcRenderer.invoke(IPC.projectChangeEngineVersion),
+
+  ensureEngine: (
+    version?: string,
+  ): Promise<{
+    version: string;
+    cacheDir: string;
+    umdPath: string;
+    umdUrl: string;
+    extraPaths: readonly string[];
+    downloaded: boolean;
+  }> => ipcRenderer.invoke(IPC.engineEnsure, version),
+
+  resolveEngine: (
+    version: string,
+  ): Promise<{
+    version: string;
+    cacheDir: string;
+    umdPath: string;
+    umdUrl: string;
+    extraPaths: readonly string[];
+    downloaded: boolean;
+  }> => ipcRenderer.invoke(IPC.engineResolve, version),
+
   onFsChanged: (callback: (event: FsChangedEvent) => void): (() => void) => {
     const listener = (
       _event: IpcRendererEvent,
