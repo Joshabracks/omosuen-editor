@@ -30,9 +30,9 @@ test('default layout is serializable round-trip', () => {
   assert.deepEqual(collectViewIds(again.root).sort(), [
     'empty-b',
     'empty-c',
-    'empty-d',
-    'empty-e',
     'file-explorer',
+    'output',
+    'problems',
     'text-buffer',
   ]);
 });

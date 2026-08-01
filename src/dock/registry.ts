@@ -33,8 +33,6 @@ export function registerPlaceholderViews(
     { id: 'empty-a', title: 'Scene Tree', body: 'Placeholder A — scene tree' },
     { id: 'empty-b', title: 'Viewport', body: 'Placeholder B — authoring viewport' },
     { id: 'empty-c', title: 'Inspector', body: 'Placeholder C — inspector' },
-    { id: 'empty-d', title: 'Console', body: 'Placeholder D — console / output' },
-    { id: 'empty-e', title: 'Problems', body: 'Placeholder E — problems' },
   ];
 
   for (const p of placeholders) {

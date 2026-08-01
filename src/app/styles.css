@@ -415,6 +415,155 @@ body {
   text-overflow: ellipsis;
 }
 
+.output-panel,
+.problems-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-size: 12px;
+}
+
+.output-toolbar,
+.problems-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome);
+  flex: 0 0 auto;
+}
+
+.output-title,
+.problems-title {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.output-clear,
+.problems-clear {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.output-clear:hover,
+.problems-clear:hover {
+  background: var(--hover, rgba(127, 127, 127, 0.15));
+}
+
+.output-empty,
+.problems-empty {
+  padding: 12px;
+  color: var(--muted);
+}
+
+.output-log,
+.problems-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.output-line {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 8px;
+  padding: 2px 10px;
+  font-family: ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.output-level {
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+}
+
+.output-level-warn .output-level {
+  color: #c9a227;
+}
+
+.output-level-error .output-level {
+  color: #d64545;
+}
+
+.output-level-debug .output-level {
+  color: var(--muted);
+}
+
+.problems-row {
+  appearance: none;
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  padding: 4px 10px;
+  cursor: default;
+}
+
+.problems-row:disabled {
+  opacity: 0.85;
+}
+
+.problems-openable {
+  cursor: pointer;
+}
+
+.problems-openable:hover {
+  background: var(--hover, rgba(127, 127, 127, 0.15));
+}
+
+.problems-severity {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+  color: var(--muted);
+}
+
+.problems-severity-error {
+  color: #d64545;
+}
+
+.problems-severity-warning {
+  color: #c9a227;
+}
+
+.problems-severity-info,
+.problems-severity-hint {
+  color: var(--muted);
+}
+
+.problems-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.problems-loc {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .text-buffer {
   display: flex;
   flex-direction: column;

@@ -10,7 +10,6 @@ import { languageIdForPath } from './language';
 import {
   ensureTypescriptLanguageService,
   syncWorkspaceTypescript,
-  virtualFileUriString,
   workspaceFileUri,
 } from './typescript-service';
 
@@ -50,11 +49,19 @@ export interface EditorsDeps {
   readonly onStatus?: (message: string) => void;
 }
 
+export interface EditorReveal {
+  /** 1-based line. */
+  readonly line: number;
+  /** 1-based column (defaults to 1). */
+  readonly column?: number;
+}
+
 export interface EditorsHandle {
   readonly open: (
     relativePath: string,
     contents: string,
     mode: EditorOpenMode,
+    reveal?: EditorReveal,
   ) => string;
   readonly saveActive: () => Promise<boolean>;
   readonly syncTypescript: () => Promise<void>;
@@ -150,7 +157,7 @@ export function mountTextBuffer(
   });
 
   handle = {
-    open(relativePath, contents, mode) {
+    open(relativePath, contents, mode, reveal) {
       const target = resolveOpenTarget({
         mode,
         lastInteractedId,
@@ -168,13 +175,7 @@ export function mountTextBuffer(
         }
         replaceBufferContents(buf, relativePath, contents);
         activate(target.bufferId, true);
-        logOpenedFile({
-          mode,
-          openKind: 'reuse',
-          relativePath,
-          bufferId: target.bufferId,
-          model: buf.model,
-        });
+        applyReveal(reveal);
         void syncTypescript();
         return target.bufferId;
       }
@@ -189,13 +190,7 @@ export function mountTextBuffer(
         model,
       });
       activate(id, true);
-      logOpenedFile({
-        mode,
-        openKind: 'create',
-        relativePath,
-        bufferId: id,
-        model,
-      });
+      applyReveal(reveal);
       void syncTypescript();
       return id;
     },
@@ -289,32 +284,14 @@ export function mountTextBuffer(
     return monaco.editor.createModel(contents, language, uri);
   }
 
-  function logOpenedFile(info: {
-    readonly mode: EditorOpenMode;
-    readonly openKind: 'reuse' | 'create';
-    readonly relativePath: string;
-    readonly bufferId: string;
-    readonly model: monaco.editor.ITextModel;
-  }): void {
-    const expectedVirtual = workspaceRoot
-      ? virtualFileUriString(info.relativePath)
-      : `(no workspace — inmemory)`;
-    const modelUri = info.model.uri.toString();
-    const mismatch =
-      workspaceRoot && expectedVirtual !== modelUri
-        ? { expectedVirtual, modelUri }
-        : null;
-    console.info('[omosuen:editor] open file', {
-      mode: info.mode,
-      openKind: info.openKind,
-      bufferId: info.bufferId,
-      relativePath: info.relativePath,
-      workspaceRoot,
-      language: info.model.getLanguageId(),
-      expectedVirtualUri: expectedVirtual,
-      modelUri,
-      uriMismatch: Boolean(mismatch),
-      ...(mismatch ? { mismatch } : {}),
+  function applyReveal(reveal: EditorReveal | undefined): void {
+    if (!reveal) return;
+    const line = Math.max(1, Math.floor(reveal.line));
+    const column = Math.max(1, Math.floor(reveal.column ?? 1));
+    queueMicrotask(() => {
+      editor.revealPositionInCenter({ lineNumber: line, column });
+      editor.setPosition({ lineNumber: line, column });
+      editor.focus();
     });
   }
 

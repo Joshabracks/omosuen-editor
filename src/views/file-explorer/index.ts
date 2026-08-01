@@ -12,6 +12,8 @@ export const EXPLORER_OPEN_CLICK_MS = 250;
 export interface EditorOpenPayload {
   readonly relativePath: string;
   readonly mode?: EditorOpenMode;
+  readonly line?: number;
+  readonly column?: number;
 }
 
 export interface FileExplorerDeps {

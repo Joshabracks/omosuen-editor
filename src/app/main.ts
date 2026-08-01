@@ -38,10 +38,16 @@ import {
   EDITOR_OPEN_BUS_TYPE,
   type EditorOpenPayload,
 } from '../views/file-explorer';
+import { appendOutput } from '../views/output';
+import {
+  getProblemsHandle,
+  type ProblemDiagnostic,
+} from '../views/problems';
 import {
   TEXT_BUFFER_VIEW_ID,
   getEditorsHandle,
   type EditorOpenMode,
+  type EditorReveal,
 } from '../views/text-buffer';
 import {
   parseViewIdsFromLocation,
@@ -124,6 +130,7 @@ registerPlaceholderViews(registry);
 let requestOpenFileImpl: (
   relativePath: string,
   mode: EditorOpenMode,
+  reveal?: EditorReveal,
 ) => void = () => {
   // assigned after shell boots
 };
@@ -185,6 +192,15 @@ registerShellViews(
     },
     onStatus: (message) => {
       statusSink?.(message);
+    },
+  },
+  {
+    requestOpenLocation: ({ relativePath, line, column }) => {
+      requestOpenFileImpl(
+        relativePath,
+        'reuse',
+        line !== undefined ? { line, column } : undefined,
+      );
     },
   },
 );
@@ -401,12 +417,15 @@ async function boot(): Promise<void> {
   scheduleViewSync();
   statusSink = (message) => {
     shellState.data.statusMessage = message;
+    appendOutput(message, 'info');
   };
-  requestOpenFileImpl = (relativePath, mode) => {
-    void openEditorFile(relativePath, { mode });
+  requestOpenFileImpl = (relativePath, mode, reveal) => {
+    void openEditorFile(relativePath, { mode, reveal });
   };
   wireTeardown();
   await bootBridge(info);
+  appendOutput('Shell ready', 'info');
+  seedMockProblem();
 }
 
 function resolveWindowInfo(): Promise<WindowInfo> {
@@ -428,17 +447,27 @@ function applyLayout(next: DockLayout): void {
 
 async function openEditorFile(
   relativePath: string,
-  options?: { broadcast?: boolean; mode?: EditorOpenMode },
+  options?: {
+    broadcast?: boolean;
+    mode?: EditorOpenMode;
+    reveal?: EditorReveal;
+  },
 ): Promise<void> {
   const api = window.omosuen;
   if (!api) return;
   const mode: EditorOpenMode = options?.mode ?? 'reuse';
+  const reveal = options?.reveal;
 
   if (options?.broadcast !== false) {
     void api
       .publishShellBus({
         type: EDITOR_OPEN_BUS_TYPE,
-        payload: { relativePath, mode } satisfies EditorOpenPayload,
+        payload: {
+          relativePath,
+          mode,
+          line: reveal?.line,
+          column: reveal?.column,
+        } satisfies EditorOpenPayload,
       })
       .catch(() => {
         // bus is best-effort until Monaco owns the subscription
@@ -454,12 +483,25 @@ async function openEditorFile(
         layoutIds,
       ),
     );
-    getEditorsHandle()?.open(relativePath, contents, mode);
+    getEditorsHandle()?.open(relativePath, contents, mode, reveal);
     shellState.data.statusMessage = `Opened ${relativePath}`;
   } catch (err) {
     shellState.data.statusMessage =
       err instanceof Error ? err.message : 'Failed to open file';
   }
+}
+
+function seedMockProblem(): void {
+  const mock: ProblemDiagnostic = {
+    id: 'mock-shell-1',
+    severity: 'info',
+    message: 'Mock diagnostic — click to open package.json',
+    relativePath: 'package.json',
+    line: 1,
+    column: 1,
+    source: 'shell',
+  };
+  getProblemsHandle()?.setProblems([mock]);
 }
 
 function scheduleViewSync(): void {
@@ -639,8 +681,16 @@ async function bootBridge(info: WindowInfo): Promise<void> {
           : null;
       const mode: EditorOpenMode =
         payload?.mode === 'new-preview' ? 'new-preview' : 'reuse';
+      const reveal =
+        payload?.line !== undefined
+          ? { line: payload.line, column: payload.column }
+          : undefined;
       if (relativePath && message.fromWindowId !== info.windowId) {
-        void openEditorFile(relativePath, { broadcast: false, mode });
+        void openEditorFile(relativePath, {
+          broadcast: false,
+          mode,
+          reveal,
+        });
       }
       return;
     }

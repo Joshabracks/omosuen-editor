@@ -1,11 +1,23 @@
 import { validateLayout } from './serialize';
-import type { DockLayout } from './types';
+import {
+  isSplit,
+  isTabGroup,
+  type DockLayout,
+  type DockNode,
+  type ViewId,
+} from './types';
 
 export { validateLayout } from './serialize';
 
 /** userData/settings.json keys for shell session. */
 export const SHELL_DOCK_LAYOUT_KEY = 'shell.dockLayout';
 export const SHELL_POPOUTS_KEY = 'shell.popOuts';
+
+/** Placeholder ids replaced by real shell views. */
+const VIEW_ID_ALIASES: Readonly<Record<string, ViewId>> = {
+  'empty-d': 'output',
+  'empty-e': 'problems',
+};
 
 export interface PersistedPopOut {
   /** Views hosted in this pop-out (order preserved). */
@@ -20,10 +32,35 @@ export interface PersistedPopOut {
 export function readPersistedLayout(value: unknown): DockLayout | null {
   if (value == null) return null;
   try {
-    return validateLayout(value);
+    return migrateLayoutViewIds(validateLayout(value));
   } catch {
     return null;
   }
+}
+
+/** Rewrite retired placeholder view ids to current shell view ids. */
+export function migrateLayoutViewIds(layout: DockLayout): DockLayout {
+  if (!layout.root) return layout;
+  return { root: migrateNodeViewIds(layout.root) };
+}
+
+function migrateNodeViewIds(node: DockNode): DockNode {
+  if (isTabGroup(node)) {
+    const tabs = node.tabs.map((id) => VIEW_ID_ALIASES[id] ?? id);
+    const active = VIEW_ID_ALIASES[node.active] ?? node.active;
+    return {
+      ...node,
+      tabs,
+      active: tabs.includes(active) ? active : tabs[0]!,
+    };
+  }
+  if (isSplit(node)) {
+    return {
+      ...node,
+      children: node.children.map(migrateNodeViewIds),
+    };
+  }
+  return node;
 }
 
 /** Parse persisted pop-out window list; skips invalid entries. */

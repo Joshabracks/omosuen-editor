@@ -23,8 +23,8 @@ export function createDefaultLayout(): DockLayout {
         ),
         createTabGroup(
           'tabs-bottom',
-          ['empty-d', 'empty-e'],
-          'empty-d',
+          ['output', 'problems'],
+          'output',
         ),
       ],
       [0.72, 0.28],
