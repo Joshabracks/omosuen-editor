@@ -12,6 +12,7 @@ test('IPC catalog includes workspace, fs, and window channels', () => {
   assert.equal(IPC.workspaceChanged, 'workspace:changed');
   assert.equal(IPC.dialogOpenFolder, 'dialog:openFolder');
   assert.equal(IPC.fsList, 'fs:list');
+  assert.equal(IPC.fsReveal, 'fs:reveal');
   assert.equal(IPC.fsReadText, 'fs:readText');
   assert.equal(IPC.fsWriteText, 'fs:writeText');
   assert.equal(IPC.windowPopOut, 'window:popOut');
@@ -28,8 +29,10 @@ test('IPC catalog includes workspace, fs, and window channels', () => {
 
 test('menu command ids are enumerated', () => {
   assert.equal(MENU_COMMANDS.includes('file.openFolder'), true);
+  assert.equal(MENU_COMMANDS.includes('file.save'), true);
   assert.equal(MENU_COMMANDS.includes('view.resetLayout'), true);
   assert.equal(isMenuCommandId('file.openFolder'), true);
+  assert.equal(isMenuCommandId('file.save'), true);
   assert.equal(isMenuCommandId('view.resetLayout'), true);
   assert.equal(isMenuCommandId('file.missing'), false);
 });

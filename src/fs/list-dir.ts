@@ -1,5 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {
+  DEFAULT_DIR_IGNORE,
+  shouldIgnoreDirEntry,
+} from './ignore';
 
 export interface DirEntry {
   readonly name: string;
@@ -8,7 +12,16 @@ export interface DirEntry {
   readonly relativePath: string;
 }
 
-export async function listDirectory(absoluteDir: string): Promise<DirEntry[]> {
+export interface ListDirectoryOptions {
+  /** Names to skip. Defaults to node_modules / .git. Pass empty set to list all. */
+  readonly ignore?: ReadonlySet<string>;
+}
+
+export async function listDirectory(
+  absoluteDir: string,
+  options?: ListDirectoryOptions,
+): Promise<DirEntry[]> {
+  const ignore = options?.ignore ?? DEFAULT_DIR_IGNORE;
   const entries = await fs.readdir(absoluteDir, { withFileTypes: true });
   const result: DirEntry[] = [];
 
@@ -16,6 +29,7 @@ export async function listDirectory(absoluteDir: string): Promise<DirEntry[]> {
     if (entry.name === '.' || entry.name === '..') continue;
     // Skip our atomic-write temp files
     if (entry.name.startsWith('.') && entry.name.endsWith('.tmp')) continue;
+    if (shouldIgnoreDirEntry(entry.name, ignore)) continue;
 
     let kind: 'file' | 'directory' | null = null;
     if (entry.isDirectory()) kind = 'directory';

@@ -11,8 +11,12 @@ export function createDefaultLayout(): DockLayout {
           'split-row',
           'horizontal',
           [
-            createTabGroup('tabs-left', ['empty-a'], 'empty-a'),
-            createTabGroup('tabs-center', ['empty-b'], 'empty-b'),
+            createTabGroup('tabs-left', ['file-explorer'], 'file-explorer'),
+            createTabGroup(
+              'tabs-center',
+              ['empty-b', 'text-buffer'],
+              'empty-b',
+            ),
             createTabGroup('tabs-right', ['empty-c'], 'empty-c'),
           ],
           [0.22, 0.56, 0.22],

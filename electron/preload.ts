@@ -51,6 +51,9 @@ contextBridge.exposeInMainWorld('omosuen', {
   writeTextFile: (relativePath: string, contents: string): Promise<string> =>
     ipcRenderer.invoke(IPC.fsWriteText, relativePath, contents),
 
+  revealInOs: (relativePath: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.fsReveal, relativePath),
+
   getWindowInfo: (): Promise<WindowInfo> =>
     ipcRenderer.invoke(IPC.windowGetInfo),
 

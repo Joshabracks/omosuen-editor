@@ -1,4 +1,9 @@
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import {
+  BrowserWindow,
+  ipcMain,
+  shell,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { IPC } from '../src/bridge/channels';
@@ -104,4 +109,13 @@ export function registerWorkspaceIpc(workspace: WorkspaceSession): void {
       return toWorkspaceRelative(root, abs);
     },
   );
+
+  ipcMain.handle(IPC.fsReveal, async (_event, relativePath: unknown) => {
+    const root = workspace.requireRoot();
+    const abs = resolveWorkspacePath(
+      root,
+      requireString(relativePath, 'path'),
+    );
+    shell.showItemInFolder(abs);
+  });
 }

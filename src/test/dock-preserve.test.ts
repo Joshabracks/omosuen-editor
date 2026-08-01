@@ -15,7 +15,7 @@ test('renderDockNode emits panel bodies for each tab group', () => {
   registerPlaceholderViews(registry);
   const html = renderDockNode(createDefaultLayout().root, registry);
   assert.match(html, /data-panel-body/);
-  assert.match(html, /data-active-view="empty-a"/);
+  assert.match(html, /data-active-view="file-explorer"/);
   assert.match(html, /data-active-view="empty-b"/);
   assert.match(html, /data-dock-splitter/);
   assert.match(html, /data-dock-popout/);

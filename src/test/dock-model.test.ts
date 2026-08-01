@@ -28,11 +28,12 @@ test('default layout is serializable round-trip', () => {
   const again = parseLayout(json);
   assert.deepEqual(again, layout);
   assert.deepEqual(collectViewIds(again.root).sort(), [
-    'empty-a',
     'empty-b',
     'empty-c',
     'empty-d',
     'empty-e',
+    'file-explorer',
+    'text-buffer',
   ]);
 });
 
@@ -128,12 +129,12 @@ test('createSingleViewLayout hosts one view for pop-out windows', () => {
 
 test('insertView re-docks a missing view into the first tab group', () => {
   const ids = createIdFactory('t');
-  const start = closeTab(createDefaultLayout(), 'empty-a');
-  assert.equal(collectViewIds(start.root).includes('empty-a'), false);
-  const again = insertView(start, 'empty-a', ids);
-  assert.equal(collectViewIds(again.root).includes('empty-a'), true);
-  const group = findTabGroupForView(again.root, 'empty-a');
-  assert.equal(group?.active, 'empty-a');
+  const start = closeTab(createDefaultLayout(), 'file-explorer');
+  assert.equal(collectViewIds(start.root).includes('file-explorer'), false);
+  const again = insertView(start, 'file-explorer', ids);
+  assert.equal(collectViewIds(again.root).includes('file-explorer'), true);
+  const group = findTabGroupForView(again.root, 'file-explorer');
+  assert.equal(group?.active, 'file-explorer');
 });
 
 test('insertView into empty layout creates a single tab group', () => {

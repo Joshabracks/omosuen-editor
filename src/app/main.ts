@@ -33,11 +33,20 @@ import {
   viewHostElementId,
   type DockLayout,
 } from '../dock/index';
+import { registerShellViews } from '../dock/shell-views';
+import {
+  EDITOR_OPEN_BUS_TYPE,
+  type EditorOpenPayload,
+} from '../views/file-explorer';
+import {
+  TEXT_BUFFER_VIEW_ID,
+  getEditorsHandle,
+  type EditorOpenMode,
+} from '../views/text-buffer';
 import {
   parseViewIdsFromLocation,
   parseWindowInfoFromLocation,
 } from './window-info';
-import { dragLog } from '../debug/drag-log';
 
 export {};
 
@@ -57,6 +66,7 @@ declare global {
       listDir: (relativePath?: string) => Promise<DirEntryDto[]>;
       readTextFile: (relativePath: string) => Promise<string>;
       writeTextFile: (relativePath: string, contents: string) => Promise<string>;
+      revealInOs: (relativePath: string) => Promise<void>;
       getWindowInfo: () => Promise<WindowInfo>;
       popOutView: (request: PopOutRequest) => Promise<PopOutResult>;
       dragStart: (
@@ -110,6 +120,74 @@ interface ShellData {
 
 const registry = new DockViewRegistry();
 registerPlaceholderViews(registry);
+
+let requestOpenFileImpl: (
+  relativePath: string,
+  mode: EditorOpenMode,
+) => void = () => {
+  // assigned after shell boots
+};
+
+let statusSink: ((message: string) => void) | null = null;
+
+registerShellViews(
+  registry,
+  {
+    listDir: (relativePath) => {
+      const api = window.omosuen;
+      if (!api) return Promise.reject(new Error('bridge unavailable'));
+      return api.listDir(relativePath);
+    },
+    getWorkspaceRoot: () => {
+      const api = window.omosuen;
+      if (!api) return Promise.resolve(null);
+      return api.getWorkspaceRoot();
+    },
+    onWorkspaceChanged: (callback) => {
+      const api = window.omosuen;
+      if (!api) return () => {};
+      return api.onWorkspaceChanged(callback);
+    },
+    revealInOs: async (relativePath) => {
+      const api = window.omosuen;
+      if (!api) throw new Error('bridge unavailable');
+      await api.revealInOs(relativePath);
+    },
+    requestOpenFile: (relativePath, mode) => {
+      requestOpenFileImpl(relativePath, mode);
+    },
+  },
+  {
+    writeTextFile: (relativePath, contents) => {
+      const api = window.omosuen;
+      if (!api) return Promise.reject(new Error('bridge unavailable'));
+      return api.writeTextFile(relativePath, contents);
+    },
+    readTextFile: (relativePath) => {
+      const api = window.omosuen;
+      if (!api) return Promise.reject(new Error('bridge unavailable'));
+      return api.readTextFile(relativePath);
+    },
+    listDir: (relativePath) => {
+      const api = window.omosuen;
+      if (!api) return Promise.reject(new Error('bridge unavailable'));
+      return api.listDir(relativePath);
+    },
+    getWorkspaceRoot: () => {
+      const api = window.omosuen;
+      if (!api) return Promise.resolve(null);
+      return api.getWorkspaceRoot();
+    },
+    onWorkspaceChanged: (callback) => {
+      const api = window.omosuen;
+      if (!api) return () => {};
+      return api.onWorkspaceChanged(callback);
+    },
+    onStatus: (message) => {
+      statusSink?.(message);
+    },
+  },
+);
 
 const hostPoolHtml = registry
   .list()
@@ -182,14 +260,6 @@ async function boot(): Promise<void> {
   const popViewId = info.viewId;
   const popTitle =
     (popViewId && registry.get(popViewId)?.title) || popViewId || 'Pop-out';
-
-  dragLog('renderer', 'boot', {
-    role: info.role,
-    windowId: info.windowId,
-    viewId: info.viewId,
-    queryFloating: info.floating,
-    willEnableWindowDrag: true,
-  });
 
   const apiEarly = window.omosuen;
   let initialLayout = createDefaultLayout();
@@ -293,36 +363,23 @@ async function boot(): Promise<void> {
     windowDrag: api
       ? {
             begin: async (viewId, title, screenX, screenY) => {
-              dragLog('renderer', 'api.dragStart →', {
-                viewId,
-                title,
-                screenX,
-                screenY,
-                role: info.role,
-              });
-              const result = await api.dragStart({
+              await api.dragStart({
                 viewId,
                 title,
                 screenX,
                 screenY,
               });
-              dragLog('renderer', 'api.dragStart ←', result as unknown as Record<string, unknown>);
             },
             move: (screenX, screenY) => {
-              void api.dragMove({ screenX, screenY }).catch((err: unknown) => {
-                dragLog('renderer', 'api.dragMove failed', {
-                  error: err instanceof Error ? err.message : String(err),
-                });
+              void api.dragMove({ screenX, screenY }).catch(() => {
+                // non-fatal — session may already have ended
               });
             },
             end: async (screenX, screenY) => {
-              dragLog('renderer', 'api.dragEnd →', { screenX, screenY });
               const result = await api.dragEnd({ screenX, screenY });
-              dragLog('renderer', 'api.dragEnd ←', result as unknown as Record<string, unknown>);
               return result.kind;
             },
             cancel: () => {
-              dragLog('renderer', 'api.dragCancel');
               void api.dragCancel();
             },
           }
@@ -342,6 +399,12 @@ async function boot(): Promise<void> {
 
   dock.bootstrap();
   scheduleViewSync();
+  statusSink = (message) => {
+    shellState.data.statusMessage = message;
+  };
+  requestOpenFileImpl = (relativePath, mode) => {
+    void openEditorFile(relativePath, { mode });
+  };
   wireTeardown();
   await bootBridge(info);
 }
@@ -361,6 +424,42 @@ function applyLayout(next: DockLayout): void {
   dock.reconcileHosts();
   scheduleLayoutPersist();
   scheduleViewSync();
+}
+
+async function openEditorFile(
+  relativePath: string,
+  options?: { broadcast?: boolean; mode?: EditorOpenMode },
+): Promise<void> {
+  const api = window.omosuen;
+  if (!api) return;
+  const mode: EditorOpenMode = options?.mode ?? 'reuse';
+
+  if (options?.broadcast !== false) {
+    void api
+      .publishShellBus({
+        type: EDITOR_OPEN_BUS_TYPE,
+        payload: { relativePath, mode } satisfies EditorOpenPayload,
+      })
+      .catch(() => {
+        // bus is best-effort until Monaco owns the subscription
+      });
+  }
+
+  try {
+    const contents = await api.readTextFile(relativePath);
+    applyLayout(
+      insertView(
+        shellState.data.layout as DockLayout,
+        TEXT_BUFFER_VIEW_ID,
+        layoutIds,
+      ),
+    );
+    getEditorsHandle()?.open(relativePath, contents, mode);
+    shellState.data.statusMessage = `Opened ${relativePath}`;
+  } catch (err) {
+    shellState.data.statusMessage =
+      err instanceof Error ? err.message : 'Failed to open file';
+  }
 }
 
 function scheduleViewSync(): void {
@@ -438,18 +537,13 @@ async function popOutView(
   }
   try {
     const title = registry.get(viewId)?.title;
-    dragLog('renderer', 'popOutView →', { viewId, title, screenX, screenY });
     const result = await api.popOutView({ viewId, title, screenX, screenY });
-    dragLog('renderer', 'popOutView ←', result as unknown as Record<string, unknown>);
     if (result.created) {
       shellState.data.statusMessage = `Popped out ${title ?? viewId}`;
     } else {
       shellState.data.statusMessage = `Focused existing pop-out: ${title ?? viewId}`;
     }
   } catch (err) {
-    dragLog('renderer', 'popOutView failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
     shellState.data.statusMessage =
       err instanceof Error ? err.message : 'Pop-out failed';
   }
@@ -479,6 +573,7 @@ function describeMenuCommand(command: string): string {
   const labels: Record<typeof command, string> = {
     'file.openFolder': 'Open Folder…',
     'file.newProject': 'Menu stub: file.newProject (New Project…)',
+    'file.save': 'Save',
     'view.resetLayout': 'Reset Layout',
     'help.about': 'Omosuen Editor — Electron shell (Phase 0)',
   };
@@ -489,6 +584,7 @@ async function refreshWorkspace(root: string | null): Promise<void> {
   const api = window.omosuen;
   if (!root || !api) {
     shellState.data.workspaceLabel = 'No folder open';
+    dock?.reconcileHosts();
     return;
   }
 
@@ -500,6 +596,14 @@ async function refreshWorkspace(root: string | null): Promise<void> {
     shellState.data.statusMessage =
       err instanceof Error ? err.message : 'Failed to list workspace';
   }
+  // Hosts can snap back to the pool if chrome re-renders; re-seat them.
+  queueMicrotask(() => {
+    try {
+      dock.reconcileHosts();
+    } catch {
+      // ignore during teardown
+    }
+  });
 }
 
 async function bootBridge(info: WindowInfo): Promise<void> {
@@ -511,6 +615,10 @@ async function bootBridge(info: WindowInfo): Promise<void> {
 
   api.onMenuCommand((command) => {
     if (command === 'file.openFolder') return;
+    if (command === 'file.save') {
+      void getEditorsHandle()?.saveActive();
+      return;
+    }
     if (command === 'view.resetLayout') {
       void resetLayoutToDefault(shellState);
       return;
@@ -523,6 +631,19 @@ async function bootBridge(info: WindowInfo): Promise<void> {
   });
 
   api.onShellBus((message) => {
+    if (message.type === EDITOR_OPEN_BUS_TYPE) {
+      const payload = message.payload as EditorOpenPayload | undefined;
+      const relativePath =
+        payload && typeof payload.relativePath === 'string'
+          ? payload.relativePath
+          : null;
+      const mode: EditorOpenMode =
+        payload?.mode === 'new-preview' ? 'new-preview' : 'reuse';
+      if (relativePath && message.fromWindowId !== info.windowId) {
+        void openEditorFile(relativePath, { broadcast: false, mode });
+      }
+      return;
+    }
     if (message.type === 'selection.stub') {
       const viewId =
         typeof message.payload === 'object' &&
@@ -535,10 +656,6 @@ async function bootBridge(info: WindowInfo): Promise<void> {
   });
 
   api.onDragDetach((event) => {
-    dragLog('renderer', 'onDragDetach', {
-      viewId: event.viewId,
-      sessionId: event.sessionId,
-    });
     dock.detachView(event.viewId);
     shellState.data.statusMessage = `Dragging ${event.viewId}…`;
   });
@@ -552,18 +669,11 @@ async function bootBridge(info: WindowInfo): Promise<void> {
   });
 
   api.onDragAttach((event) => {
-    dragLog('renderer', 'onDragAttach', {
-      viewId: event.viewId,
-      sessionId: event.sessionId,
-      clientX: event.clientX,
-      clientY: event.clientY,
-    });
     const accepted = dock.acceptExternalAttach(
       event.viewId,
       event.clientX,
       event.clientY,
     );
-    dragLog('renderer', 'onDragAttach result', { accepted });
     api.ackDragAttach({
       sessionId: event.sessionId,
       viewId: event.viewId,

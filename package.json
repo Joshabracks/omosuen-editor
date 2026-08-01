@@ -62,6 +62,7 @@
     "typescript": "^5.8.0"
   },
   "dependencies": {
-    "@state-street/state-street": "^2.4.1"
+    "@state-street/state-street": "^2.4.1",
+    "monaco-editor": "^0.56.0"
   }
 }

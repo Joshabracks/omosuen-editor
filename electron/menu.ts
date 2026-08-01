@@ -73,6 +73,13 @@ export function installAppMenu(handlers: AppMenuHandlers): void {
             void handlers.openFolder(asBrowserWindow(browserWindow));
           },
         },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: (_item, browserWindow) => {
+            sendMenuCommand(browserWindow, 'file.save');
+          },
+        },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
       ],

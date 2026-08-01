@@ -12,6 +12,7 @@ export const IPC = {
   fsList: 'fs:list',
   fsReadText: 'fs:readText',
   fsWriteText: 'fs:writeText',
+  fsReveal: 'fs:reveal',
   windowGetInfo: 'window:getInfo',
   windowPopOut: 'window:popOut',
   windowClosed: 'window:closed',
@@ -36,6 +37,7 @@ export type IpcChannel = (typeof IPC)[keyof typeof IPC];
 export const MENU_COMMANDS = [
   'file.newProject',
   'file.openFolder',
+  'file.save',
   'view.resetLayout',
   'help.about',
 ] as const;

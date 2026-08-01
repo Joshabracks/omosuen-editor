@@ -23,7 +23,6 @@ import {
   type WindowRole,
 } from '../src/bridge/channels';
 import type { PersistedPopOut } from '../src/dock/persist';
-import { dragLog } from '../src/debug/drag-log';
 
 const APP_TITLE = 'Omosuen Editor';
 
@@ -211,12 +210,6 @@ export class WindowManager {
           x: Math.round(screenX - FLOAT_GRAB_X),
           y: Math.round(screenY - FLOAT_GRAB_Y),
         });
-        dragLog('main', 'window:popOut created', {
-          windowId: tracked.id,
-          viewId: request.viewId,
-          from: source.id,
-          role: source.role,
-        });
         safeSend(source.win, IPC.windowDragDetach, {
           viewId: request.viewId,
           sessionId: `pop-${tracked.id}`,
@@ -287,15 +280,6 @@ export class WindowManager {
           lastScreenY: request.screenY,
           detached: false,
         };
-        dragLog('main', 'window:dragStart', {
-          sessionId,
-          viewId: request.viewId,
-          sourceWindowId: source.id,
-          sourceRole: source.role,
-          sourceViewIds: [...source.viewIds],
-          screenX: request.screenX,
-          screenY: request.screenY,
-        });
         return { sessionId };
       },
     );
@@ -304,18 +288,9 @@ export class WindowManager {
       IPC.windowDragMove,
       (event, request: WindowDragMoveRequest): void => {
         const session = this.drag;
-        if (!session) {
-          dragLog('main', 'window:dragMove ignored — no session');
-          return;
-        }
+        if (!session) return;
         const source = this.trackedFor(event.sender);
-        if (source.id !== session.sourceWindowId) {
-          dragLog('main', 'window:dragMove ignored — sender mismatch', {
-            sender: source.id,
-            expected: session.sourceWindowId,
-          });
-          return;
-        }
+        if (source.id !== session.sourceWindowId) return;
         if (typeof request?.screenX !== 'number') return;
 
         session.lastScreenX = request.screenX;
@@ -330,21 +305,7 @@ export class WindowManager {
           request.screenX > sourceBounds.x + sourceBounds.width - pad ||
           request.screenY > sourceBounds.y + sourceBounds.height - pad;
 
-        const shouldSpawn = outside && !session.floatWindowId;
-        if (shouldSpawn || (outside && session.floatWindowId == null)) {
-          dragLog('main', 'window:dragMove outside check', {
-            outside,
-            hasFloat: Boolean(session.floatWindowId),
-            willSpawn: shouldSpawn,
-            screenX: request.screenX,
-            screenY: request.screenY,
-            sourceBounds,
-            sourceRole: source.role,
-            sourceDestroyed: source.win.isDestroyed(),
-          });
-        }
-
-        if (shouldSpawn) {
+        if (outside && !session.floatWindowId) {
           this.spawnFloatForDrag(session, request.screenX, request.screenY);
         }
 
@@ -356,10 +317,6 @@ export class WindowManager {
               Math.round(request.screenY - FLOAT_GRAB_Y),
               false,
             );
-          } else if (shouldSpawn) {
-            dragLog('main', 'float missing after spawn attempt', {
-              floatWindowId: session.floatWindowId,
-            });
           }
         }
 
@@ -372,32 +329,20 @@ export class WindowManager {
       async (event, request: WindowDragEndRequest): Promise<WindowDragEndResult> => {
         const session = this.drag;
         if (!session) {
-          dragLog('main', 'window:dragEnd — no session');
           return { kind: 'cancelled' };
         }
         const source = this.trackedFor(event.sender);
         if (source.id !== session.sourceWindowId) {
-          dragLog('main', 'window:dragEnd — sender mismatch');
           return { kind: 'cancelled' };
         }
 
         const screenX = request?.screenX ?? session.lastScreenX;
         const screenY = request?.screenY ?? session.lastScreenY;
-        dragLog('main', 'window:dragEnd', {
-          sessionId: session.sessionId,
-          viewId: session.viewId,
-          floatWindowId: session.floatWindowId,
-          hoverWindowId: session.hoverWindowId,
-          detached: session.detached,
-          screenX,
-          screenY,
-        });
         this.updateDragHover(session, screenX, screenY);
 
         if (!session.floatWindowId) {
           this.clearDragHover(session);
           this.drag = null;
-          dragLog('main', 'window:dragEnd → local (no float)');
           return { kind: 'local' };
         }
 
@@ -423,7 +368,6 @@ export class WindowManager {
                 const windowId = hoverId;
                 this.drag = null;
                 this.notifyPopOutsChanged();
-                dragLog('main', 'window:dragEnd → attached', { windowId });
                 return { kind: 'attached', windowId };
               }
             }
@@ -435,7 +379,6 @@ export class WindowManager {
         this.clearDragHover(session);
         const windowId = session.floatWindowId!;
         this.drag = null;
-        dragLog('main', 'window:dragEnd → settled', { windowId });
         return { kind: 'settled', windowId };
       },
     );
@@ -480,20 +423,7 @@ export class WindowManager {
     screenY: number,
   ): void {
     const source = this.byId.get(session.sourceWindowId);
-    if (!source || source.win.isDestroyed()) {
-      dragLog('main', 'spawnFloatForDrag aborted — source missing/destroyed', {
-        sourceWindowId: session.sourceWindowId,
-      });
-      return;
-    }
-
-    dragLog('main', 'spawnFloatForDrag → createWindow', {
-      viewId: session.viewId,
-      from: source.id,
-      fromRole: source.role,
-      screenX,
-      screenY,
-    });
+    if (!source || source.win.isDestroyed()) return;
 
     const tracked = this.createWindow({
       role: 'popout',
@@ -508,17 +438,9 @@ export class WindowManager {
     tracked.win.setIgnoreMouseEvents(true);
     tracked.win.setFocusable(false);
     session.floatWindowId = tracked.id;
-    dragLog('main', 'spawnFloatForDrag ← float ready', {
-      floatWindowId: tracked.id,
-      floating: tracked.floating,
-    });
 
     if (!session.detached) {
       session.detached = true;
-      dragLog('main', 'detach view from source', {
-        viewId: session.viewId,
-        sourceId: source.id,
-      });
       safeSend(source.win, IPC.windowDragDetach, {
         viewId: session.viewId,
         sessionId: session.sessionId,
@@ -758,17 +680,6 @@ export class WindowManager {
     if (options.role === 'primary') {
       this.primaryId = id;
     }
-
-    dragLog('main', 'createWindow', {
-      id,
-      role: options.role,
-      viewIds,
-      floating,
-      x: options.x,
-      y: options.y,
-      width: options.width,
-      height: options.height,
-    });
 
     const query: Record<string, string> = {
       role: options.role,
