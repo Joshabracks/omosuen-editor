@@ -18,6 +18,8 @@ import type {
   WindowInfo,
 } from '../bridge/channels';
 import { isMenuCommandId } from '../bridge/channels';
+import '../component';
+import { createDocumentController } from './document-controller';
 import {
   DockController,
   DockViewRegistry,
@@ -39,6 +41,7 @@ import {
   EDITOR_OPEN_BUS_TYPE,
   type EditorOpenPayload,
 } from '../views/file-explorer';
+import { getInspectorHandle } from '../views/inspector';
 import { appendOutput } from '../views/output';
 import {
   getProblemsHandle,
@@ -162,6 +165,16 @@ interface ShellData {
 const registry = new DockViewRegistry();
 registerPlaceholderViews(registry);
 
+/** In-process document broker for inspector edits until scene I/O (3a) lands. */
+const shellDocument = createDocumentController({
+  readFile: async () => ({
+    omoscene: 1,
+    editor: { selection: [] },
+    scene: { type: 'nexus', id: 0, name: 'Root', components: [] },
+  }),
+  writeFile: async () => undefined,
+});
+
 let requestOpenFileImpl: (
   relativePath: string,
   mode: EditorOpenMode,
@@ -243,6 +256,33 @@ registerShellViews(
         'reuse',
         line !== undefined ? { line, column } : undefined,
       );
+    },
+  },
+  {
+    engineVersion: 'v0.24.1',
+    onDispatch: (msg) => {
+      shellDocument.dispatchFromHost(msg);
+      if (msg.kind === 'component:update') {
+        appendOutput(
+          `component:update ${msg.componentType}.${msg.property}`,
+          'debug',
+        );
+        statusSink?.(`Updated ${msg.componentType}.${msg.property}`);
+      }
+    },
+    browseForFile: async (extensions) => {
+      const api = window.omosuen;
+      if (!api?.openFile) return null;
+      const filters =
+        extensions.length > 0
+          ? [
+              {
+                name: 'Assets',
+                extensions: extensions.map((e) => e.replace(/^\./, '')),
+              },
+            ]
+          : undefined;
+      return api.openFile(filters);
     },
   },
 );
@@ -406,6 +446,19 @@ async function boot(): Promise<void> {
   await bootBridge(info);
   appendOutput('Shell ready', 'info');
   seedMockProblem();
+  // Temporary until scene tree selection (3b): demo transform for inspector host.
+  getInspectorHandle()?.setSelection({
+    components: [
+      {
+        id: 1,
+        type: 'transform',
+        name: 'Demo Transform',
+        position: { x: 0, y: 1, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    ],
+  });
 }
 
 function resolveWindowInfo(): Promise<WindowInfo> {

@@ -1,3 +1,9 @@
+/**
+ * Problems panel — nested State Street inside the `:preserve` dock host (2f).
+ */
+
+import { State } from '@state-street/state-street';
+
 export const PROBLEMS_VIEW_ID = 'problems';
 
 export type ProblemSeverity = 'error' | 'warning' | 'info' | 'hint';
@@ -28,95 +34,24 @@ export interface ProblemsHandle {
   readonly problems: () => readonly ProblemDiagnostic[];
 }
 
+interface ProblemsData {
+  problems: ProblemDiagnostic[];
+}
+
 let handle: ProblemsHandle | null = null;
 
 export function getProblemsHandle(): ProblemsHandle | null {
   return handle;
 }
 
-export function mountProblems(
-  container: HTMLElement,
-  deps: ProblemsDeps,
-): () => void {
-  container.classList.add('problems-panel');
-  container.innerHTML = `
-    <div class="problems-toolbar">
-      <span class="problems-title">Problems</span>
-      <button type="button" class="problems-clear" title="Clear" aria-label="Clear">Clear</button>
-    </div>
-    <div class="problems-empty" hidden>No problems</div>
-    <div class="problems-list" role="list"></div>
-  `;
-
-  const clearBtn = container.querySelector(
-    '.problems-clear',
-  ) as HTMLButtonElement;
-  const emptyEl = container.querySelector('.problems-empty') as HTMLElement;
-  const listEl = container.querySelector('.problems-list') as HTMLElement;
-
-  let problems: ProblemDiagnostic[] = [];
-
-  function render(): void {
-    emptyEl.hidden = problems.length > 0;
-    listEl.hidden = problems.length === 0;
-    listEl.innerHTML = problems
-      .map((p) => {
-        const loc = formatProblemLocation(p);
-        const openable = p.relativePath ? ' problems-openable' : '';
-        const pathAttr = p.relativePath
-          ? ` data-rel="${escapeAttr(p.relativePath)}"`
-          : '';
-        const lineAttr =
-          p.line !== undefined ? ` data-line="${p.line}"` : '';
-        const colAttr =
-          p.column !== undefined ? ` data-column="${p.column}"` : '';
-        return `<button type="button" class="problems-row${openable}" role="listitem"${pathAttr}${lineAttr}${colAttr} ${p.relativePath ? '' : 'disabled'}>
-          <span class="problems-severity problems-severity-${escapeAttr(p.severity)}">${escapeHtml(p.severity)}</span>
-          <span class="problems-message">${escapeHtml(p.message)}</span>
-          <span class="problems-loc">${escapeHtml(loc)}</span>
-        </button>`;
-      })
-      .join('');
-  }
-
-  clearBtn.addEventListener('click', () => {
-    problems = [];
-    render();
-  });
-
-  listEl.addEventListener('click', (event) => {
-    const target = event.target as HTMLElement | null;
-    const row = target?.closest('.problems-row') as HTMLElement | null;
-    if (!row?.dataset.rel) return;
-    const line = row.dataset.line ? Number(row.dataset.line) : undefined;
-    const column = row.dataset.column
-      ? Number(row.dataset.column)
-      : undefined;
-    deps.requestOpenLocation({
-      relativePath: row.dataset.rel,
-      line: Number.isFinite(line) ? line : undefined,
-      column: Number.isFinite(column) ? column : undefined,
-    });
-  });
-
-  handle = {
-    setProblems(next) {
-      problems = [...next];
-      render();
-    },
-    clear() {
-      problems = [];
-      render();
-    },
-    problems: () => problems,
-  };
-
-  render();
-
-  return () => {
-    handle = null;
-  };
-}
+const template = /* html */ `
+<div class="problems-toolbar">
+  <span class="problems-title">Problems</span>
+  <button type="button" class="problems-clear" title="Clear" aria-label="Clear" :click=clear()>Clear</button>
+</div>
+<EmptyHint/>
+<ProblemsList/>
+`;
 
 export function formatProblemLocation(p: ProblemDiagnostic): string {
   if (!p.relativePath) return p.source ?? '';
@@ -128,6 +63,86 @@ export function formatProblemLocation(p: ProblemDiagnostic): string {
       : '';
   const src = p.source ? ` · ${p.source}` : '';
   return `${p.relativePath}${pos}${src}`;
+}
+
+/** Pure HTML for one problem row — unit-testable without mounting State. */
+export function renderProblemRow(p: ProblemDiagnostic): string {
+  const loc = formatProblemLocation(p);
+  const openable = p.relativePath ? ' problems-openable' : '';
+  const binding = p.relativePath
+    ? ` :click=openProblem(id="${escapeAttr(p.id)}")`
+    : ' disabled="disabled"';
+  return (
+    `<button type="button" class="problems-row${openable}" role="listitem"${binding}>` +
+    `<span class="problems-severity problems-severity-${escapeAttr(p.severity)}">${escapeHtml(p.severity)}</span>` +
+    `<span class="problems-message">${escapeHtml(p.message)}</span>` +
+    `<span class="problems-loc">${escapeHtml(loc)}</span>` +
+    `</button>`
+  );
+}
+
+export function mountProblems(
+  container: HTMLElement,
+  deps: ProblemsDeps,
+): () => void {
+  container.classList.add('problems-panel');
+
+  const problemsState = new State(
+    template,
+    { problems: [] } satisfies ProblemsData,
+    {
+      EmptyHint: ({ state }: { state: { data: ProblemsData } }) =>
+        state.data.problems.length === 0
+          ? `<div class="problems-empty">No problems</div>`
+          : '',
+      ProblemsList: ({ state }: { state: { data: ProblemsData } }) => {
+        if (state.data.problems.length === 0) return '';
+        return (
+          `<div class="problems-list" role="list">` +
+          state.data.problems.map(renderProblemRow).join('') +
+          `</div>`
+        );
+      },
+    },
+    {
+      clear: ({ state }: { state: { data: ProblemsData } }) => {
+        state.data.problems = [];
+      },
+      openProblem: ({
+        state,
+        id,
+      }: {
+        state: { data: ProblemsData };
+        id: string;
+      }) => {
+        const problem = state.data.problems.find((p) => p.id === String(id));
+        if (!problem?.relativePath) return;
+        deps.requestOpenLocation({
+          relativePath: problem.relativePath,
+          line: problem.line,
+          column: problem.column,
+        });
+      },
+    },
+    { mountTarget: container },
+  ) as InstanceType<typeof State> & { data: ProblemsData };
+
+  handle = {
+    setProblems(next) {
+      problemsState.data.problems = [...next];
+    },
+    clear() {
+      problemsState.data.problems = [];
+    },
+    problems: () => problemsState.data.problems,
+  };
+
+  return () => {
+    problemsState.destroy();
+    handle = null;
+    container.classList.remove('problems-panel');
+    container.replaceChildren();
+  };
 }
 
 function escapeHtml(value: string): string {

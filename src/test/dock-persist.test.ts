@@ -23,13 +23,27 @@ test('readPersistedLayout accepts default layout object', () => {
   assert.deepEqual(again, layout);
 });
 
-test('readPersistedLayout migrates empty-d/empty-e to output/problems', () => {
+test('readPersistedLayout migrates empty-d/empty-e/empty-c', () => {
   const migrated = readPersistedLayout(LEGACY_BOTTOM_TABS_LAYOUT);
   assert.ok(migrated);
   assert.equal(migrated.root?.type, 'tabs');
   if (migrated.root?.type === 'tabs') {
     assert.deepEqual(migrated.root.tabs, ['output', 'problems']);
     assert.equal(migrated.root.active, 'output');
+  }
+
+  const right = readPersistedLayout({
+    root: {
+      type: 'tabs',
+      id: 'right',
+      tabs: ['empty-c'],
+      active: 'empty-c',
+    },
+  });
+  assert.ok(right && right.root?.type === 'tabs');
+  if (right.root?.type === 'tabs') {
+    assert.deepEqual(right.root.tabs, ['inspector']);
+    assert.equal(right.root.active, 'inspector');
   }
 });
 

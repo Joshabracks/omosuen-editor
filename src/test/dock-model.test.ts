@@ -29,8 +29,8 @@ test('default layout is serializable round-trip', () => {
   assert.deepEqual(again, layout);
   assert.deepEqual(collectViewIds(again.root).sort(), [
     'empty-b',
-    'empty-c',
     'file-explorer',
+    'inspector',
     'output',
     'problems',
     'text-buffer',
@@ -121,10 +121,10 @@ test('parseLayout rejects invalid JSON shapes', () => {
 });
 
 test('createSingleViewLayout hosts one view for pop-out windows', () => {
-  const layout = createSingleViewLayout('empty-c');
+  const layout = createSingleViewLayout('inspector');
   assert.ok(layout.root && isTabGroup(layout.root));
-  assert.deepEqual(layout.root.tabs, ['empty-c']);
-  assert.equal(layout.root.active, 'empty-c');
+  assert.deepEqual(layout.root.tabs, ['inspector']);
+  assert.equal(layout.root.active, 'inspector');
 });
 
 test('insertView re-docks a missing view into the first tab group', () => {

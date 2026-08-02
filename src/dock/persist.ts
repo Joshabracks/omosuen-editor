@@ -19,6 +19,7 @@ export const SHELL_WORKSPACE_ROOT_KEY = 'shell.workspaceRoot';
 const VIEW_ID_ALIASES: Readonly<Record<string, ViewId>> = {
   'empty-d': 'output',
   'empty-e': 'problems',
+  'empty-c': 'inspector',
 };
 
 export interface PersistedPopOut {

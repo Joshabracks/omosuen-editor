@@ -1,3 +1,8 @@
+/**
+ * File explorer — nested State Street inside the `:preserve` dock host (2f).
+ */
+
+import { State } from '@state-street/state-street';
 import type { DirEntryDto } from '../../bridge/channels';
 import type { EditorOpenMode } from '../text-buffer/open-target';
 import { showContextMenu } from './context-menu';
@@ -31,11 +36,73 @@ export interface FileExplorerDeps {
   ) => void;
 }
 
-interface TreeNodeState {
+export interface TreeNodeState {
   readonly entry: DirEntryDto;
   expanded: boolean;
   children: TreeNodeState[] | null;
   loading: boolean;
+}
+
+interface ExplorerData {
+  hasRoot: boolean;
+  errorMessage: string;
+  rootEntries: TreeNodeState[];
+}
+
+const template = /* html */ `
+<EmptyHint/>
+<TreeBody/>
+<ErrorHint/>
+`;
+
+/** Encode path for SS event args (slashes, dots, spaces). */
+export function encodeExplorerPath(relativePath: string): string {
+  return encodeURIComponent(relativePath);
+}
+
+export function decodeExplorerPath(encoded: string): string {
+  try {
+    return decodeURIComponent(String(encoded));
+  } catch {
+    return String(encoded);
+  }
+}
+
+/** Pure tree HTML with State Street row bindings. */
+export function renderFileTree(nodes: readonly TreeNodeState[]): string {
+  return nodes.map((n) => renderNode(n, 0)).join('');
+}
+
+function renderNode(node: TreeNodeState, depth: number): string {
+  const { entry } = node;
+  const isDir = entry.kind === 'directory';
+  const twisty = isDir
+    ? node.loading
+      ? '…'
+      : node.expanded
+        ? '▾'
+        : '▸'
+    : '';
+  const label = escapeHtml(entry.name);
+  const fileClass = entry.kind === 'file' ? ' file-explorer-openable' : '';
+  const rel = encodeExplorerPath(entry.relativePath);
+  const rows = [
+    `<div class="file-explorer-row${fileClass}" role="treeitem" ` +
+      `data-rel="${escapeAttr(entry.relativePath)}" data-kind="${entry.kind}" ` +
+      `style="--depth:${depth}" ` +
+      `:click=onRowClick(rel="${rel}",kind="${entry.kind}") ` +
+      `:dblclick=onRowDblClick(rel="${rel}",kind="${entry.kind}") ` +
+      `:contextmenu=onRowContext(rel="${rel}")>` +
+      `<span class="file-explorer-twisty" aria-hidden="true">${twisty}</span>` +
+      `<span class="file-explorer-name">${label}</span>` +
+      `</div>`,
+  ];
+  if (isDir && node.expanded && node.children) {
+    for (const child of node.children) {
+      rows.push(renderNode(child, depth + 1));
+    }
+  }
+  return rows.join('');
 }
 
 export function mountFileExplorer(
@@ -43,234 +110,260 @@ export function mountFileExplorer(
   deps: FileExplorerDeps,
 ): () => void {
   container.classList.add('file-explorer');
-  container.innerHTML = `
-    <div class="file-explorer-empty" hidden>No folder open</div>
-    <div class="file-explorer-tree" role="tree"></div>
-    <div class="file-explorer-error" hidden></div>
-  `;
 
-  const emptyEl = container.querySelector(
-    '.file-explorer-empty',
-  ) as HTMLElement;
-  const treeEl = container.querySelector('.file-explorer-tree') as HTMLElement;
-  const errorEl = container.querySelector(
-    '.file-explorer-error',
-  ) as HTMLElement;
-
-  let rootEntries: TreeNodeState[] = [];
-  let hasRoot = false;
   let disposed = false;
   let pendingOpenTimer: ReturnType<typeof setTimeout> | null = null;
   let refreshInFlight: Promise<void> | null = null;
 
-  const unsubWorkspace = deps.onWorkspaceChanged((root) => {
-    void reloadRoot(root);
-  });
-  const unsubFs = deps.onFsChanged?.(() => {
-    void softRefresh();
-  });
+  const bumpTree = (state: { data: ExplorerData }): void => {
+    // Force TreeBody re-render after nested mutations.
+    state.data.rootEntries = [...state.data.rootEntries];
+  };
 
-  treeEl.addEventListener('click', (event) => {
-    if (event.detail > 1) return;
-    const target = event.target as HTMLElement | null;
-    const row = target?.closest('[data-rel]') as HTMLElement | null;
-    if (!row) return;
-    const rel = row.dataset.rel;
-    const kind = row.dataset.kind;
-    if (!rel || !kind) return;
+  const clearPendingOpen = (): void => {
+    if (pendingOpenTimer) {
+      clearTimeout(pendingOpenTimer);
+      pendingOpenTimer = null;
+    }
+  };
 
-    if (kind === 'directory') {
-      clearPendingOpen();
-      const node = findNode(rootEntries, rel);
-      if (!node) return;
-      void toggleDir(node);
+  const showError = (
+    state: { data: ExplorerData },
+    message: string | null,
+  ): void => {
+    state.data.errorMessage = message ?? '';
+  };
+
+  const findNode = (
+    nodes: TreeNodeState[],
+    relativePath: string,
+  ): TreeNodeState | undefined => {
+    for (const node of nodes) {
+      if (node.entry.relativePath === relativePath) return node;
+      if (node.children) {
+        const found = findNode(node.children, relativePath);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  };
+
+  const expandDir = async (
+    state: { data: ExplorerData },
+    node: TreeNodeState,
+  ): Promise<void> => {
+    if (node.loading) return;
+    if (node.children) {
+      node.expanded = true;
+      bumpTree(state);
       return;
     }
-
-    if (kind === 'file') {
-      clearPendingOpen();
-      pendingOpenTimer = setTimeout(() => {
-        pendingOpenTimer = null;
-        deps.requestOpenFile(rel, 'reuse');
-      }, EXPLORER_OPEN_CLICK_MS);
+    node.loading = true;
+    bumpTree(state);
+    try {
+      const entries = await deps.listDir(node.entry.relativePath);
+      if (disposed) return;
+      node.children = entries.map(toNode);
+      node.expanded = true;
+    } catch (err) {
+      showError(
+        state,
+        err instanceof Error ? err.message : 'Failed to list folder',
+      );
+    } finally {
+      node.loading = false;
+      if (!disposed) bumpTree(state);
     }
-  });
+  };
 
-  treeEl.addEventListener('dblclick', (event) => {
-    const target = event.target as HTMLElement | null;
-    const row = target?.closest('[data-rel]') as HTMLElement | null;
-    if (!row || row.dataset.kind !== 'file') return;
-    const rel = row.dataset.rel;
-    if (!rel) return;
-    event.preventDefault();
-    clearPendingOpen();
-    deps.requestOpenFile(rel, 'new-preview');
-  });
+  const toggleDir = async (
+    state: { data: ExplorerData },
+    node: TreeNodeState,
+  ): Promise<void> => {
+    if (node.loading) return;
+    if (node.expanded) {
+      node.expanded = false;
+      bumpTree(state);
+      return;
+    }
+    await expandDir(state, node);
+  };
 
-  treeEl.addEventListener('contextmenu', (event) => {
-    const target = event.target as HTMLElement | null;
-    const row = target?.closest('[data-rel]') as HTMLElement | null;
-    if (!row?.dataset.rel) return;
-    event.preventDefault();
-    clearPendingOpen();
+  const reloadRoot = async (
+    state: { data: ExplorerData },
+    knownRoot?: string | null,
+  ): Promise<void> => {
+    if (disposed) return;
+    showError(state, null);
+    const root =
+      knownRoot !== undefined ? knownRoot : await deps.getWorkspaceRoot();
+    if (disposed) return;
+    state.data.hasRoot = Boolean(root);
+    if (!state.data.hasRoot) {
+      state.data.rootEntries = [];
+      return;
+    }
+    try {
+      const entries = await deps.listDir();
+      if (disposed) return;
+      state.data.rootEntries = entries.map(toNode);
+    } catch (err) {
+      if (disposed) return;
+      state.data.rootEntries = [];
+      showError(
+        state,
+        err instanceof Error ? err.message : 'Failed to list folder',
+      );
+    }
+  };
 
-    const relativePath = row.dataset.rel;
-    showContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      items: [
-        {
-          id: 'reveal',
-          label: 'Reveal in OS',
-          disabled: !deps.revealInOs,
-        },
-      ],
-      onSelect: (id) => {
-        if (id !== 'reveal' || !deps.revealInOs) return;
-        void deps.revealInOs(relativePath).catch((err) => {
-          showError(err instanceof Error ? err.message : 'Reveal failed');
-        });
-      },
-    });
-  });
-
-  void reloadRoot();
-
-  async function softRefresh(): Promise<void> {
-    if (disposed || !hasRoot) return;
+  const softRefresh = async (state: {
+    data: ExplorerData;
+  }): Promise<void> => {
+    if (disposed || !state.data.hasRoot) return;
     if (refreshInFlight) return refreshInFlight;
-    const expanded = collectExpandedPaths(rootEntries);
+    const expanded = collectExpandedPaths(state.data.rootEntries);
     refreshInFlight = (async () => {
-      await reloadRoot();
+      await reloadRoot(state);
       for (const rel of expanded) {
         if (disposed) return;
-        const node = findNode(rootEntries, rel);
+        const node = findNode(state.data.rootEntries, rel);
         if (!node || node.entry.kind !== 'directory') continue;
-        await expandDir(node);
+        await expandDir(state, node);
       }
     })().finally(() => {
       refreshInFlight = null;
     });
     return refreshInFlight;
-  }
+  };
 
-  async function reloadRoot(knownRoot?: string | null): Promise<void> {
-    if (disposed) return;
-    showError(null);
-    const root =
-      knownRoot !== undefined ? knownRoot : await deps.getWorkspaceRoot();
-    hasRoot = Boolean(root);
-    emptyEl.hidden = hasRoot;
-    treeEl.hidden = !hasRoot;
-    if (!hasRoot) {
-      rootEntries = [];
-      renderTree();
-      return;
-    }
-    try {
-      const entries = await deps.listDir();
-      rootEntries = entries.map(toNode);
-      renderTree();
-    } catch (err) {
-      rootEntries = [];
-      renderTree();
-      showError(err instanceof Error ? err.message : 'Failed to list folder');
-    }
-  }
+  const explorerState = new State(
+    template,
+    {
+      hasRoot: false,
+      errorMessage: '',
+      rootEntries: [],
+    } satisfies ExplorerData,
+    {
+      EmptyHint: ({ state }: { state: { data: ExplorerData } }) =>
+        state.data.hasRoot
+          ? ''
+          : `<div class="file-explorer-empty">No folder open</div>`,
+      TreeBody: ({ state }: { state: { data: ExplorerData } }) => {
+        if (!state.data.hasRoot) return '';
+        return (
+          `<div class="file-explorer-tree" role="tree">` +
+          renderFileTree(state.data.rootEntries) +
+          `</div>`
+        );
+      },
+      ErrorHint: ({ state }: { state: { data: ExplorerData } }) =>
+        state.data.errorMessage
+          ? `<div class="file-explorer-error">${escapeHtml(state.data.errorMessage)}</div>`
+          : '',
+    },
+    {
+      onRowClick: ({
+        state,
+        event,
+        rel,
+        kind,
+      }: {
+        state: { data: ExplorerData };
+        event: Event;
+        rel: string;
+        kind: string;
+      }) => {
+        if ((event as MouseEvent).detail > 1) return;
+        const path = decodeExplorerPath(rel);
+        if (kind === 'directory') {
+          clearPendingOpen();
+          const node = findNode(state.data.rootEntries, path);
+          if (!node) return;
+          void toggleDir(state, node);
+          return;
+        }
+        if (kind === 'file') {
+          clearPendingOpen();
+          pendingOpenTimer = setTimeout(() => {
+            pendingOpenTimer = null;
+            deps.requestOpenFile(path, 'reuse');
+          }, EXPLORER_OPEN_CLICK_MS);
+        }
+      },
+      onRowDblClick: ({
+        event,
+        rel,
+        kind,
+      }: {
+        event: Event;
+        rel: string;
+        kind: string;
+      }) => {
+        if (kind !== 'file') return;
+        event.preventDefault();
+        clearPendingOpen();
+        deps.requestOpenFile(decodeExplorerPath(rel), 'new-preview');
+      },
+      onRowContext: ({
+        state,
+        event,
+        rel,
+      }: {
+        state: { data: ExplorerData };
+        event: Event;
+        rel: string;
+      }) => {
+        event.preventDefault();
+        clearPendingOpen();
+        const relativePath = decodeExplorerPath(rel);
+        const mouse = event as MouseEvent;
+        showContextMenu({
+          x: mouse.clientX,
+          y: mouse.clientY,
+          items: [
+            {
+              id: 'reveal',
+              label: 'Reveal in OS',
+              disabled: !deps.revealInOs,
+            },
+          ],
+          onSelect: (id) => {
+            if (id !== 'reveal' || !deps.revealInOs) return;
+            void deps.revealInOs(relativePath).catch((err) => {
+              showError(
+                state,
+                err instanceof Error ? err.message : 'Reveal failed',
+              );
+            });
+          },
+        });
+      },
+    },
+    { mountTarget: container },
+  ) as InstanceType<typeof State> & { data: ExplorerData };
 
-  async function toggleDir(node: TreeNodeState): Promise<void> {
-    if (node.loading) return;
-    if (node.expanded) {
-      node.expanded = false;
-      renderTree();
-      return;
-    }
-    await expandDir(node);
-  }
+  const unsubWorkspace = deps.onWorkspaceChanged((root) => {
+    void reloadRoot(explorerState, root);
+  });
+  const unsubFs = deps.onFsChanged?.(() => {
+    void softRefresh(explorerState);
+  });
 
-  async function expandDir(node: TreeNodeState): Promise<void> {
-    if (node.loading) return;
-    if (node.children) {
-      node.expanded = true;
-      renderTree();
-      return;
-    }
-    node.loading = true;
-    renderTree();
-    try {
-      const entries = await deps.listDir(node.entry.relativePath);
-      node.children = entries.map(toNode);
-      node.expanded = true;
-    } catch (err) {
-      showError(err instanceof Error ? err.message : 'Failed to list folder');
-    } finally {
-      node.loading = false;
-      renderTree();
-    }
-  }
-
-  function renderTree(): void {
-    if (!hasRoot) {
-      treeEl.innerHTML = '';
-      return;
-    }
-    treeEl.innerHTML = rootEntries.map((n) => renderNode(n, 0)).join('');
-  }
-
-  function renderNode(node: TreeNodeState, depth: number): string {
-    const { entry } = node;
-    const isDir = entry.kind === 'directory';
-    const twisty = isDir
-      ? node.loading
-        ? '…'
-        : node.expanded
-          ? '▾'
-          : '▸'
-      : '';
-    const label = escapeHtml(entry.name);
-    const fileClass = entry.kind === 'file' ? ' file-explorer-openable' : '';
-    const rows = [
-      `<div class="file-explorer-row${fileClass}" role="treeitem" data-rel="${escapeAttr(entry.relativePath)}" data-kind="${entry.kind}" style="--depth:${depth}">
-        <span class="file-explorer-twisty" aria-hidden="true">${twisty}</span>
-        <span class="file-explorer-name">${label}</span>
-      </div>`,
-    ];
-    if (isDir && node.expanded && node.children) {
-      for (const child of node.children) {
-        rows.push(renderNode(child, depth + 1));
-      }
-    }
-    return rows.join('');
-  }
-
-  function showError(message: string | null): void {
-    if (!message) {
-      errorEl.hidden = true;
-      errorEl.textContent = '';
-      return;
-    }
-    errorEl.hidden = false;
-    errorEl.textContent = message;
-  }
-
-  function clearPendingOpen(): void {
-    if (pendingOpenTimer) {
-      clearTimeout(pendingOpenTimer);
-      pendingOpenTimer = null;
-    }
-  }
+  void reloadRoot(explorerState);
 
   return () => {
     disposed = true;
     clearPendingOpen();
     unsubWorkspace();
     unsubFs?.();
+    explorerState.destroy();
     container.classList.remove('file-explorer');
-    container.innerHTML = '';
+    container.replaceChildren();
   };
 }
 
-function collectExpandedPaths(nodes: TreeNodeState[]): string[] {
+export function collectExpandedPaths(nodes: TreeNodeState[]): string[] {
   const out: string[] = [];
   for (const node of nodes) {
     if (node.entry.kind !== 'directory' || !node.expanded) continue;
@@ -287,20 +380,6 @@ function toNode(entry: DirEntryDto): TreeNodeState {
     children: null,
     loading: false,
   };
-}
-
-function findNode(
-  nodes: TreeNodeState[],
-  relativePath: string,
-): TreeNodeState | undefined {
-  for (const node of nodes) {
-    if (node.entry.relativePath === relativePath) return node;
-    if (node.children) {
-      const found = findNode(node.children, relativePath);
-      if (found) return found;
-    }
-  }
-  return undefined;
 }
 
 function escapeHtml(value: string): string {

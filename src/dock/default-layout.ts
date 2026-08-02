@@ -17,7 +17,7 @@ export function createDefaultLayout(): DockLayout {
               ['empty-b', 'text-buffer'],
               'empty-b',
             ),
-            createTabGroup('tabs-right', ['empty-c'], 'empty-c'),
+            createTabGroup('tabs-right', ['inspector'], 'inspector'),
           ],
           [0.22, 0.56, 0.22],
         ),

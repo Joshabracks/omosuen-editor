@@ -32,7 +32,6 @@ export function registerPlaceholderViews(
   const placeholders: Array<{ id: ViewId; title: string; body: string }> = [
     { id: 'empty-a', title: 'Scene Tree', body: 'Placeholder A — scene tree' },
     { id: 'empty-b', title: 'Viewport', body: 'Placeholder B — authoring viewport' },
-    { id: 'empty-c', title: 'Inspector', body: 'Placeholder C — inspector' },
   ];
 
   for (const p of placeholders) {

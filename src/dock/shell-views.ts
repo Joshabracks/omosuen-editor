@@ -3,6 +3,11 @@ import {
   mountFileExplorer,
   type FileExplorerDeps,
 } from '../views/file-explorer';
+import {
+  INSPECTOR_VIEW_ID,
+  mountInspector,
+  type InspectorHostDeps,
+} from '../views/inspector';
 import { mountOutput, OUTPUT_VIEW_ID } from '../views/output';
 import {
   mountProblems,
@@ -16,12 +21,13 @@ import {
 } from '../views/text-buffer';
 import type { DockViewRegistry } from './registry';
 
-/** File explorer + Monaco + Output/Problems (kept out of registry.ts for Node tests). */
+/** File explorer + Monaco + Output/Problems + Inspector. */
 export function registerShellViews(
   registry: DockViewRegistry,
   explorerDeps: FileExplorerDeps,
   editorsDeps: EditorsDeps,
   problemsDeps: ProblemsDeps,
+  inspectorDeps: InspectorHostDeps,
 ): void {
   registry.register({
     id: FILE_EXPLORER_VIEW_ID,
@@ -42,5 +48,10 @@ export function registerShellViews(
     id: PROBLEMS_VIEW_ID,
     title: 'Problems',
     mount: (container) => mountProblems(container, problemsDeps),
+  });
+  registry.register({
+    id: INSPECTOR_VIEW_ID,
+    title: 'Inspector',
+    mount: (container) => mountInspector(container, inspectorDeps),
   });
 }

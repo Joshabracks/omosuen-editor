@@ -658,3 +658,106 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Inspector (E16) ─────────────────────────────────────────── */
+
+.inspector-panel {
+  height: 100%;
+  overflow: auto;
+  padding: 8px 10px 16px;
+  font-size: 12px;
+}
+
+.inspector-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.inspector-msg {
+  color: var(--muted);
+  display: block;
+  margin-bottom: 8px;
+}
+
+.inspector-field {
+  margin-bottom: 10px;
+}
+
+.inspector-field-label {
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.inspector-input {
+  background: var(--chrome);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 6px;
+  font: inherit;
+}
+
+.inspector-file-row,
+.inspector-vector,
+.inspector-string-set,
+.inspector-list-row,
+.inspector-map-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.inspector-file-row .inspector-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.inspector-axis {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.inspector-axis .inspector-input {
+  width: 4.5em;
+}
+
+.inspector-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+}
+
+.inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.inspector-browse,
+.inspector-action,
+.inspector-list button,
+.inspector-map button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--btn);
+  color: var(--text);
+  font: inherit;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.inspector-browse:hover,
+.inspector-action:hover,
+.inspector-list button:hover,
+.inspector-map button:hover {
+  background: var(--btn-hover);
+}
