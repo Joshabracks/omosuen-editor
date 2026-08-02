@@ -10,6 +10,7 @@ import {
 import { chooseWorkspaceFolder } from './dialogs';
 import { registerWorkspaceIpc } from './fs-ipc';
 import { installAppMenu } from './menu';
+import { registerPromptIpc } from './prompt-ipc';
 import { registerProjectIpc } from './project-ipc';
 import { runChangeEngineVersionWizard } from './change-version-wizard';
 import { showChoicePrompt } from './choice-prompt';
@@ -46,6 +47,7 @@ app.whenReady().then(async () => {
   workspace.setRootChangedListener(applyWorkspaceSideEffects);
   registerWorkspaceIpc(workspace);
   registerProjectIpc(workspace);
+  registerPromptIpc();
 
   windows.setPopOutsChangedListener(() => {
     void settings.set(SHELL_POPOUTS_KEY, windows.snapshotPopOuts());

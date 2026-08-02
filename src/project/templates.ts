@@ -1,3 +1,7 @@
+import {
+  createEmptyOmosceneFile,
+  stringify,
+} from '../omoscene';
 import type { ProjectManifest } from './types';
 
 export function packageJsonTemplate(
@@ -50,27 +54,16 @@ console.info('[omosuen] game entry stub');
 `;
 }
 
-export function starterSceneTemplate(engineVersion: string): string {
-  return `${JSON.stringify(
-    {
-      omoscene: 1,
+export function starterSceneTemplate(
+  engineVersion: string,
+  sceneName = 'Main',
+): string {
+  return stringify(
+    createEmptyOmosceneFile({
+      name: sceneName,
       engine: engineVersion,
-      editor: {
-        selection: [],
-        camera: null,
-        treeState: {},
-      },
-      scene: {
-        type: 'nexus',
-        name: 'Root',
-        id: 0,
-        unique: 0,
-        components: [],
-      },
-    },
-    null,
-    2,
-  )}\n`;
+    }),
+  );
 }
 
 export function gitignoreTemplate(): string {

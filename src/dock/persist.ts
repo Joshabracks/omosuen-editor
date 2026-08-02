@@ -20,6 +20,7 @@ const VIEW_ID_ALIASES: Readonly<Record<string, ViewId>> = {
   'empty-d': 'output',
   'empty-e': 'problems',
   'empty-c': 'inspector',
+  'empty-a': 'scene-tree',
 };
 
 export interface PersistedPopOut {

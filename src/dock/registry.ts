@@ -30,7 +30,6 @@ export function registerPlaceholderViews(
   registry: DockViewRegistry,
 ): void {
   const placeholders: Array<{ id: ViewId; title: string; body: string }> = [
-    { id: 'empty-a', title: 'Scene Tree', body: 'Placeholder A — scene tree' },
     { id: 'empty-b', title: 'Viewport', body: 'Placeholder B — authoring viewport' },
   ];
 

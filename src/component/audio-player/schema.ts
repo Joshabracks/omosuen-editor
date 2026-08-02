@@ -4,6 +4,7 @@ import { registerEditorType } from '../../editor-api';
 registerEditorType({
   type: "audio-player",
   since: "v0.1.30",
+  uniqueness: "GLOBAL",
   excludeFromInspector: [
     "_audioContext",
     "_masterGain",

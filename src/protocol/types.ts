@@ -1,3 +1,5 @@
+import type { OmosceneFile } from '../omoscene';
+
 /**
  * Editor message protocol — typed catalog shared by main, renderer, and
  * (later) preview WebSocket. Discriminated on `kind` (E6).
@@ -51,11 +53,11 @@ export interface ComponentMoveMessage {
 
 /**
  * Load a scene document into the store.
- * Payload is opaque JSON until the omoscene module (3a) owns validation.
+ * `file` is a validated `.omoscene` document (see `src/omoscene`).
  */
 export interface SceneLoadMessage {
   readonly kind: 'scene:load';
-  readonly file: JsonValue;
+  readonly file: OmosceneFile;
 }
 
 /** Request persistence of the current document (no payload). */

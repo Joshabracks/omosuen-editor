@@ -1,4 +1,8 @@
 import {
+  OmosceneParseError,
+  validateOmosceneFile,
+} from '../omoscene';
+import {
   assertNever,
   isRecord,
   type EditorMessage,
@@ -197,11 +201,19 @@ function decodeSceneLoad(raw: Record<string, unknown>): EditorMessage {
   if (!('file' in raw)) {
     throw new ProtocolDecodeError('scene:load requires `file` field');
   }
-  // Opaque until omoscene validation (3a); must still be JSON-shaped.
   if (raw.file === undefined) {
     throw new ProtocolDecodeError('scene:load `file` must not be undefined');
   }
-  return { kind: 'scene:load', file: raw.file as JsonValue };
+  try {
+    return { kind: 'scene:load', file: validateOmosceneFile(raw.file) };
+  } catch (err) {
+    if (err instanceof OmosceneParseError) {
+      throw new ProtocolDecodeError(
+        `scene:load \`file\` is not a valid .omoscene: ${err.message}`,
+      );
+    }
+    throw err;
+  }
 }
 
 function decodePreviewReady(raw: Record<string, unknown>): EditorMessage {

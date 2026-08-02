@@ -33,6 +33,7 @@ test('default layout is serializable round-trip', () => {
     'inspector',
     'output',
     'problems',
+    'scene-tree',
     'text-buffer',
   ]);
 });

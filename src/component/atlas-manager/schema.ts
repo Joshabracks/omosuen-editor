@@ -4,6 +4,7 @@ import { registerEditorType } from '../../editor-api';
 registerEditorType({
   type: "atlas-manager",
   since: "v0.1.30",
+  uniqueness: "GLOBAL",
   excludeFromInspector: [
     "textureMapIds",
     "atlases",

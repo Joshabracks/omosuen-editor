@@ -1,12 +1,14 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import {
   IPC,
+  type ChoicePromptRequest,
   type DirEntryDto,
   type FileFilter,
   type FsChangedEvent,
   type PopOutRequest,
   type PopOutResult,
   type ShellBusEnvelope,
+  type TextPromptRequest,
   type WindowClosedEvent,
   type WindowDragAttachAck,
   type WindowDragAttachEvent,
@@ -42,6 +44,12 @@ contextBridge.exposeInMainWorld('omosuen', {
     filters?: FileFilter[],
   ): Promise<string | null> =>
     ipcRenderer.invoke(IPC.dialogSaveFile, defaultName, filters),
+
+  promptText: (request: TextPromptRequest): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.dialogPromptText, request),
+
+  promptChoice: (request: ChoicePromptRequest): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.dialogPromptChoice, request),
 
   listDir: (relativePath?: string): Promise<DirEntryDto[]> =>
     ipcRenderer.invoke(IPC.fsList, relativePath),

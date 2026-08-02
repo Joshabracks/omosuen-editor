@@ -4,6 +4,7 @@ import { registerEditorType } from '../../editor-api';
 registerEditorType({
   type: "camera",
   since: "v0.1.30",
+  uniqueness: "LOCAL",
   excludeFromInspector: [
     "glResources"
   ],

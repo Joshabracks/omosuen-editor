@@ -4,6 +4,7 @@ import { registerEditorType } from '../../editor-api';
 registerEditorType({
   type: "flag-manager",
   since: "v0.1.30",
+  uniqueness: "GLOBAL",
   fields: [
     {
       "name": "flags",

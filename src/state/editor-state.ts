@@ -1,20 +1,26 @@
 /**
- * Per-document editor state — stub until omoscene mutation (3a/3b).
- * Holds opaque scene JSON + selection + dirty flag.
+ * Per-document editor state — scene document, selection, dirty (3a/3b).
  */
 
+import type { OmosceneFile, SerializedComponent } from '../omoscene';
+import { isRecord } from '../protocol';
+import { assertNever, type EditorMessage } from '../protocol';
 import {
-  assertNever,
-  isRecord,
-  type EditorMessage,
-  type JsonValue,
-} from '../protocol';
+  applyComponentUpdate,
+  buildDefaultComponent,
+  canAddComponentType,
+  findComponentById,
+  insertChildComponent,
+  nextComponentId,
+  removeComponent,
+  reparentComponent,
+} from '../scene';
 import { createStore, type Store } from './store';
 
 export type MessageListener = (msg: EditorMessage) => void;
 
 export interface EditorState {
-  readonly sceneDocument: Store<JsonValue | null>;
+  readonly sceneDocument: Store<OmosceneFile | null>;
   readonly selection: Store<readonly number[]>;
   readonly dirty: Store<boolean>;
   dispatch(msg: EditorMessage): void;
@@ -22,7 +28,7 @@ export interface EditorState {
 }
 
 export function createEditorState(): EditorState {
-  const sceneDocument = createStore<JsonValue | null>(null);
+  const sceneDocument = createStore<OmosceneFile | null>(null);
   const selection = createStore<readonly number[]>([]);
   const dirty = createStore(false);
   const messageListeners = new Set<MessageListener>();
@@ -34,16 +40,71 @@ export function createEditorState(): EditorState {
         break;
       case 'scene:load':
         sceneDocument.set(msg.file);
-        selection.set(selectionFromFile(msg.file));
+        selection.set([...msg.file.editor.selection]);
         dirty.set(false);
         break;
-      case 'component:update':
-      case 'component:add':
-      case 'component:remove':
-      case 'component:move':
-        // Deep tree mutation lands in 3b/3c — stub marks dirty only.
-        dirty.set(true);
+      case 'component:update': {
+        const file = sceneDocument.get();
+        if (!file) break;
+        const next = applyComponentUpdate(
+          file,
+          msg.id,
+          msg.componentType,
+          msg.property,
+          msg.value,
+        );
+        if (next !== file) {
+          sceneDocument.set(next);
+          dirty.set(true);
+        }
         break;
+      }
+      case 'component:add': {
+        const file = sceneDocument.get();
+        if (!file) break;
+        const parent = findComponentById(file.scene, msg.parentId);
+        if (!parent || parent.type !== 'nexus') break;
+        const gate = canAddComponentType(file, msg.parentId, msg.componentType);
+        if (!gate.ok) {
+          console.warn(`[editor-state] ${gate.reason ?? 'add blocked'}`);
+          break;
+        }
+        const id = nextComponentId(file);
+        const child = buildAddedComponent(file, msg, id);
+        const next = insertChildComponent(file, msg.parentId, child);
+        if (next !== file) {
+          sceneDocument.set(next);
+          dirty.set(true);
+          selection.set([id]);
+        }
+        break;
+      }
+      case 'component:remove': {
+        const file = sceneDocument.get();
+        if (!file) break;
+        const next = removeComponent(file, msg.id);
+        if (next !== file) {
+          sceneDocument.set(next);
+          dirty.set(true);
+          selection.set(selection.get().filter((sid) => sid !== msg.id));
+        }
+        break;
+      }
+      case 'component:move': {
+        const file = sceneDocument.get();
+        if (!file) break;
+        const next = reparentComponent(
+          file,
+          msg.id,
+          msg.parentId,
+          msg.index,
+        );
+        if (next !== file) {
+          sceneDocument.set(next);
+          dirty.set(true);
+        }
+        break;
+      }
       case 'scene:save':
       case 'preview:ready':
       case 'preview:log':
@@ -74,15 +135,28 @@ export function createEditorState(): EditorState {
   };
 }
 
-function selectionFromFile(file: JsonValue): readonly number[] {
-  if (!isRecord(file)) return [];
-  const editor = file.editor;
-  if (!isRecord(editor)) return [];
-  const sel = editor.selection;
-  if (!Array.isArray(sel)) return [];
-  const out: number[] = [];
-  for (const entry of sel) {
-    if (typeof entry === 'number' && Number.isFinite(entry)) out.push(entry);
+function buildAddedComponent(
+  file: OmosceneFile,
+  msg: Extract<EditorMessage, { kind: 'component:add' }>,
+  id: number,
+): SerializedComponent {
+  if (msg.props && isRecord(msg.props)) {
+    const clone = JSON.parse(JSON.stringify(msg.props)) as Record<
+      string,
+      unknown
+    >;
+    clone.type = msg.componentType;
+    clone.id = id;
+    if (msg.name !== undefined) clone.name = msg.name;
+    if (clone.type === 'nexus' && !Array.isArray(clone.components)) {
+      clone.components = [];
+    }
+    return clone as SerializedComponent;
   }
-  return out;
+  return buildDefaultComponent({
+    type: msg.componentType,
+    id,
+    engineVersion: file.engine,
+    name: msg.name,
+  });
 }

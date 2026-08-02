@@ -15,20 +15,31 @@ import {
   type ProblemsDeps,
 } from '../views/problems';
 import {
+  mountSceneTree,
+  SCENE_TREE_VIEW_ID,
+  type SceneTreeDeps,
+} from '../views/scene-tree';
+import {
   mountTextBuffer,
   TEXT_BUFFER_VIEW_ID,
   type EditorsDeps,
 } from '../views/text-buffer';
 import type { DockViewRegistry } from './registry';
 
-/** File explorer + Monaco + Output/Problems + Inspector. */
+/** Scene tree + Files + Monaco + Output/Problems + Inspector. */
 export function registerShellViews(
   registry: DockViewRegistry,
   explorerDeps: FileExplorerDeps,
   editorsDeps: EditorsDeps,
   problemsDeps: ProblemsDeps,
   inspectorDeps: InspectorHostDeps,
+  sceneTreeDeps: SceneTreeDeps,
 ): void {
+  registry.register({
+    id: SCENE_TREE_VIEW_ID,
+    title: 'Scene',
+    mount: (container) => mountSceneTree(container, sceneTreeDeps),
+  });
   registry.register({
     id: FILE_EXPLORER_VIEW_ID,
     title: 'Files',

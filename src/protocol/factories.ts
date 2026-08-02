@@ -1,3 +1,4 @@
+import type { OmosceneFile } from '../omoscene';
 import type {
   ComponentAddMessage,
   ComponentMoveMessage,
@@ -57,7 +58,7 @@ export function componentMove(
     : { kind: 'component:move', id, parentId, index };
 }
 
-export function sceneLoad(file: JsonValue): SceneLoadMessage {
+export function sceneLoad(file: OmosceneFile): SceneLoadMessage {
   return { kind: 'scene:load', file };
 }
 

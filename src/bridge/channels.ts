@@ -9,6 +9,8 @@ export const IPC = {
   dialogOpenFolder: 'dialog:openFolder',
   dialogOpenFile: 'dialog:openFile',
   dialogSaveFile: 'dialog:saveFile',
+  dialogPromptText: 'dialog:promptText',
+  dialogPromptChoice: 'dialog:promptChoice',
   fsList: 'fs:list',
   fsReadText: 'fs:readText',
   fsWriteText: 'fs:writeText',
@@ -147,6 +149,26 @@ export interface ShellBusEnvelope {
 export interface FileFilter {
   readonly name: string;
   readonly extensions: string[];
+}
+
+export interface TextPromptRequest {
+  readonly title: string;
+  readonly label: string;
+  readonly defaultValue?: string;
+  readonly okLabel?: string;
+}
+
+export interface ChoicePromptOption {
+  readonly value: string;
+  readonly label: string;
+}
+
+export interface ChoicePromptRequest {
+  readonly title: string;
+  readonly label: string;
+  readonly options: readonly ChoicePromptOption[];
+  readonly selected?: string;
+  readonly okLabel?: string;
 }
 
 export interface DirEntryDto {

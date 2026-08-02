@@ -11,6 +11,8 @@ test('IPC catalog includes workspace, fs, and window channels', () => {
   assert.equal(IPC.workspaceGet, 'workspace:get');
   assert.equal(IPC.workspaceChanged, 'workspace:changed');
   assert.equal(IPC.dialogOpenFolder, 'dialog:openFolder');
+  assert.equal(IPC.dialogPromptText, 'dialog:promptText');
+  assert.equal(IPC.dialogPromptChoice, 'dialog:promptChoice');
   assert.equal(IPC.fsList, 'fs:list');
   assert.equal(IPC.fsReveal, 'fs:reveal');
   assert.equal(IPC.fsReadText, 'fs:readText');

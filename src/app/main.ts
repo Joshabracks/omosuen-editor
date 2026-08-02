@@ -1,11 +1,13 @@
 import { State } from '@state-street/state-street';
 import type {
+  ChoicePromptRequest,
   DirEntryDto,
   FileFilter,
   FsChangedEvent,
   PopOutRequest,
   PopOutResult,
   ShellBusEnvelope,
+  TextPromptRequest,
   WindowClosedEvent,
   WindowDragAttachAck,
   WindowDragAttachEvent,
@@ -19,6 +21,13 @@ import type {
 } from '../bridge/channels';
 import { isMenuCommandId } from '../bridge/channels';
 import '../component';
+import { createEmptyOmosceneFile, withEditorMetadata } from '../omoscene';
+import { componentSelect } from '../protocol';
+import {
+  buildDefaultComponent,
+  findComponentById,
+  insertChildComponent,
+} from '../scene';
 import { createDocumentController } from './document-controller';
 import {
   DockController,
@@ -73,6 +82,8 @@ declare global {
         defaultName?: string,
         filters?: FileFilter[],
       ) => Promise<string | null>;
+      promptText: (request: TextPromptRequest) => Promise<string | null>;
+      promptChoice: (request: ChoicePromptRequest) => Promise<string | null>;
       listDir: (relativePath?: string) => Promise<DirEntryDto[]>;
       readTextFile: (relativePath: string) => Promise<string>;
       writeTextFile: (relativePath: string, contents: string) => Promise<string>;
@@ -165,15 +176,58 @@ interface ShellData {
 const registry = new DockViewRegistry();
 registerPlaceholderViews(registry);
 
-/** In-process document broker for inspector edits until scene I/O (3a) lands. */
+function createDemoScene() {
+  const base = createEmptyOmosceneFile({
+    name: 'Demo',
+    engine: 'v0.24.1',
+  });
+  // Scene root nexus (id 0) is the scene — not shown in the tree.
+  // Child nexus + transform mirrors a typical authored entity.
+  let file = insertChildComponent(base, 0, {
+    type: 'nexus',
+    name: 'Player',
+    id: 1,
+    unique: 0,
+    components: [],
+  });
+  file = insertChildComponent(
+    file,
+    1,
+    buildDefaultComponent({
+      type: 'transform',
+      id: 2,
+      engineVersion: 'v0.24.1',
+      name: 'Transform',
+    }),
+  );
+  return withEditorMetadata(file, {
+    ...file.editor,
+    treeState: { '1': true },
+    selection: [2],
+  });
+}
+
+/** In-process document broker for scene tree + inspector. */
 const shellDocument = createDocumentController({
-  readFile: async () => ({
-    omoscene: 1,
-    editor: { selection: [] },
-    scene: { type: 'nexus', id: 0, name: 'Root', components: [] },
-  }),
+  readFile: async () => createDemoScene(),
   writeFile: async () => undefined,
 });
+
+function syncInspectorFromDocument(): void {
+  const file = shellDocument.editorState.sceneDocument.get();
+  const ids = shellDocument.editorState.selection.get();
+  const handle = getInspectorHandle();
+  if (!handle) return;
+  if (!file || ids.length === 0) {
+    handle.setSelection(null);
+    return;
+  }
+  const components = ids
+    .map((id) => findComponentById(file.scene, id))
+    .filter((c): c is NonNullable<typeof c> => c !== null)
+    .map((c) => ({ ...c, id: c.id!, type: c.type }));
+  handle.setSelection(components.length > 0 ? { components } : null);
+}
 
 let requestOpenFileImpl: (
   relativePath: string,
@@ -269,6 +323,13 @@ registerShellViews(
         );
         statusSink?.(`Updated ${msg.componentType}.${msg.property}`);
       }
+      if (
+        msg.kind === 'component:add' ||
+        msg.kind === 'component:remove' ||
+        msg.kind === 'component:move'
+      ) {
+        appendOutput(msg.kind, 'debug');
+      }
     },
     browseForFile: async (extensions) => {
       const api = window.omosuen;
@@ -283,6 +344,25 @@ registerShellViews(
             ]
           : undefined;
       return api.openFile(filters);
+    },
+  },
+  {
+    getDocument: () => shellDocument.editorState.sceneDocument.get(),
+    subscribeDocument: (cb) =>
+      shellDocument.editorState.sceneDocument.subscribe(() => cb()),
+    getSelection: () => shellDocument.editorState.selection.get(),
+    subscribeSelection: (cb) =>
+      shellDocument.editorState.selection.subscribe(() => cb()),
+    onDispatch: (msg) => {
+      shellDocument.dispatchFromHost(msg);
+    },
+    applyDocument: (file, selectIds) => {
+      shellDocument.replaceDocument(file, { selectIds, dirty: true });
+    },
+    promptText: async (request) => {
+      const api = window.omosuen;
+      if (!api?.promptText) return null;
+      return api.promptText(request);
     },
   },
 );
@@ -446,19 +526,15 @@ async function boot(): Promise<void> {
   await bootBridge(info);
   appendOutput('Shell ready', 'info');
   seedMockProblem();
-  // Temporary until scene tree selection (3b): demo transform for inspector host.
-  getInspectorHandle()?.setSelection({
-    components: [
-      {
-        id: 1,
-        type: 'transform',
-        name: 'Demo Transform',
-        position: { x: 0, y: 1, z: 0 },
-        rotation: { x: 0, y: 0, z: 0 },
-        scale: { x: 1, y: 1, z: 1 },
-      },
-    ],
+  await shellDocument.load('demo://scene');
+  shellDocument.editorState.sceneDocument.subscribe(() => {
+    syncInspectorFromDocument();
   });
+  shellDocument.editorState.selection.subscribe(() => {
+    syncInspectorFromDocument();
+  });
+  shellDocument.dispatchFromHost(componentSelect([2]));
+  syncInspectorFromDocument();
 }
 
 function resolveWindowInfo(): Promise<WindowInfo> {

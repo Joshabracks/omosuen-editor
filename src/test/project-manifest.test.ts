@@ -11,6 +11,7 @@ import {
   serializeManifest,
   slugify,
 } from '../project';
+import { parse as parseOmoscene } from '../omoscene';
 import { withTempDir } from './helpers';
 
 test('slugify normalizes project names', () => {
@@ -62,6 +63,15 @@ test('scaffoldProject writes E9 layout and opens as detectible project', async (
     const manifest = parseManifest(raw);
     assert.equal(manifest.engineVersion, '0.0.0-stub');
     assert.equal(manifest.preview.port, 9421);
+
+    const sceneText = await fs.readFile(
+      path.join(projectDir, 'scenes', 'main.omoscene'),
+      'utf8',
+    );
+    const scene = parseOmoscene(sceneText);
+    assert.equal(scene.engine, '0.0.0-stub');
+    assert.equal(scene.scene.type, 'nexus');
+    assert.equal(scene.editor.camera.zoom, 1);
   });
 });
 

@@ -11,7 +11,8 @@ import {
   listEditorTypes,
   resolveEditorType,
 } from '../editor-api';
-import { componentUpdate, type EditorMessage, type JsonValue } from '../protocol';
+import { createEmptyOmosceneFile } from '../omoscene';
+import { componentUpdate, type EditorMessage } from '../protocol';
 import {
   buildInspectorModel,
   dispatchInspectorFieldUpdate,
@@ -38,7 +39,8 @@ function fakeBridge(): Bridge & { readonly __received: EditorMessage[] } {
 
 function fakeDeps(): DocumentControllerDependencies {
   return {
-    readFile: async () => ({}) as JsonValue,
+    readFile: async () =>
+      createEmptyOmosceneFile({ name: 'Drift', engine: 'v0.24.1' }),
     writeFile: async () => undefined,
   };
 }

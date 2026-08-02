@@ -45,6 +45,20 @@ test('readPersistedLayout migrates empty-d/empty-e/empty-c', () => {
     assert.deepEqual(right.root.tabs, ['inspector']);
     assert.equal(right.root.active, 'inspector');
   }
+
+  const left = readPersistedLayout({
+    root: {
+      type: 'tabs',
+      id: 'left',
+      tabs: ['empty-a'],
+      active: 'empty-a',
+    },
+  });
+  assert.ok(left && left.root?.type === 'tabs');
+  if (left.root?.type === 'tabs') {
+    assert.deepEqual(left.root.tabs, ['scene-tree']);
+    assert.equal(left.root.active, 'scene-tree');
+  }
 });
 
 test('readPersistedLayout rejects invalid shapes', () => {

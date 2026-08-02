@@ -35,6 +35,13 @@ function copyRendererStatic() {
     ),
     path.join(root, 'dist/renderer/monaco-editor.css'),
   );
+  const iconsSrc = path.join(root, 'src/media/icons');
+  const iconsDest = path.join(root, 'dist/renderer/icons');
+  mkdirSync(iconsDest, { recursive: true });
+  for (const name of readdirSync(iconsSrc)) {
+    if (!name.endsWith('.svg')) continue;
+    copyFileSync(path.join(iconsSrc, name), path.join(iconsDest, name));
+  }
 }
 
 copyRendererStatic();

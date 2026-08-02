@@ -20,6 +20,7 @@ import {
   type EditorMessage,
   type EditorMessageKind,
 } from '../protocol';
+import { createEmptyOmosceneFile } from '../omoscene';
 
 /** Every v1 core kind — keep in sync with `KNOWN_KINDS` / `EditorMessage`. */
 const CORE_KINDS: readonly EditorMessageKind[] = [
@@ -50,12 +51,9 @@ const samples: Record<EditorMessageKind, EditorMessage> = {
   }),
   'component:remove': componentRemove(9),
   'component:move': componentMove(4, 0, 2),
-  'scene:load': sceneLoad({
-    omoscene: 1,
-    engine: '0.1.0',
-    editor: { selection: [] },
-    scene: { type: 'nexus', id: 0, name: 'Root', components: [] },
-  }),
+  'scene:load': sceneLoad(
+    createEmptyOmosceneFile({ name: 'Root', engine: '0.1.0' }),
+  ),
   'scene:save': sceneSave(),
   'preview:ready': previewReady('v0.1.30'),
   'preview:log': previewLog('warn', 'missing texture'),
@@ -170,6 +168,19 @@ test('decode rejects scene:load without file', () => {
   assert.throws(
     () => decodeMessage('{"kind":"scene:load"}'),
     ProtocolDecodeError,
+  );
+});
+
+test('decode rejects scene:load whose file fails omoscene validation', () => {
+  assert.throws(
+    () =>
+      decodeMessage(
+        JSON.stringify({
+          kind: 'scene:load',
+          file: { omoscene: 1, engine: '0' },
+        }),
+      ),
+    /valid \.omoscene/,
   );
 });
 

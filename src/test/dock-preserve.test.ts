@@ -6,7 +6,7 @@ import { renderDockNode, viewHostElementId } from '../dock/render';
 import { collectViewIds } from '../dock/mutations';
 
 test('viewHostElementId is stable per viewId', () => {
-  assert.equal(viewHostElementId('empty-a'), 'dock-view-empty-a');
+  assert.equal(viewHostElementId('scene-tree'), 'dock-view-scene-tree');
   assert.equal(viewHostElementId('empty-b'), 'dock-view-empty-b');
 });
 
@@ -15,7 +15,7 @@ test('renderDockNode emits panel bodies for each tab group', () => {
   registerPlaceholderViews(registry);
   const html = renderDockNode(createDefaultLayout().root, registry);
   assert.match(html, /data-panel-body/);
-  assert.match(html, /data-active-view="file-explorer"/);
+  assert.match(html, /data-active-view="scene-tree"/);
   assert.match(html, /data-active-view="empty-b"/);
   assert.match(html, /data-dock-splitter/);
   assert.match(html, /data-dock-popout/);

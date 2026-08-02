@@ -6,17 +6,19 @@ import {
 } from '../app/document-registry';
 import type { DocumentControllerDependencies } from '../app/document-controller';
 import type { Bridge } from '../bridge/protocol-bridge';
-import { sceneLoad, type EditorMessage, type JsonValue } from '../protocol';
+import {
+  createEmptyOmosceneFile,
+  type OmosceneFile,
+} from '../omoscene';
+import { sceneLoad, type EditorMessage } from '../protocol';
 
-function sampleScene(): JsonValue {
-  return {
-    omoscene: 1,
-    editor: { selection: [] },
-    scene: { type: 'nexus', id: 0 },
-  };
+function sampleScene(): OmosceneFile {
+  return createEmptyOmosceneFile({ name: 'Sample', engine: '0.1.0' });
 }
 
-function fakeDeps(file: JsonValue = sampleScene()): DocumentControllerDependencies {
+function fakeDeps(
+  file: OmosceneFile = sampleScene(),
+): DocumentControllerDependencies {
   return {
     readFile: async () => file,
     writeFile: async () => undefined,
