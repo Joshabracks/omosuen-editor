@@ -24,6 +24,7 @@ test('IPC catalog includes workspace, fs, and window channels', () => {
   assert.equal(IPC.projectChangeEngineVersion, 'project:changeEngineVersion');
   assert.equal(IPC.engineEnsure, 'engine:ensure');
   assert.equal(IPC.engineResolve, 'engine:resolve');
+  assert.equal(IPC.engineReadUmd, 'engine:readUmd');
   assert.equal(IPC.windowPopOut, 'window:popOut');
   assert.equal(IPC.windowDragStart, 'window:dragStart');
   assert.equal(IPC.windowDragEnd, 'window:dragEnd');

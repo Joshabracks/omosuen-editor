@@ -23,7 +23,7 @@ test('readPersistedLayout accepts default layout object', () => {
   assert.deepEqual(again, layout);
 });
 
-test('readPersistedLayout migrates empty-d/empty-e/empty-c', () => {
+test('readPersistedLayout migrates empty-d/empty-e/empty-c/empty-a/empty-b', () => {
   const migrated = readPersistedLayout(LEGACY_BOTTOM_TABS_LAYOUT);
   assert.ok(migrated);
   assert.equal(migrated.root?.type, 'tabs');
@@ -58,6 +58,20 @@ test('readPersistedLayout migrates empty-d/empty-e/empty-c', () => {
   if (left.root?.type === 'tabs') {
     assert.deepEqual(left.root.tabs, ['scene-tree']);
     assert.equal(left.root.active, 'scene-tree');
+  }
+
+  const center = readPersistedLayout({
+    root: {
+      type: 'tabs',
+      id: 'center',
+      tabs: ['empty-b', 'text-buffer'],
+      active: 'empty-b',
+    },
+  });
+  assert.ok(center && center.root?.type === 'tabs');
+  if (center.root?.type === 'tabs') {
+    assert.deepEqual(center.root.tabs, ['viewport', 'text-buffer']);
+    assert.equal(center.root.active, 'viewport');
   }
 });
 

@@ -28,13 +28,13 @@ test('default layout is serializable round-trip', () => {
   const again = parseLayout(json);
   assert.deepEqual(again, layout);
   assert.deepEqual(collectViewIds(again.root).sort(), [
-    'empty-b',
     'file-explorer',
     'inspector',
     'output',
     'problems',
     'scene-tree',
     'text-buffer',
+    'viewport',
   ]);
 });
 
@@ -140,9 +140,9 @@ test('insertView re-docks a missing view into the first tab group', () => {
 
 test('insertView into empty layout creates a single tab group', () => {
   const ids = createIdFactory('t');
-  const next = insertView({ root: null }, 'empty-b', ids);
+  const next = insertView({ root: null }, 'viewport', ids);
   assert.ok(next.root && isTabGroup(next.root));
-  assert.deepEqual(next.root.tabs, ['empty-b']);
+  assert.deepEqual(next.root.tabs, ['viewport']);
 });
 
 test('insertView with split target places beside an existing group', () => {

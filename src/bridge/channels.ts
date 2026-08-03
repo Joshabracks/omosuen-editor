@@ -22,6 +22,7 @@ export const IPC = {
   projectChangeEngineVersion: 'project:changeEngineVersion',
   engineEnsure: 'engine:ensure',
   engineResolve: 'engine:resolve',
+  engineReadUmd: 'engine:readUmd',
   windowGetInfo: 'window:getInfo',
   windowPopOut: 'window:popOut',
   windowClosed: 'window:closed',

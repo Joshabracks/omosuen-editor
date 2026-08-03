@@ -108,6 +108,9 @@ contextBridge.exposeInMainWorld('omosuen', {
     downloaded: boolean;
   }> => ipcRenderer.invoke(IPC.engineResolve, version),
 
+  readEngineUmd: (version: string): Promise<string> =>
+    ipcRenderer.invoke(IPC.engineReadUmd, version),
+
   onFsChanged: (callback: (event: FsChangedEvent) => void): (() => void) => {
     const listener = (
       _event: IpcRendererEvent,

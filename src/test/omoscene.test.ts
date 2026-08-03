@@ -23,7 +23,13 @@ const fixture: OmosceneFile = {
   engine: '0.24.1',
   name: 'Fixture',
   editor: {
-    camera: { panX: 10, panY: -5, zoom: 1.5 },
+    camera: {
+      panX: 10,
+      panY: -5,
+      zoom: 1.5,
+      axonometricAngle: 30,
+      yaw: 0,
+    },
     selection: [0, 1, 2],
     treeState: {
       root: true,
@@ -82,6 +88,30 @@ test('editor.camera / selection / treeState persist across round-trip', () => {
   assert.deepEqual(again.editor.treeState, fixture.editor.treeState);
 });
 
+test('editor.camera defaults axonometricAngle and yaw when omitted', () => {
+  const legacy = {
+    omoscene: OMOSCENE_FORMAT_VERSION,
+    engine: '0.24.1',
+    name: 'Legacy',
+    editor: {
+      camera: { panX: 1, panY: 2, zoom: 0.5 },
+      selection: [],
+      treeState: {},
+      annotations: {},
+      bookmarks: {},
+    },
+    scene: { type: 'nexus', name: 'Root', id: 0, unique: 0, components: [] },
+  };
+  const parsed = parse(JSON.stringify(legacy));
+  assert.deepEqual(parsed.editor.camera, {
+    panX: 1,
+    panY: 2,
+    zoom: 0.5,
+    axonometricAngle: 30,
+    yaw: 0,
+  });
+});
+
 test('parse rejects corrupt JSON and invalid shapes with OmosceneParseError', () => {
   assert.throws(() => parse('{ not json'), OmosceneParseError);
   assert.throws(() => parse('"just a string"'), OmosceneParseError);
@@ -132,6 +162,8 @@ test('defaultEditorMetadata and createEmptyOmosceneFile are valid', () => {
   const b = defaultEditorMetadata();
   assert.notEqual(a, b);
   assert.equal(a.camera.zoom, 1);
+  assert.equal(a.camera.axonometricAngle, 30);
+  assert.equal(a.camera.yaw, 0);
   const empty = createEmptyOmosceneFile({ name: 'Main', engine: '1.0.0' });
   assert.deepEqual(parse(stringify(empty)), empty);
 });

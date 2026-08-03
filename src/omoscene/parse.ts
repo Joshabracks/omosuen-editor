@@ -1,5 +1,11 @@
+import { DEFAULT_EDITOR_CAMERA } from './defaults';
 import { OMOSCENE_FORMAT_VERSION } from './types';
-import type { EditorMetadata, OmosceneFile, SerializedScene } from './types';
+import type {
+  EditorCameraState,
+  EditorMetadata,
+  OmosceneFile,
+  SerializedScene,
+} from './types';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -142,11 +148,7 @@ function validateEditor(raw: unknown): EditorMetadata {
   }
 
   return {
-    camera: {
-      panX: camera.panX,
-      panY: camera.panY,
-      zoom: camera.zoom,
-    },
+    camera: normalizeEditorCamera(camera),
     selection: raw.selection as number[],
     treeState: raw.treeState as Record<string, boolean>,
     annotations: raw.annotations as Record<
@@ -154,6 +156,28 @@ function validateEditor(raw: unknown): EditorMetadata {
       { color?: string; notes?: string }
     >,
     bookmarks: raw.bookmarks as Record<string, number>,
+  };
+}
+
+/** Required pan/zoom; optional angle/yaw default for older files. */
+function normalizeEditorCamera(
+  camera: Record<string, unknown>,
+): EditorCameraState {
+  const angle =
+    typeof camera.axonometricAngle === 'number' &&
+    Number.isFinite(camera.axonometricAngle)
+      ? camera.axonometricAngle
+      : DEFAULT_EDITOR_CAMERA.axonometricAngle;
+  const yaw =
+    typeof camera.yaw === 'number' && Number.isFinite(camera.yaw)
+      ? camera.yaw
+      : DEFAULT_EDITOR_CAMERA.yaw;
+  return {
+    panX: camera.panX as number,
+    panY: camera.panY as number,
+    zoom: camera.zoom as number,
+    axonometricAngle: Math.max(0, Math.min(90, angle)),
+    yaw,
   };
 }
 

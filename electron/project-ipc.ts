@@ -77,4 +77,13 @@ export function registerProjectIpc(workspace: WorkspaceSession): void {
     }
     return resolveCachedEngineVersion(version.trim());
   });
+
+  ipcMain.handle(IPC.engineReadUmd, async (_event, version: unknown) => {
+    if (typeof version !== 'string' || !version.trim()) {
+      throw new Error('engine:readUmd requires a version string');
+    }
+    const resolved = await resolveCachedEngineVersion(version.trim());
+    const fs = await import('node:fs/promises');
+    return fs.readFile(resolved.umdPath, 'utf8');
+  });
 }

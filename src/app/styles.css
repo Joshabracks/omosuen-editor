@@ -919,3 +919,55 @@ body {
 .inspector-map button:hover {
   background: var(--btn-hover);
 }
+
+.authoring-viewport {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: #0a0b0d;
+}
+
+.viewport-status {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viewport-status[data-kind='warn'] {
+  color: #e0b35a;
+}
+
+.viewport-status[data-kind='error'] {
+  color: #e06c75;
+}
+
+.viewport-canvas-host {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.viewport-canvas-host canvas:not(.viewport-gizmo-overlay) {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.viewport-gizmo-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+  touch-action: none;
+}

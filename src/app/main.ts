@@ -125,6 +125,7 @@ declare global {
         extraPaths: readonly string[];
         downloaded: boolean;
       }>;
+      readEngineUmd: (version: string) => Promise<string>;
       getWindowInfo: () => Promise<WindowInfo>;
       popOutView: (request: PopOutRequest) => Promise<PopOutResult>;
       dragStart: (
@@ -182,28 +183,72 @@ function createDemoScene() {
     engine: 'v0.24.1',
   });
   // Scene root nexus (id 0) is the scene — not shown in the tree.
-  // Child nexus + transform mirrors a typical authored entity.
+  // Viewport + camera + light give the authoring engine something to draw;
+  // Player nexus + transform is a typical authored entity.
   let file = insertChildComponent(base, 0, {
+    type: 'viewport',
+    name: 'MainViewport',
+    id: 1,
+    unique: 0,
+    width: 800,
+    height: 600,
+    offsetX: 0,
+    offsetY: 0,
+    backgroundColor: { x: 0.08, y: 0.09, z: 0.12, w: 1 },
+  });
+  file = insertChildComponent(file, 0, {
+    type: 'camera',
+    name: 'MainCamera',
+    id: 2,
+    unique: 0,
+    zoom: 1,
+    pixelScale: 2,
+    axonometricAngle: 30,
+    viewportRef: 'MainViewport',
+  });
+  file = insertChildComponent(file, 0, {
+    type: 'light',
+    name: 'Ambient',
+    id: 3,
+    unique: 0,
+    lightType: 'ambient',
+    color: { x: 1, y: 1, z: 1 },
+    brightness: 1,
+    radius: 100,
+    hardness: 0,
+    direction: { x: 0, y: -1, z: 0 },
+  });
+  file = insertChildComponent(file, 0, {
     type: 'nexus',
     name: 'Player',
-    id: 1,
+    id: 4,
     unique: 0,
     components: [],
   });
   file = insertChildComponent(
     file,
-    1,
+    4,
     buildDefaultComponent({
       type: 'transform',
-      id: 2,
+      id: 5,
       engineVersion: 'v0.24.1',
       name: 'Transform',
     }),
   );
+  file = insertChildComponent(file, 4, {
+    type: 'sprite',
+    name: 'Sprite',
+    id: 6,
+    unique: 0,
+    textureMapKeys: { albedo: '', normal: '', material: '', emission: '' },
+    frame: { albedo: 0, normal: 0, material: 0, emission: 0 },
+    anchor: { x: 0.5, y: 0.5 },
+    tint: { x: 1, y: 1, z: 1, w: 1 },
+  });
   return withEditorMetadata(file, {
     ...file.editor,
-    treeState: { '1': true },
-    selection: [2],
+    treeState: { '4': true },
+    selection: [5],
   });
 }
 
@@ -237,7 +282,8 @@ let requestOpenFileImpl: (
   // assigned after shell boots
 };
 
-let statusSink: ((message: string) => void) | null = null;
+let statusSink: ((message: string, level?: 'info' | 'warn') => void) | null =
+  null;
 
 registerShellViews(
   registry,
@@ -363,6 +409,87 @@ registerShellViews(
       const api = window.omosuen;
       if (!api?.promptText) return null;
       return api.promptText(request);
+    },
+  },
+  {
+    getDocument: () => shellDocument.editorState.sceneDocument.get(),
+    subscribeDocument: (cb) =>
+      shellDocument.editorState.sceneDocument.subscribe(() => cb()),
+    getSelection: () => shellDocument.editorState.selection.get(),
+    subscribeSelection: (cb) =>
+      shellDocument.editorState.selection.subscribe(() => cb()),
+    onDispatch: (msg) => {
+      shellDocument.dispatchFromHost(msg);
+      if (msg.kind === 'component:update') {
+        appendOutput(
+          `component:update ${msg.componentType}.${msg.property}`,
+          'debug',
+        );
+        statusSink?.(`Updated ${msg.componentType}.${msg.property}`);
+      }
+      if (msg.kind === 'component:select') {
+        appendOutput(
+          `component:select [${msg.ids.join(', ')}]`,
+          'debug',
+        );
+      }
+    },
+    applyEditorCamera: (camera) => {
+      const file = shellDocument.editorState.sceneDocument.get();
+      if (!file) return;
+      shellDocument.replaceDocument(
+        withEditorMetadata(file, { ...file.editor, camera }),
+        { dirty: true },
+      );
+    },
+    resolveEngineVersion: async () => {
+      const file = shellDocument.editorState.sceneDocument.get();
+      if (file?.engine) return file.engine;
+      const api = window.omosuen;
+      const manifest = api?.getProjectManifest
+        ? await api.getProjectManifest()
+        : null;
+      return manifest?.engineVersion ?? 'v0.24.1';
+    },
+    ensureEngine: async (version) => {
+      const api = window.omosuen;
+      if (!api?.ensureEngine) {
+        throw new Error('Engine bridge unavailable');
+      }
+      return api.ensureEngine(version);
+    },
+    readEngineUmd: async (version) => {
+      const api = window.omosuen;
+      if (!api?.readEngineUmd) {
+        throw new Error('Engine UMD bridge unavailable');
+      }
+      return api.readEngineUmd(version);
+    },
+    getProjectEngineVersion: async () => {
+      const api = window.omosuen;
+      if (!api?.getProjectManifest) return null;
+      const manifest = await api.getProjectManifest();
+      return manifest?.engineVersion ?? null;
+    },
+    onStatus: (message) => {
+      statusSink?.(message);
+    },
+    onWarn: (message) => {
+      statusSink?.(message, 'warn');
+      const problems = getProblemsHandle();
+      if (!problems) return;
+      const next = problems
+        .problems()
+        .filter((p) => p.id !== 'engine-version-mismatch');
+      problems.setProblems([
+        ...next,
+        {
+          id: 'engine-version-mismatch',
+          severity: 'warning',
+          message,
+          source: 'viewport',
+        },
+      ]);
     },
   },
 );
@@ -515,9 +642,9 @@ async function boot(): Promise<void> {
 
   dock.bootstrap();
   scheduleViewSync();
-  statusSink = (message) => {
+  statusSink = (message, level = 'info') => {
     shellState.data.statusMessage = message;
-    appendOutput(message, 'info');
+    appendOutput(message, level);
   };
   requestOpenFileImpl = (relativePath, mode, reveal) => {
     void openEditorFile(relativePath, { mode, reveal });
@@ -533,7 +660,7 @@ async function boot(): Promise<void> {
   shellDocument.editorState.selection.subscribe(() => {
     syncInspectorFromDocument();
   });
-  shellDocument.dispatchFromHost(componentSelect([2]));
+  shellDocument.dispatchFromHost(componentSelect([5]));
   syncInspectorFromDocument();
 }
 

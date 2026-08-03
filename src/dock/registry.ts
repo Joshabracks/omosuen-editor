@@ -27,20 +27,7 @@ export class DockViewRegistry {
 }
 
 export function registerPlaceholderViews(
-  registry: DockViewRegistry,
+  _registry: DockViewRegistry,
 ): void {
-  const placeholders: Array<{ id: ViewId; title: string; body: string }> = [
-    { id: 'empty-b', title: 'Viewport', body: 'Placeholder B — authoring viewport' },
-  ];
-
-  for (const p of placeholders) {
-    registry.register({
-      id: p.id,
-      title: p.title,
-      mount: (container) => {
-        container.classList.add('dock-view-placeholder');
-        container.innerHTML = `<h2>${p.title}</h2><p>${p.body}</p>`;
-      },
-    });
-  }
+  // All Phase 0–4 shell views are real mounts (see registerShellViews).
 }

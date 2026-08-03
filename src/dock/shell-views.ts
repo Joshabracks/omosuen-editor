@@ -24,9 +24,14 @@ import {
   TEXT_BUFFER_VIEW_ID,
   type EditorsDeps,
 } from '../views/text-buffer';
+import {
+  mountAuthoringViewport,
+  VIEWPORT_VIEW_ID,
+  type ViewportDeps,
+} from '../views/viewport';
 import type { DockViewRegistry } from './registry';
 
-/** Scene tree + Files + Monaco + Output/Problems + Inspector. */
+/** Scene tree + Viewport + Files + Monaco + Output/Problems + Inspector. */
 export function registerShellViews(
   registry: DockViewRegistry,
   explorerDeps: FileExplorerDeps,
@@ -34,11 +39,17 @@ export function registerShellViews(
   problemsDeps: ProblemsDeps,
   inspectorDeps: InspectorHostDeps,
   sceneTreeDeps: SceneTreeDeps,
+  viewportDeps: ViewportDeps,
 ): void {
   registry.register({
     id: SCENE_TREE_VIEW_ID,
     title: 'Scene',
     mount: (container) => mountSceneTree(container, sceneTreeDeps),
+  });
+  registry.register({
+    id: VIEWPORT_VIEW_ID,
+    title: 'Viewport',
+    mount: (container) => mountAuthoringViewport(container, viewportDeps),
   });
   registry.register({
     id: FILE_EXPLORER_VIEW_ID,

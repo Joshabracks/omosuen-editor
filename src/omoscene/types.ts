@@ -26,13 +26,20 @@ export interface SerializedScene extends SerializedComponent {
   readonly type: 'nexus';
 }
 
+/** Authoring viewport camera — independent of in-scene camera components. */
+export interface EditorCameraState {
+  panX: number;
+  panY: number;
+  zoom: number;
+  /** Elevation angle in degrees (0..90). */
+  axonometricAngle: number;
+  /** Yaw around world Y in degrees. */
+  yaw: number;
+}
+
 /** Editor-only metadata stored alongside the scene region. */
 export interface EditorMetadata {
-  camera: {
-    panX: number;
-    panY: number;
-    zoom: number;
-  };
+  camera: EditorCameraState;
   selection: number[];
   treeState: Record<string, boolean>;
   annotations: Record<string, { color?: string; notes?: string }>;

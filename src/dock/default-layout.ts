@@ -18,8 +18,8 @@ export function createDefaultLayout(): DockLayout {
             ),
             createTabGroup(
               'tabs-center',
-              ['empty-b', 'text-buffer'],
-              'empty-b',
+              ['viewport', 'text-buffer'],
+              'viewport',
             ),
             createTabGroup('tabs-right', ['inspector'], 'inspector'),
           ],

@@ -6,13 +6,14 @@
  */
 
 export type {
+  EditorCameraState,
   EditorMetadata,
   OmosceneFile,
   SerializedComponent,
   SerializedScene,
 } from './types';
 export { OMOSCENE_FORMAT_VERSION } from './types';
-export { defaultEditorMetadata } from './defaults';
+export { DEFAULT_EDITOR_CAMERA, defaultEditorMetadata } from './defaults';
 export { parse, validateOmosceneFile, OmosceneParseError } from './parse';
 export { stringify } from './stringify';
 export {
