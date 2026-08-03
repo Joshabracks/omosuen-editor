@@ -4,6 +4,9 @@ import { registerEditorType } from '../../editor-api';
 registerEditorType({
   type: "light",
   since: "v0.1.30",
+  viewport: {
+    gizmos: ["gizmo.light-direction"],
+  },
   fields: [
     {
       "name": "lightType",

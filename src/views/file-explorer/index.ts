@@ -4,6 +4,7 @@
 
 import { State } from '@state-street/state-street';
 import type { DirEntryDto } from '../../bridge/channels';
+import { createTargetDir } from '../../scene/starter-scene';
 import type { EditorOpenMode } from '../text-buffer/open-target';
 import { showContextMenu } from './context-menu';
 
@@ -34,6 +35,11 @@ export interface FileExplorerDeps {
     relativePath: string,
     mode: EditorOpenMode,
   ) => void;
+  /**
+   * Create a new `.omoscene` under `parentDir` (workspace-relative; `''` = root)
+   * from an explorer context menu. Opens the scene in the Scene tab.
+   */
+  readonly createScene?: (parentDir: string) => Promise<void>;
 }
 
 export interface TreeNodeState {
@@ -92,7 +98,7 @@ function renderNode(node: TreeNodeState, depth: number): string {
       `style="--depth:${depth}" ` +
       `:click=onRowClick(rel="${rel}",kind="${entry.kind}") ` +
       `:dblclick=onRowDblClick(rel="${rel}",kind="${entry.kind}") ` +
-      `:contextmenu=onRowContext(rel="${rel}")>` +
+      `:contextmenu=onRowContext(rel="${rel}",kind="${entry.kind}")>` +
       `<span class="file-explorer-twisty" aria-hidden="true">${twisty}</span>` +
       `<span class="file-explorer-name">${label}</span>` +
       `</div>`,
@@ -309,26 +315,55 @@ export function mountFileExplorer(
         state,
         event,
         rel,
+        kind,
       }: {
         state: { data: ExplorerData };
         event: Event;
         rel: string;
+        kind: string;
       }) => {
         event.preventDefault();
         clearPendingOpen();
         const relativePath = decodeExplorerPath(rel);
+        const entryKind =
+          kind === 'directory' || kind === 'file'
+            ? kind
+            : (findNode(state.data.rootEntries, relativePath)?.entry.kind ??
+              'file');
         const mouse = event as MouseEvent;
+        const items = [
+          {
+            label: 'New',
+            disabled: !deps.createScene || !state.data.hasRoot,
+            children: [
+              {
+                id: 'new-scene',
+                label: 'Scene',
+                disabled: !deps.createScene || !state.data.hasRoot,
+              },
+            ],
+          },
+          {
+            id: 'reveal',
+            label: 'Reveal in OS',
+            disabled: !deps.revealInOs,
+          },
+        ];
         showContextMenu({
           x: mouse.clientX,
           y: mouse.clientY,
-          items: [
-            {
-              id: 'reveal',
-              label: 'Reveal in OS',
-              disabled: !deps.revealInOs,
-            },
-          ],
+          items,
           onSelect: (id) => {
+            if (id === 'new-scene' && deps.createScene) {
+              const parentDir = createTargetDir(relativePath, entryKind);
+              void deps.createScene(parentDir).catch((err) => {
+                showError(
+                  state,
+                  err instanceof Error ? err.message : 'Create scene failed',
+                );
+              });
+              return;
+            }
             if (id !== 'reveal' || !deps.revealInOs) return;
             void deps.revealInOs(relativePath).catch((err) => {
               showError(

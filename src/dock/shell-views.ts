@@ -25,13 +25,23 @@ import {
   type EditorsDeps,
 } from '../views/text-buffer';
 import {
+  mountAnimationTimelineTool,
+  ANIMATION_TIMELINE_VIEW_ID,
+  type AnimationTimelineDeps,
+} from '../scene/animation-timeline';
+import {
+  mountTextureFrameTool,
+  TEXTURE_FRAME_VIEW_ID,
+  type TextureFrameDeps,
+} from '../scene/texture-frame';
+import {
   mountAuthoringViewport,
   VIEWPORT_VIEW_ID,
   type ViewportDeps,
 } from '../views/viewport';
 import type { DockViewRegistry } from './registry';
 
-/** Scene tree + Viewport + Files + Monaco + Output/Problems + Inspector. */
+/** Scene tree + Viewport + Files + Monaco + Output/Problems + Inspector + tools. */
 export function registerShellViews(
   registry: DockViewRegistry,
   explorerDeps: FileExplorerDeps,
@@ -40,6 +50,8 @@ export function registerShellViews(
   inspectorDeps: InspectorHostDeps,
   sceneTreeDeps: SceneTreeDeps,
   viewportDeps: ViewportDeps,
+  textureFrameDeps: TextureFrameDeps,
+  animationTimelineDeps: AnimationTimelineDeps,
 ): void {
   registry.register({
     id: SCENE_TREE_VIEW_ID,
@@ -75,5 +87,16 @@ export function registerShellViews(
     id: INSPECTOR_VIEW_ID,
     title: 'Inspector',
     mount: (container) => mountInspector(container, inspectorDeps),
+  });
+  registry.register({
+    id: TEXTURE_FRAME_VIEW_ID,
+    title: 'Frames',
+    mount: (container) => mountTextureFrameTool(container, textureFrameDeps),
+  });
+  registry.register({
+    id: ANIMATION_TIMELINE_VIEW_ID,
+    title: 'Animations',
+    mount: (container) =>
+      mountAnimationTimelineTool(container, animationTimelineDeps),
   });
 }

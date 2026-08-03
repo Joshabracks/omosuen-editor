@@ -38,6 +38,8 @@ export interface DocumentController {
     file: OmosceneFile,
     options?: { readonly selectIds?: readonly number[]; readonly dirty?: boolean },
   ): void;
+  /** Clear the loaded document (e.g. project closed). */
+  unload(): void;
   /**
    * Attach a panel bridge. Late joiners receive `scene:load` when a
    * document is already loaded. Returns unregister.
@@ -155,6 +157,14 @@ export function createDocumentController(
     }
   }
 
+  function unload(): void {
+    if (disposed) return;
+    currentUri = null;
+    editorState.sceneDocument.set(null);
+    editorState.selection.set([]);
+    editorState.dirty.set(false);
+  }
+
   function registerPanel(bridge: Bridge): () => void {
     if (disposed) {
       return (): void => undefined;
@@ -206,6 +216,7 @@ export function createDocumentController(
     load,
     save,
     replaceDocument,
+    unload,
     registerPanel,
     rebroadcastSceneLoad,
     dispatchFromHost,

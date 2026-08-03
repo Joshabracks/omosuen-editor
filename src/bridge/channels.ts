@@ -13,6 +13,7 @@ export const IPC = {
   dialogPromptChoice: 'dialog:promptChoice',
   fsList: 'fs:list',
   fsReadText: 'fs:readText',
+  fsReadDataUrl: 'fs:readDataUrl',
   fsWriteText: 'fs:writeText',
   fsReveal: 'fs:reveal',
   fsChanged: 'fs:changed',

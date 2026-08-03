@@ -12,10 +12,10 @@ registerEditorType({
   ],
   actions: [
     {
-      "id": "omosuen.openAnimationEditor",
-      "label": "Open Animation Editor",
-      "command": "omosuen.openAnimationEditor"
-    }
+      id: 'edit-animations',
+      label: 'Edit Animations',
+      tool: 'animation-timeline',
+    },
   ],
   fields: [
     {

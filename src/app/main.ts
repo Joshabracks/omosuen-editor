@@ -21,13 +21,23 @@ import type {
 } from '../bridge/channels';
 import { isMenuCommandId } from '../bridge/channels';
 import '../component';
-import { createEmptyOmosceneFile, withEditorMetadata } from '../omoscene';
-import { componentSelect } from '../protocol';
+import { registerEditorTool } from '../editor-api';
+import { parse, stringify, withEditorMetadata } from '../omoscene';
 import {
-  buildDefaultComponent,
+  createStarterScene,
+  ensureOmosceneFileName,
   findComponentById,
-  insertChildComponent,
+  joinRelative,
+  sceneNameFromFileName,
 } from '../scene';
+import {
+  getAnimationTimelineHandle,
+  ANIMATION_TIMELINE_VIEW_ID,
+} from '../scene/animation-timeline';
+import {
+  getTextureFrameHandle,
+  TEXTURE_FRAME_VIEW_ID,
+} from '../scene/texture-frame';
 import { createDocumentController } from './document-controller';
 import {
   DockController,
@@ -40,8 +50,10 @@ import {
   createPopOutLayout,
   insertView,
   readPersistedLayout,
+  readPersistedOpenScene,
   registerPlaceholderViews,
   renderDockNode,
+  SHELL_OPEN_SCENE_KEY,
   viewHostElementId,
   type DockLayout,
 } from '../dock/index';
@@ -56,6 +68,7 @@ import {
   getProblemsHandle,
   type ProblemDiagnostic,
 } from '../views/problems';
+import { SCENE_TREE_VIEW_ID } from '../views/scene-tree';
 import {
   TEXT_BUFFER_VIEW_ID,
   getEditorsHandle,
@@ -86,6 +99,7 @@ declare global {
       promptChoice: (request: ChoicePromptRequest) => Promise<string | null>;
       listDir: (relativePath?: string) => Promise<DirEntryDto[]>;
       readTextFile: (relativePath: string) => Promise<string>;
+      readDataUrl: (relativePath: string) => Promise<string>;
       writeTextFile: (relativePath: string, contents: string) => Promise<string>;
       revealInOs: (relativePath: string) => Promise<void>;
       listEngineVersions: () => Promise<
@@ -177,85 +191,24 @@ interface ShellData {
 const registry = new DockViewRegistry();
 registerPlaceholderViews(registry);
 
-function createDemoScene() {
-  const base = createEmptyOmosceneFile({
-    name: 'Demo',
-    engine: 'v0.24.1',
-  });
-  // Scene root nexus (id 0) is the scene — not shown in the tree.
-  // Viewport + camera + light give the authoring engine something to draw;
-  // Player nexus + transform is a typical authored entity.
-  let file = insertChildComponent(base, 0, {
-    type: 'viewport',
-    name: 'MainViewport',
-    id: 1,
-    unique: 0,
-    width: 800,
-    height: 600,
-    offsetX: 0,
-    offsetY: 0,
-    backgroundColor: { x: 0.08, y: 0.09, z: 0.12, w: 1 },
-  });
-  file = insertChildComponent(file, 0, {
-    type: 'camera',
-    name: 'MainCamera',
-    id: 2,
-    unique: 0,
-    zoom: 1,
-    pixelScale: 2,
-    axonometricAngle: 30,
-    viewportRef: 'MainViewport',
-  });
-  file = insertChildComponent(file, 0, {
-    type: 'light',
-    name: 'Ambient',
-    id: 3,
-    unique: 0,
-    lightType: 'ambient',
-    color: { x: 1, y: 1, z: 1 },
-    brightness: 1,
-    radius: 100,
-    hardness: 0,
-    direction: { x: 0, y: -1, z: 0 },
-  });
-  file = insertChildComponent(file, 0, {
-    type: 'nexus',
-    name: 'Player',
-    id: 4,
-    unique: 0,
-    components: [],
-  });
-  file = insertChildComponent(
-    file,
-    4,
-    buildDefaultComponent({
-      type: 'transform',
-      id: 5,
-      engineVersion: 'v0.24.1',
-      name: 'Transform',
-    }),
-  );
-  file = insertChildComponent(file, 4, {
-    type: 'sprite',
-    name: 'Sprite',
-    id: 6,
-    unique: 0,
-    textureMapKeys: { albedo: '', normal: '', material: '', emission: '' },
-    frame: { albedo: 0, normal: 0, material: 0, emission: 0 },
-    anchor: { x: 0.5, y: 0.5 },
-    tint: { x: 1, y: 1, z: 1, w: 1 },
-  });
-  return withEditorMetadata(file, {
-    ...file.editor,
-    treeState: { '4': true },
-    selection: [5],
-  });
-}
-
-/** In-process document broker for scene tree + inspector. */
+/** In-process document broker for scene tree + inspector + viewport. */
 const shellDocument = createDocumentController({
-  readFile: async () => createDemoScene(),
-  writeFile: async () => undefined,
+  readFile: async (uri) => {
+    const api = window.omosuen;
+    if (!api) throw new Error('bridge unavailable');
+    const text = await api.readTextFile(uri);
+    return parse(text);
+  },
+  writeFile: async (uri, file) => {
+    const api = window.omosuen;
+    if (!api) throw new Error('bridge unavailable');
+    await api.writeTextFile(uri, stringify(file));
+  },
+  onSaveError: (error) => {
+    const message = error.message;
+    statusSink?.(message, 'warn');
+    appendOutput(`Scene save failed: ${message}`, 'error');
+  },
 });
 
 function syncInspectorFromDocument(): void {
@@ -284,6 +237,38 @@ let requestOpenFileImpl: (
 
 let statusSink: ((message: string, level?: 'info' | 'warn') => void) | null =
   null;
+
+let openTextureFrameImpl: (componentId: number) => void = () => {
+  // assigned after dock boots
+};
+
+let openAnimationTimelineImpl: (componentId: number) => void = () => {
+  // assigned after dock boots
+};
+
+registerEditorTool({
+  id: 'texture-frame',
+  open(ctx) {
+    const id =
+      typeof ctx.componentId === 'number'
+        ? ctx.componentId
+        : Number(ctx.componentId);
+    if (!Number.isFinite(id)) return;
+    openTextureFrameImpl(id);
+  },
+});
+
+registerEditorTool({
+  id: 'animation-timeline',
+  open(ctx) {
+    const id =
+      typeof ctx.componentId === 'number'
+        ? ctx.componentId
+        : Number(ctx.componentId);
+    if (!Number.isFinite(id)) return;
+    openAnimationTimelineImpl(id);
+  },
+});
 
 registerShellViews(
   registry,
@@ -317,6 +302,9 @@ registerShellViews(
     },
     requestOpenFile: (relativePath, mode) => {
       requestOpenFileImpl(relativePath, mode);
+    },
+    createScene: async (parentDir) => {
+      await createSceneInDir(parentDir);
     },
   },
   {
@@ -492,6 +480,40 @@ registerShellViews(
       ]);
     },
   },
+  {
+    getDocument: () => shellDocument.editorState.sceneDocument.get(),
+    subscribeDocument: (cb) =>
+      shellDocument.editorState.sceneDocument.subscribe(() => cb()),
+    onDispatch: (msg) => {
+      shellDocument.dispatchFromHost(msg);
+    },
+    readImageDataUrl: async (relativePath) => {
+      const api = window.omosuen;
+      if (!api?.readDataUrl) return null;
+      try {
+        return await api.readDataUrl(relativePath);
+      } catch {
+        return null;
+      }
+    },
+  },
+  {
+    getDocument: () => shellDocument.editorState.sceneDocument.get(),
+    subscribeDocument: (cb) =>
+      shellDocument.editorState.sceneDocument.subscribe(() => cb()),
+    onDispatch: (msg) => {
+      shellDocument.dispatchFromHost(msg);
+    },
+    readImageDataUrl: async (relativePath) => {
+      const api = window.omosuen;
+      if (!api?.readDataUrl) return null;
+      try {
+        return await api.readDataUrl(relativePath);
+      } catch {
+        return null;
+      }
+    },
+  },
 );
 
 const hostPoolHtml = registry
@@ -647,21 +669,46 @@ async function boot(): Promise<void> {
     appendOutput(message, level);
   };
   requestOpenFileImpl = (relativePath, mode, reveal) => {
-    void openEditorFile(relativePath, { mode, reveal });
+    void openWorkspaceFile(relativePath, { mode, reveal });
+  };
+  openTextureFrameImpl = (componentId) => {
+    applyLayout(
+      insertView(
+        shellState.data.layout as DockLayout,
+        TEXTURE_FRAME_VIEW_ID,
+        layoutIds,
+      ),
+    );
+    getTextureFrameHandle()?.open(componentId);
+    shellState.data.statusMessage = `Frames — component ${componentId}`;
+    appendOutput(`Opened texture-frame tool for #${componentId}`, 'debug');
+  };
+  openAnimationTimelineImpl = (componentId) => {
+    applyLayout(
+      insertView(
+        shellState.data.layout as DockLayout,
+        ANIMATION_TIMELINE_VIEW_ID,
+        layoutIds,
+      ),
+    );
+    getAnimationTimelineHandle()?.open(componentId);
+    shellState.data.statusMessage = `Animations — component ${componentId}`;
+    appendOutput(`Opened animation-timeline tool for #${componentId}`, 'debug');
   };
   wireTeardown();
   await bootBridge(info);
   appendOutput('Shell ready', 'info');
   seedMockProblem();
-  await shellDocument.load('demo://scene');
   shellDocument.editorState.sceneDocument.subscribe(() => {
     syncInspectorFromDocument();
   });
   shellDocument.editorState.selection.subscribe(() => {
     syncInspectorFromDocument();
   });
-  shellDocument.dispatchFromHost(componentSelect([5]));
   syncInspectorFromDocument();
+  if (!isPopout) {
+    await restoreOpenScene();
+  }
 }
 
 function resolveWindowInfo(): Promise<WindowInfo> {
@@ -679,6 +726,146 @@ function applyLayout(next: DockLayout): void {
   dock.reconcileHosts();
   scheduleLayoutPersist();
   scheduleViewSync();
+}
+
+async function openWorkspaceFile(
+  relativePath: string,
+  options?: {
+    broadcast?: boolean;
+    mode?: EditorOpenMode;
+    reveal?: EditorReveal;
+  },
+): Promise<void> {
+  if (isOmoscenePath(relativePath)) {
+    await openSceneFile(relativePath);
+    return;
+  }
+  await openEditorFile(relativePath, options);
+}
+
+function isOmoscenePath(relativePath: string): boolean {
+  return /\.omoscene$/i.test(relativePath);
+}
+
+async function resolveProjectEngineVersion(): Promise<string> {
+  const api = window.omosuen;
+  if (!api?.getProjectManifest) return 'v0.24.1';
+  try {
+    const manifest = await api.getProjectManifest();
+    return manifest?.engineVersion ?? 'v0.24.1';
+  } catch {
+    return 'v0.24.1';
+  }
+}
+
+async function createSceneInDir(parentDir: string): Promise<void> {
+  const api = window.omosuen;
+  if (!api) throw new Error('bridge unavailable');
+  const nameRaw = await api.promptText({
+    title: 'New Scene',
+    label: 'Scene name',
+    defaultValue: 'Main',
+    okLabel: 'Create',
+  });
+  if (nameRaw === null) return;
+  const fileName = ensureOmosceneFileName(nameRaw);
+  const relativePath = joinRelative(parentDir, fileName);
+
+  let exists = false;
+  try {
+    await api.readTextFile(relativePath);
+    exists = true;
+  } catch {
+    exists = false;
+  }
+  if (exists) {
+    throw new Error(`Scene already exists: ${relativePath}`);
+  }
+
+  const engine = await resolveProjectEngineVersion();
+  const file = createStarterScene({
+    name: sceneNameFromFileName(fileName),
+    engine,
+  });
+  await api.writeTextFile(relativePath, stringify(file));
+  await openSceneFile(relativePath);
+  appendOutput(`Created scene ${relativePath}`, 'info');
+}
+
+async function openSceneFile(relativePath: string): Promise<void> {
+  try {
+    await shellDocument.load(relativePath);
+    persistOpenScenePath(relativePath);
+    applyLayout(
+      insertView(
+        shellState.data.layout as DockLayout,
+        SCENE_TREE_VIEW_ID,
+        layoutIds,
+      ),
+    );
+    syncInspectorFromDocument();
+    shellState.data.statusMessage = `Scene: ${relativePath}`;
+    appendOutput(`Opened scene ${relativePath}`, 'info');
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to open scene';
+    shellState.data.statusMessage = message;
+    appendOutput(message, 'error');
+  }
+}
+
+function persistOpenScenePath(relativePath: string | null): void {
+  const api = window.omosuen;
+  if (!api || tearingDown) return;
+  void api.setSetting(SHELL_OPEN_SCENE_KEY, relativePath).catch(() => {
+    // non-fatal
+  });
+}
+
+async function restoreOpenScene(): Promise<void> {
+  const api = window.omosuen;
+  if (!api) return;
+  const root = await api.getWorkspaceRoot();
+  if (!root) return;
+  let relative: string | null = null;
+  try {
+    relative = readPersistedOpenScene(await api.getSetting(SHELL_OPEN_SCENE_KEY));
+  } catch {
+    return;
+  }
+  if (!relative) return;
+  try {
+    await api.readTextFile(relative);
+  } catch {
+    persistOpenScenePath(null);
+    appendOutput(
+      `Previous scene missing (${relative}) — Scene tab left empty`,
+      'warn',
+    );
+    return;
+  }
+  await openSceneFile(relative);
+}
+
+async function saveWorkspaceDocuments(): Promise<void> {
+  const savedText = (await getEditorsHandle()?.saveActive()) ?? false;
+  if (shellDocument.uri) {
+    try {
+      await shellDocument.save();
+      shellState.data.statusMessage = `Saved ${shellDocument.uri}`;
+      appendOutput(`Saved scene ${shellDocument.uri}`, 'info');
+      return;
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to save scene';
+      shellState.data.statusMessage = message;
+      appendOutput(message, 'error');
+      return;
+    }
+  }
+  if (!savedText) {
+    shellState.data.statusMessage = 'Nothing to save — open or create a scene';
+  }
 }
 
 async function openEditorFile(
@@ -864,6 +1051,10 @@ async function refreshWorkspace(root: string | null): Promise<void> {
   const api = window.omosuen;
   if (!root || !api) {
     if (!root) {
+      shellDocument.unload();
+      syncInspectorFromDocument();
+      // Keep remembered scene across editor quit; clear only on Close Project.
+      if (!tearingDown) persistOpenScenePath(null);
       shellState.data.statusMessage = 'No project open';
     }
     dock?.reconcileHosts();
@@ -884,6 +1075,21 @@ async function refreshWorkspace(root: string | null): Promise<void> {
     shellState.data.statusMessage =
       err instanceof Error ? err.message : 'Failed to list workspace';
   }
+
+  // Folder switched while running — reload remembered scene if it exists here.
+  if (shellDocument.uri === null) {
+    await restoreOpenScene();
+  } else {
+    // Re-validate current scene against the new root.
+    try {
+      await api.readTextFile(shellDocument.uri);
+    } catch {
+      shellDocument.unload();
+      syncInspectorFromDocument();
+      await restoreOpenScene();
+    }
+  }
+
   // Hosts can snap back to the pool if chrome re-renders; re-seat them.
   queueMicrotask(() => {
     try {
@@ -912,7 +1118,7 @@ async function bootBridge(info: WindowInfo): Promise<void> {
       return;
     }
     if (command === 'file.save') {
-      void getEditorsHandle()?.saveActive();
+      void saveWorkspaceDocuments();
       return;
     }
     if (command === 'view.resetLayout') {

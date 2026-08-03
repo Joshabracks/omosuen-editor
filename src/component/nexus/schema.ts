@@ -4,6 +4,9 @@ import { registerEditorType } from '../../editor-api';
 registerEditorType({
   type: "nexus",
   since: "v0.1.30",
+  viewport: {
+    labelWhen: "has-sibling-transform",
+  },
   fields: [
     {
       "name": "components",

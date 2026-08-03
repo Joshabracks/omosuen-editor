@@ -34,7 +34,7 @@ import {
 } from '../file-explorer/context-menu';
 import {
   formatComponentTypeLabel,
-  groupAddableTypesByDomain,
+  sortAddableTypesAlpha,
 } from './add-palette';
 
 export const SCENE_TREE_VIEW_ID = 'scene-tree';
@@ -431,9 +431,10 @@ function buildAddComponentMenuItem(
   file: OmosceneFile,
   parentId: number,
 ): ContextMenuItem {
-  const addable = listAddableTypes(file, parentId, listEditorTypes());
-  const domains = groupAddableTypesByDomain(addable);
-  if (domains.length === 0) {
+  const addable = sortAddableTypesAlpha(
+    listAddableTypes(file, parentId, listEditorTypes()),
+  );
+  if (addable.length === 0) {
     return {
       label: 'Add Component',
       disabled: true,
@@ -442,12 +443,9 @@ function buildAddComponentMenuItem(
   }
   return {
     label: 'Add Component',
-    children: domains.map((domain) => ({
-      label: domain.label,
-      children: domain.types.map((type) => ({
-        id: `add:${type}`,
-        label: formatComponentTypeLabel(type),
-      })),
+    children: addable.map((type) => ({
+      id: `add:${type}`,
+      label: formatComponentTypeLabel(type),
     })),
   };
 }

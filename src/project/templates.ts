@@ -1,7 +1,5 @@
-import {
-  createEmptyOmosceneFile,
-  stringify,
-} from '../omoscene';
+import { stringify } from '../omoscene';
+import { createStarterScene } from '../scene/starter-scene';
 import type { ProjectManifest } from './types';
 
 export function packageJsonTemplate(
@@ -59,7 +57,7 @@ export function starterSceneTemplate(
   sceneName = 'Main',
 ): string {
   return stringify(
-    createEmptyOmosceneFile({
+    createStarterScene({
       name: sceneName,
       engine: engineVersion,
     }),

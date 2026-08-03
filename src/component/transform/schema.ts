@@ -4,6 +4,9 @@ import { registerEditorType } from '../../editor-api';
 registerEditorType({
   type: "transform",
   since: "v0.1.30",
+  viewport: {
+    gizmos: ["gizmo.translate", "overlay.grid"],
+  },
   fields: [
     {
       "name": "position",

@@ -36,9 +36,11 @@ export { hitTestDropZone } from './drop';
 export { createDefaultLayout } from './default-layout';
 export {
   SHELL_DOCK_LAYOUT_KEY,
+  SHELL_OPEN_SCENE_KEY,
   SHELL_POPOUTS_KEY,
   SHELL_WORKSPACE_ROOT_KEY,
   readPersistedLayout,
+  readPersistedOpenScene,
   readPersistedPopOuts,
   readPersistedWorkspaceRoot,
   type PersistedPopOut,

@@ -18,6 +18,17 @@ import {
 import type { WorkspaceSession } from './workspace';
 
 const MAX_TEXT_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+
+function mimeForPath(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.bmp')) return 'image/bmp';
+  return 'application/octet-stream';
+}
 
 function windowFromEvent(event: IpcMainInvokeEvent): BrowserWindow | undefined {
   return BrowserWindow.fromWebContents(event.sender) ?? undefined;
@@ -89,6 +100,21 @@ export function registerWorkspaceIpc(workspace: WorkspaceSession): void {
       throw new Error(`File exceeds ${MAX_TEXT_BYTES} byte text limit`);
     }
     return fs.readFile(abs, 'utf8');
+  });
+
+  ipcMain.handle(IPC.fsReadDataUrl, async (_event, relativePath: unknown) => {
+    const root = workspace.requireRoot();
+    const abs = resolveWorkspacePath(root, requireString(relativePath, 'path'));
+    const st = await fs.stat(abs);
+    if (!st.isFile()) {
+      throw new Error('Not a file');
+    }
+    if (st.size > MAX_IMAGE_BYTES) {
+      throw new Error(`File exceeds ${MAX_IMAGE_BYTES} byte image limit`);
+    }
+    const bytes = await fs.readFile(abs);
+    const mime = mimeForPath(abs);
+    return `data:${mime};base64,${bytes.toString('base64')}`;
   });
 
   ipcMain.handle(

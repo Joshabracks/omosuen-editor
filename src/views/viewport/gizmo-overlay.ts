@@ -18,10 +18,13 @@ import {
   type Vec3,
 } from './axonometry';
 import {
-  extractGizmoEntities,
-  resolveTransformSelection,
-  type GizmoEntity,
-} from './entities';
+  buildViewportOverlayModel,
+  resolveTranslateSelection,
+  type ColliderHelper,
+  type LightHelper,
+  type ViewportLabelEntity,
+  type ViewportOverlayModel,
+} from './capabilities';
 import {
   createViewCameraController,
   editorCameraFromUnknown,
@@ -47,6 +50,8 @@ export interface GizmoOverlayHandle {
   readonly refresh: () => void;
   readonly resize: () => void;
   readonly dispose: () => void;
+  /** Contribution-driven paint modes present in the current scene (4c / 6b hook). */
+  readonly paintModes: () => readonly string[];
 }
 
 export function mountGizmoOverlay(
@@ -60,7 +65,14 @@ export function mountGizmoOverlay(
   host.appendChild(canvas);
   const ctx = canvas.getContext('2d');
 
-  let entities: GizmoEntity[] = [];
+  let overlayModel: ViewportOverlayModel = {
+    labels: [],
+    colliders: [],
+    lights: [],
+    paintModes: [],
+    showGrid: false,
+  };
+  let entities: ViewportLabelEntity[] = [];
   let raf = 0;
   let disposed = false;
   let hoveredAxis: 'x' | 'y' | 'z' | null = null;
@@ -104,7 +116,9 @@ export function mountGizmoOverlay(
   };
 
   const refreshEntities = (): void => {
-    entities = extractGizmoEntities(deps.getDocument());
+    const file = deps.getDocument();
+    overlayModel = buildViewportOverlayModel(file);
+    entities = [...overlayModel.labels];
     if (drag) {
       const match = entities.find((e) => e.transformId === drag!.transformId);
       if (match) {
@@ -136,17 +150,26 @@ export function mountGizmoOverlay(
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    drawGrid(ctx, cam);
+    if (overlayModel.showGrid) {
+      drawGrid(ctx, cam);
+    }
     drawOrigin(ctx, cam);
 
-    const selection = resolveTransformSelection(entities, deps.getSelection());
+    for (const collider of overlayModel.colliders) {
+      drawColliderHelper(ctx, cam, collider);
+    }
+    for (const light of overlayModel.lights) {
+      drawLightHelper(ctx, cam, light);
+    }
+
+    const selection = resolveTranslateSelection(entities, deps.getSelection());
     for (const entity of entities) {
       const selected =
         selection !== null &&
         (selection.entity.nexusId === entity.nexusId ||
           selection.entity.transformId === entity.transformId);
       drawEntityLabel(ctx, cam, entity, selected);
-      if (selected) {
+      if (selected && entity.translateEnabled) {
         const sp = worldToScreen(
           entity.position.x,
           entity.position.y,
@@ -172,7 +195,7 @@ export function mountGizmoOverlay(
     const cam = buildCamera();
     if (!cam) return;
     const { x: mx, y: my } = pointer(event);
-    const selection = resolveTransformSelection(entities, deps.getSelection());
+    const selection = resolveTranslateSelection(entities, deps.getSelection());
     if (selection) {
       const sp = worldToScreen(
         selection.entity.position.x,
@@ -226,7 +249,7 @@ export function mountGizmoOverlay(
       return;
     }
 
-    const selection = resolveTransformSelection(entities, deps.getSelection());
+    const selection = resolveTranslateSelection(entities, deps.getSelection());
     let nextHover: 'x' | 'y' | 'z' | null = null;
     if (selection) {
       const sp = worldToScreen(
@@ -289,6 +312,9 @@ export function mountGizmoOverlay(
     resize() {
       schedule();
     },
+    paintModes() {
+      return overlayModel.paintModes;
+    },
     dispose() {
       disposed = true;
       if (raf) cancelAnimationFrame(raf);
@@ -344,7 +370,7 @@ function drawOrigin(ctx: CanvasRenderingContext2D, cam: OverlayCamera): void {
 function drawEntityLabel(
   ctx: CanvasRenderingContext2D,
   cam: OverlayCamera,
-  entity: GizmoEntity,
+  entity: ViewportLabelEntity,
   selected: boolean,
 ): void {
   const sp = worldToScreen(
@@ -448,9 +474,9 @@ function findEntityAtPoint(
   sx: number,
   sy: number,
   cam: OverlayCamera,
-  entities: readonly GizmoEntity[],
-): GizmoEntity | null {
-  let best: GizmoEntity | null = null;
+  entities: readonly ViewportLabelEntity[],
+): ViewportLabelEntity | null {
+  let best: ViewportLabelEntity | null = null;
   let bestDist = Infinity;
   let bestDepth = -Infinity;
   for (const entity of entities) {
@@ -482,4 +508,135 @@ function findEntityAtPoint(
     }
   }
   return best;
+}
+
+function drawColliderHelper(
+  ctx: CanvasRenderingContext2D,
+  cam: OverlayCamera,
+  c: ColliderHelper,
+): void {
+  const isEvent = c.kind === 'event-collider';
+  const color = isEvent ? 'rgba(180,220,80,0.55)' : 'rgba(80,220,220,0.55)';
+  const cx = c.position.x + c.offset.x;
+  const cy = c.position.y + c.offset.y;
+  const cz = c.position.z + c.offset.z;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  if (c.shape === 'sphere') {
+    const p = worldToScreen(cx, cy, cz, cam);
+    const edge = worldToScreen(cx + c.radius, cy, cz, cam);
+    const screenR = Math.max(2, Math.abs(edge.x - p.x));
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, screenR, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    drawIsoBox(ctx, cam, cx, cy, cz, c.size.x / 2, c.size.y / 2, c.size.z / 2);
+  }
+  ctx.restore();
+}
+
+function drawIsoBox(
+  ctx: CanvasRenderingContext2D,
+  cam: OverlayCamera,
+  cx: number,
+  cy: number,
+  cz: number,
+  hx: number,
+  hy: number,
+  hz: number,
+): void {
+  const corners = [
+    worldToScreen(cx - hx, cy - hy, cz - hz, cam),
+    worldToScreen(cx + hx, cy - hy, cz - hz, cam),
+    worldToScreen(cx + hx, cy + hy, cz - hz, cam),
+    worldToScreen(cx - hx, cy + hy, cz - hz, cam),
+    worldToScreen(cx - hx, cy - hy, cz + hz, cam),
+    worldToScreen(cx + hx, cy - hy, cz + hz, cam),
+    worldToScreen(cx + hx, cy + hy, cz + hz, cam),
+    worldToScreen(cx - hx, cy + hy, cz + hz, cam),
+  ];
+  const edges = [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 0],
+    [4, 5],
+    [5, 6],
+    [6, 7],
+    [7, 4],
+    [0, 4],
+    [1, 5],
+    [2, 6],
+    [3, 7],
+  ];
+  ctx.beginPath();
+  for (const [ia, ib] of edges) {
+    const a = corners[ia!]!;
+    const b = corners[ib!]!;
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+  }
+  ctx.stroke();
+}
+
+function drawLightHelper(
+  ctx: CanvasRenderingContext2D,
+  cam: OverlayCamera,
+  light: LightHelper,
+): void {
+  const r = Math.round(Math.max(0, Math.min(1, light.color.x)) * 255);
+  const g = Math.round(Math.max(0, Math.min(1, light.color.y)) * 255);
+  const b = Math.round(Math.max(0, Math.min(1, light.color.z)) * 255);
+  const colorStr = `rgba(${r},${g},${b},0.85)`;
+
+  if (light.lightType === 'directional') {
+    const ox = 48;
+    const oy = 48;
+    const dx = light.direction.x;
+    const dy = -light.direction.y;
+    const dz = light.direction.z;
+    const mag = Math.hypot(dx, dy, dz) || 1;
+    const ex = ox + (dx / mag) * 28;
+    const ey = oy + (dy / mag) * 28;
+    ctx.strokeStyle = colorStr;
+    ctx.fillStyle = colorStr;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(ex, ey, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // Include z slightly in the screen projection of the direction tick.
+    void dz;
+    return;
+  }
+
+  const p = worldToScreen(
+    light.position.x,
+    light.position.y,
+    light.position.z,
+    cam,
+  );
+  ctx.fillStyle = colorStr;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+  ctx.fill();
+  if (light.radius > 0 && light.radius < 10000) {
+    const edge = worldToScreen(
+      light.position.x + light.radius,
+      light.position.y,
+      light.position.z,
+      cam,
+    );
+    const screenR = Math.abs(edge.x - p.x);
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.25)`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, screenR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 }

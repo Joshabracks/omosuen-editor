@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('omosuen', {
   readTextFile: (relativePath: string): Promise<string> =>
     ipcRenderer.invoke(IPC.fsReadText, relativePath),
 
+  readDataUrl: (relativePath: string): Promise<string> =>
+    ipcRenderer.invoke(IPC.fsReadDataUrl, relativePath),
+
   writeTextFile: (relativePath: string, contents: string): Promise<string> =>
     ipcRenderer.invoke(IPC.fsWriteText, relativePath, contents),
 

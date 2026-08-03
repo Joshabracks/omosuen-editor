@@ -14,6 +14,8 @@ export const SHELL_DOCK_LAYOUT_KEY = 'shell.dockLayout';
 export const SHELL_POPOUTS_KEY = 'shell.popOuts';
 /** Absolute path of the last successfully opened workspace folder. */
 export const SHELL_WORKSPACE_ROOT_KEY = 'shell.workspaceRoot';
+/** Workspace-relative path of the last open `.omoscene` (Scene tab). */
+export const SHELL_OPEN_SCENE_KEY = 'shell.openScene';
 
 /** Placeholder ids replaced by real shell views. */
 const VIEW_ID_ALIASES: Readonly<Record<string, ViewId>> = {
@@ -121,4 +123,15 @@ export function readPersistedWorkspaceRoot(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Parse a settings value into a workspace-relative `.omoscene` path, or null. */
+export function readPersistedOpenScene(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().replace(/\\/g, '/');
+  if (trimmed.length === 0) return null;
+  if (!/\.omoscene$/i.test(trimmed)) return null;
+  if (trimmed.startsWith('/') || /^[a-zA-Z]:\//.test(trimmed)) return null;
+  if (trimmed.includes('..')) return null;
+  return trimmed;
 }

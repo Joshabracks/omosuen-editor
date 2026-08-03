@@ -16,6 +16,7 @@ test('IPC catalog includes workspace, fs, and window channels', () => {
   assert.equal(IPC.fsList, 'fs:list');
   assert.equal(IPC.fsReveal, 'fs:reveal');
   assert.equal(IPC.fsReadText, 'fs:readText');
+  assert.equal(IPC.fsReadDataUrl, 'fs:readDataUrl');
   assert.equal(IPC.fsWriteText, 'fs:writeText');
   assert.equal(IPC.fsChanged, 'fs:changed');
   assert.equal(IPC.projectCreate, 'project:create');

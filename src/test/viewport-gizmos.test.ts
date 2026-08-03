@@ -104,6 +104,7 @@ test('resolveTransformSelection maps nexus or transform id', () => {
       transformId: 5,
       label: 'Player',
       position: { x: 1, y: 2, z: 3 },
+      translateEnabled: true,
     },
   ];
   assert.equal(resolveTransformSelection(entities, [5])?.entity.transformId, 5);

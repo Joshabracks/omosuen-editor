@@ -26,3 +26,11 @@ export {
   uniquenessForType,
   type AddGateResult,
 } from './uniqueness';
+export {
+  createStarterScene,
+  createTargetDir,
+  ensureOmosceneFileName,
+  joinRelative,
+  sceneNameFromFileName,
+  type StarterSceneOptions,
+} from './starter-scene';

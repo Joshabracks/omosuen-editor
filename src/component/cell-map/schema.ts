@@ -4,6 +4,10 @@ import { registerEditorType } from '../../editor-api';
 registerEditorType({
   type: "cell-map",
   since: "v0.1.30",
+  viewport: {
+    gizmos: ["overlay.grid"],
+    paintModes: ["paint.cell-map"],
+  },
   excludeFromInspector: [
     "materialMap",
     "shapeMap",

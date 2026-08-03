@@ -3,9 +3,11 @@ import { test } from 'node:test';
 import { createDefaultLayout } from '../dock/default-layout';
 import {
   SHELL_DOCK_LAYOUT_KEY,
+  SHELL_OPEN_SCENE_KEY,
   SHELL_POPOUTS_KEY,
   SHELL_WORKSPACE_ROOT_KEY,
   readPersistedLayout,
+  readPersistedOpenScene,
   readPersistedPopOuts,
   readPersistedWorkspaceRoot,
 } from '../dock/persist';
@@ -15,6 +17,7 @@ test('settings keys are stable', () => {
   assert.equal(SHELL_DOCK_LAYOUT_KEY, 'shell.dockLayout');
   assert.equal(SHELL_POPOUTS_KEY, 'shell.popOuts');
   assert.equal(SHELL_WORKSPACE_ROOT_KEY, 'shell.workspaceRoot');
+  assert.equal(SHELL_OPEN_SCENE_KEY, 'shell.openScene');
 });
 
 test('readPersistedLayout accepts default layout object', () => {
@@ -108,4 +111,21 @@ test('readPersistedWorkspaceRoot accepts absolute paths', () => {
   assert.equal(readPersistedWorkspaceRoot(''), null);
   assert.equal(readPersistedWorkspaceRoot(null), null);
   assert.equal(readPersistedWorkspaceRoot(42), null);
+});
+
+test('readPersistedOpenScene accepts workspace-relative .omoscene paths', () => {
+  assert.equal(
+    readPersistedOpenScene('scenes/Main.omoscene'),
+    'scenes/Main.omoscene',
+  );
+  assert.equal(
+    readPersistedOpenScene('scenes\\Main.omoscene'),
+    'scenes/Main.omoscene',
+  );
+  assert.equal(readPersistedOpenScene('Main.omoscene'), 'Main.omoscene');
+  assert.equal(readPersistedOpenScene('../escape.omoscene'), null);
+  assert.equal(readPersistedOpenScene('/abs/Main.omoscene'), null);
+  assert.equal(readPersistedOpenScene('D:/abs/Main.omoscene'), null);
+  assert.equal(readPersistedOpenScene('scenes/Main.json'), null);
+  assert.equal(readPersistedOpenScene(null), null);
 });

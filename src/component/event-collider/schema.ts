@@ -4,6 +4,9 @@ import { registerEditorType } from '../../editor-api';
 registerEditorType({
   type: "event-collider",
   since: "v0.1.30",
+  viewport: {
+    gizmos: ["gizmo.collider"],
+  },
   excludeFromInspector: [
     "triggers",
     "onEnter",
