@@ -8,6 +8,7 @@ import {
   deserializeAuthoringLeaf,
   ensureCellMapDeserializeShape,
   resolveTexturePathsForAuthoring,
+  shallowCloneTree,
   walkSerialized,
 } from './authoring-load';
 import {
@@ -64,7 +65,10 @@ export async function buildAuthoringScene(
     throw new Error('Engine newComponent is required for authoring viewport');
   }
 
-  let scene = JSON.parse(JSON.stringify(options.scene)) as SerializedScene;
+  // One cheap per-node clone (not a deep JSON round-trip — see
+  // shallowCloneTree) so this function owns the tree it mutates below
+  // without ever touching options.scene's voxel/mesh payloads.
+  let scene = shallowCloneTree(options.scene) as SerializedScene;
   ensureCellMapDeserializeShape(scene);
   if (options.readImageDataUrl) {
     scene = await resolveTexturePathsForAuthoring(
@@ -308,11 +312,10 @@ async function attachLeaf(
   node: SerializedComponent,
   liveParent: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
+  // Shape (mapSize/cellSize/materials/packedData) was already normalized
+  // once, scene-wide, by ensureCellMapDeserializeShape in buildAuthoringScene
+  // — no need to redo it per leaf here.
   const leaf = prepareLeafForDeserialize(node);
-  if (leaf.type === 'cell-map') {
-    const wrap = { type: 'nexus' as const, components: [leaf] };
-    ensureCellMapDeserializeShape(wrap as SerializedScene);
-  }
 
   let live: Record<string, unknown> | null = null;
   try {

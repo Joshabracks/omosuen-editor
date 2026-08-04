@@ -140,8 +140,7 @@ test('lapis-sin background constants match #1E3A8A', () => {
   assert.equal(LAPIS_SIN_RGBA.a, 1);
 });
 
-test('authoring sync applies update/remove without calling onSceneLoad', async () => {
-  let boots = 0;
+test('authoring sync applies update/remove and no-ops scene:load (handled by viewport safeBridge instead)', async () => {
   const live: Record<string, unknown> = {
     id: 1,
     type: 'transform',
@@ -188,25 +187,20 @@ test('authoring sync applies update/remove without calling onSceneLoad', async (
     api,
     getHandles: () => handles,
     getDocument: () => file,
-    onSceneLoad: () => {
-      boots += 1;
-    },
-    isSameSceneRegion: () => false,
   });
 
   await bridge.applyMessage(
     componentUpdate(1, 'transform', 'opacity', 0.5),
   );
   assert.equal(live.opacity, 0.5);
-  assert.equal(boots, 0);
 
   await bridge.applyMessage(componentRemove(1));
   assert.equal(idToLive.has(1), false);
-  assert.equal(boots, 0);
 
-  // scene:load with different region boots once
+  // scene:load is a no-op here — viewport/index.ts's safeBridge handles
+  // cold-boot decisions and never forwards scene:load into this bridge.
   await bridge.applyMessage(sceneLoad(file));
-  assert.equal(boots, 1);
+  assert.equal(idToLive.has(1), false);
 
   bridge.dispose();
 });
@@ -247,8 +241,6 @@ test('authoring sync ignores disallowed component:add', async () => {
     api,
     getHandles: () => handles,
     getDocument: () => createEmptyOmosceneFile({ name: 'T', engine: 'v0.24.1' }),
-    onSceneLoad: () => undefined,
-    isSameSceneRegion: () => true,
   });
 
   await bridge.applyMessage(componentAdd(0, 'camera'));

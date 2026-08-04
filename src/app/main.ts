@@ -470,6 +470,15 @@ registerShellViews(
       shellDocument.editorState.dirty.set(true);
     },
     registerPanel: (bridge) => shellDocument.registerPanel(bridge),
+    markVoxelDirty: () => {
+      shellDocument.editorState.dirty.set(true);
+    },
+    setBeforeSave: (hook) => {
+      shellDocument.setBeforeSave(hook);
+    },
+    patchDocumentSilent: (file, options) => {
+      shellDocument.patchDocumentSilent(file, options);
+    },
     resolveEngineVersion: async () => {
       const file = shellDocument.editorState.sceneDocument.get();
       if (file?.engine) return file.engine;

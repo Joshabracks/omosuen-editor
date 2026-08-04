@@ -23,6 +23,11 @@ export interface DocumentControllerDependencies {
   readFile(uri: DocumentUri): Promise<OmosceneFile>;
   writeFile(uri: DocumentUri, file: OmosceneFile): Promise<void>;
   onSaveError?: (error: Error) => void;
+  /**
+   * Optional pre-save flush (e.g. live cell-map packedData → document).
+   * Return the file that should be written.
+   */
+  beforeSave?: (file: OmosceneFile) => Promise<OmosceneFile>;
 }
 
 export interface DocumentController {
@@ -48,6 +53,17 @@ export interface DocumentController {
   rebroadcastSceneLoad(): void;
   /** Host-originated message — apply + broadcast to every panel. */
   dispatchFromHost(msg: EditorMessage): void;
+  /**
+   * Register/replace the pre-save flush hook (viewport live cell-maps).
+   * Pass null to clear.
+   */
+  setBeforeSave(
+    hook: ((file: OmosceneFile) => Promise<OmosceneFile>) | null,
+  ): void;
+  /**
+   * Patch sceneDocument without broadcasting scene:load (voxel flush on unload).
+   */
+  patchDocumentSilent(file: OmosceneFile, options?: { readonly dirty?: boolean }): void;
   dispose(): void;
 }
 
@@ -68,6 +84,8 @@ export function createDocumentController(
   const onSaveError = deps.onSaveError ?? defaultOnSaveError;
   let currentUri: DocumentUri | null = null;
   let disposed = false;
+  let beforeSaveHook: ((file: OmosceneFile) => Promise<OmosceneFile>) | null =
+    deps.beforeSave ?? null;
 
   function fanOut(source: Bridge | null, msg: EditorMessage): void {
     for (const other of [...panels]) {
@@ -128,9 +146,12 @@ export function createDocumentController(
     if (currentUri === null) {
       throw new Error('save() called with no document loaded');
     }
-    const file = editorState.sceneDocument.get();
+    let file = editorState.sceneDocument.get();
     if (file === null) {
       throw new Error('save() called with no scene in editor state');
+    }
+    if (beforeSaveHook) {
+      file = await beforeSaveHook(file);
     }
     const toWrite = withEditorMetadata(file, {
       ...file.editor,
@@ -139,6 +160,23 @@ export function createDocumentController(
     await deps.writeFile(currentUri, toWrite);
     editorState.sceneDocument.set(toWrite);
     editorState.dirty.set(false);
+  }
+
+  function setBeforeSave(
+    hook: ((file: OmosceneFile) => Promise<OmosceneFile>) | null,
+  ): void {
+    beforeSaveHook = hook;
+  }
+
+  function patchDocumentSilent(
+    file: OmosceneFile,
+    options?: { readonly dirty?: boolean },
+  ): void {
+    if (disposed) return;
+    editorState.sceneDocument.set(file);
+    if (options?.dirty !== undefined) {
+      editorState.dirty.set(options.dirty);
+    }
   }
 
   function replaceDocument(
@@ -220,6 +258,8 @@ export function createDocumentController(
     registerPanel,
     rebroadcastSceneLoad,
     dispatchFromHost,
+    setBeforeSave,
+    patchDocumentSilent,
     dispose,
   };
 }

@@ -18,12 +18,33 @@ export interface OmosuenAuthoringApi {
   readonly markForDisposal?: (component: unknown) => void;
 }
 
-/** Rewrite texture-map filePath values to data URLs the engine can fetch. */
+/**
+ * Clone a scene tree cheaply: one new object per node (so callers never
+ * mutate the input), but leaf array/object properties (`packedData`,
+ * `materials`, `meshes`, …) are copied by reference, not by value. Cost is
+ * O(node count), not O(document size) — unlike `JSON.parse(JSON.stringify)`,
+ * this does not walk into voxel payloads or any other large leaf data.
+ */
+export function shallowCloneTree(node: SerializedComponent): SerializedComponent {
+  const clone: Record<string, unknown> = { ...(node as Record<string, unknown>) };
+  if (Array.isArray(clone.components)) {
+    clone.components = (clone.components as SerializedComponent[]).map(
+      shallowCloneTree,
+    );
+  }
+  return clone as SerializedComponent;
+}
+
+/**
+ * Rewrite texture-map filePath values to data URLs the engine can fetch.
+ * Returns a new tree (input is never mutated) via `shallowCloneTree` — cheap
+ * even for scenes carrying large cell-map voxel payloads.
+ */
 export async function resolveTexturePathsForAuthoring(
   scene: SerializedScene,
   readDataUrl: (relativePath: string) => Promise<string | null>,
 ): Promise<SerializedScene> {
-  const clone = JSON.parse(JSON.stringify(scene)) as SerializedScene;
+  const clone = shallowCloneTree(scene) as SerializedScene;
   const tasks: Promise<void>[] = [];
   walkSerialized(clone, (node) => {
     if (node.type !== 'texture-map') return;

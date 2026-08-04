@@ -36,8 +36,8 @@ export interface AuthoringEngineSession {
   /** Read EditorCameraState from the live EditorCam (for overlay sync). */
   readLiveViewCamera(): EditorCameraState | null;
   /**
-   * Soft-paint a cell on the live cell-map.
-   * Returns flattened packedData for the document when successful, else null.
+   * Soft-paint a cell on the live cell-map (engine SoT).
+   * Returns true when setCellData succeeded — does not dump packedData.
    */
   applyCellPaint(
     componentId: number,
@@ -48,7 +48,23 @@ export interface AuthoringEngineSession {
       emissionIntensity: number;
       visible: boolean;
     },
-  ): number[] | null;
+  ): boolean;
+  /**
+   * Serialize every live cell-map's packedData.
+   * Used before save / unload — not on the paint hot path.
+   * When `yieldFirst` is true (default), awaits one microtask first.
+   */
+  flushLiveCellMaps(options?: {
+    readonly yieldFirst?: boolean;
+  }): Promise<ReadonlyMap<number, number[]>>;
+  /** Synchronous dump for dispose/teardown (no microtask yield). */
+  flushLiveCellMapsSync(): ReadonlyMap<number, number[]>;
+  /**
+   * Document ids of every live cell-map the session currently tracks.
+   * Used by callers to tell a full flush from a partial one — a flush that
+   * doesn't cover every id here must not be treated as complete.
+   */
+  getLiveCellMapIds(): readonly number[];
   resize(width: number, height: number): void;
   dispose(): void;
 }
@@ -234,8 +250,8 @@ export function createAuthoringEngineSession(
       emissionIntensity: number;
       visible: boolean;
     },
-  ): number[] | null {
-    if (disposed) return null;
+  ): boolean {
+    if (disposed) return false;
     const live =
       handles?.idToLive.get(componentId) ??
       findComponentByIdDeep(api.getActiveScene?.(), componentId);
@@ -243,7 +259,7 @@ export function createAuthoringEngineSession(
       !live ||
       typeof (live as { setCellData?: unknown }).setCellData !== 'function'
     ) {
-      return null;
+      return false;
     }
     const Vector3D = api.Vector3D;
     const pos = Vector3D
@@ -255,12 +271,31 @@ export function createAuthoringEngineSession(
           setCellData: (p: unknown, c: unknown) => void;
         }
       ).setCellData(pos, cell);
-      return flattenLivePackedData(live, (c) =>
-        api.serializeComponentRecursive(c),
-      );
+      return true;
     } catch {
-      return null;
+      return false;
     }
+  }
+
+  function getLiveCellMapIds(): readonly number[] {
+    return disposed ? [] : liveCellMapIdsFromHandles(handles);
+  }
+
+  function collectLiveCellMapPacked(): Map<number, number[]> {
+    return disposed ? new Map() : collectLiveCellMapPackedFromHandles(handles);
+  }
+
+  async function flushLiveCellMaps(options?: {
+    readonly yieldFirst?: boolean;
+  }): Promise<ReadonlyMap<number, number[]>> {
+    if (options?.yieldFirst !== false) {
+      await Promise.resolve();
+    }
+    return collectLiveCellMapPacked();
+  }
+
+  function flushLiveCellMapsSync(): ReadonlyMap<number, number[]> {
+    return collectLiveCellMapPacked();
   }
 
   function resize(width: number, height: number): void {
@@ -298,9 +333,58 @@ export function createAuthoringEngineSession(
     applyViewCamera,
     readLiveViewCamera,
     applyCellPaint,
+    flushLiveCellMaps,
+    flushLiveCellMapsSync,
+    getLiveCellMapIds,
     resize,
     dispose,
   };
+}
+
+/** True when a live authoring node is (or acts as) a cell-map. */
+export function isLiveCellMapEntry(live: Record<string, unknown>): boolean {
+  return (
+    live.type === 'cell-map' ||
+    typeof (live as { setCellData?: unknown }).setCellData === 'function'
+  );
+}
+
+/** Document ids of every live cell-map reachable from `handles`. */
+export function liveCellMapIdsFromHandles(
+  handles: AuthoringSceneHandles | null,
+): readonly number[] {
+  const out: number[] = [];
+  if (!handles) return out;
+  for (const [id, live] of handles.idToLive) {
+    if (isLiveCellMapEntry(live)) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * Flatten every live cell-map's packedData reachable from `handles`.
+ * An id present in `liveCellMapIdsFromHandles` but missing from this map's
+ * result means its packedData wasn't introspectable this attempt (logged).
+ */
+export function collectLiveCellMapPackedFromHandles(
+  handles: AuthoringSceneHandles | null,
+): Map<number, number[]> {
+  const out = new Map<number, number[]>();
+  if (!handles) return out;
+  for (const [id, live] of handles.idToLive) {
+    if (!isLiveCellMapEntry(live)) continue;
+    // Prefer forEach flatten only — serializeComponentRecursive also dumps meshes.
+    const packed = flattenLivePackedData(live);
+    if (packed && packed.length > 0) {
+      out.set(id, packed);
+    } else {
+      console.warn(
+        `[voxel-flush] live cell-map #${id} packedData was not readable ` +
+          '(neither array nor forEach-capable) — this stroke will not be flushed this attempt',
+      );
+    }
+  }
+  return out;
 }
 
 function setVec3Prop(

@@ -38,13 +38,17 @@ export function isAuthoringDisplayType(type: string): boolean {
 }
 
 /**
- * Deep-clone a serialized node with override/script keys nulled.
- * Does not strip engine-required fields (packedData, materials, …).
+ * Clone a serialized node (one new object per level — see
+ * `shallowCloneTree` in authoring-load.ts for why this isn't a JSON deep
+ * clone) with override/script keys nulled. Does not strip engine-required
+ * fields (packedData, materials, …); leaf array/object properties are
+ * shared by reference with the input, which is safe here because callers
+ * always pass an already-owned scene clone (see buildAuthoringScene).
  */
 export function nullOverrides(
   node: SerializedComponent,
 ): SerializedComponent {
-  const clone = JSON.parse(JSON.stringify(node)) as Record<string, unknown>;
+  const clone: Record<string, unknown> = { ...(node as Record<string, unknown>) };
   for (const key of OVERRIDE_KEYS) {
     if (key in clone) clone[key] = null;
   }

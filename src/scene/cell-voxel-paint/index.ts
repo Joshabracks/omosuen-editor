@@ -1,5 +1,8 @@
 /**
  * Cell-voxel-paint controller — viewport-attached brush + palette (6b).
+ *
+ * When a live engine cell-map is available, strokes use setCellData only and
+ * do not dump packedData into the document (engine is voxel SoT until flush).
  */
 
 import type { OmosceneFile } from '../../omoscene';
@@ -23,14 +26,8 @@ import {
 
 export const CELL_VOXEL_PAINT_TOOL_ID = 'cell-voxel-paint';
 
-export interface CellVoxelPaintDeps {
-  readonly getDocument: () => OmosceneFile | null;
-  readonly subscribeDocument: (cb: () => void) => () => void;
-  readonly getSelection: () => readonly number[];
-  readonly subscribeSelection: (cb: () => void) => () => void;
-  readonly onDispatch: (message: EditorMessage) => void;
-  /** Soft-apply a cell; returns flattened packedData from the engine, or null. */
-  readonly applyLiveCell?: (
+export interface LiveCellApply {
+  (
     componentId: number,
     coord: CellCoord,
     cell: {
@@ -39,9 +36,73 @@ export interface CellVoxelPaintDeps {
       emissionIntensity: number;
       visible: boolean;
     },
-  ) => number[] | null;
-  /** Tell viewport to skip full scene reload for the next packedData write. */
-  readonly markPaintMutation?: () => void;
+  ): boolean;
+}
+
+/**
+ * Apply one paint/erase stroke. Prefers live engine setCellData; falls back to
+ * mutating a local packed buffer and committing it to the document.
+ * Returns `'live'` | `'fallback'` | `'noop'`.
+ */
+export function applyVoxelStroke(args: {
+  readonly componentId: number;
+  readonly brushTarget: CellCoord;
+  readonly mapSize: MapSize;
+  readonly kind: 'place' | 'erase';
+  readonly selectedMaterial: number;
+  readonly packed: number[];
+  readonly applyLiveCell?: LiveCellApply;
+  readonly markVoxelDirty?: () => void;
+  readonly commitPackedFallback: (next: number[]) => void;
+}): 'live' | 'fallback' | 'noop' {
+  const cell =
+    args.kind === 'place'
+      ? {
+          materialIndex: args.selectedMaterial,
+          shapeIndex: 1,
+          emissionIntensity: 0,
+          visible: true,
+        }
+      : {
+          materialIndex: 0,
+          shapeIndex: 0,
+          emissionIntensity: 0,
+          visible: true,
+        };
+  if (args.applyLiveCell) {
+    const ok = args.applyLiveCell(args.componentId, args.brushTarget, cell);
+    if (ok) {
+      args.markVoxelDirty?.();
+      return 'live';
+    }
+  }
+  const next =
+    args.kind === 'place'
+      ? placeCellAt(
+          args.packed,
+          args.mapSize,
+          args.brushTarget,
+          args.selectedMaterial,
+        )
+      : eraseCellAt(args.packed, args.mapSize, args.brushTarget);
+  if (!next) return 'noop';
+  args.commitPackedFallback(next);
+  return 'fallback';
+}
+
+export interface CellVoxelPaintDeps {
+  readonly getDocument: () => OmosceneFile | null;
+  readonly subscribeDocument: (cb: () => void) => () => void;
+  readonly getSelection: () => readonly number[];
+  readonly subscribeSelection: (cb: () => void) => () => void;
+  readonly onDispatch: (message: EditorMessage) => void;
+  /**
+   * Soft-apply a cell on the live engine cell-map.
+   * Returns true when the engine accepted the stroke (no document packedData write).
+   */
+  readonly applyLiveCell?: LiveCellApply;
+  /** Mark the open document dirty without mutating scene JSON. */
+  readonly markVoxelDirty?: () => void;
 }
 
 export interface CellVoxelPaintHandle {
@@ -112,8 +173,8 @@ export function mountCellVoxelPaint(
   let mapSize: MapSize | null = null;
   let cellSize: CellSize | null = null;
   let brushTarget: CellCoord | null = null;
+  /** Fallback buffer when no live engine session — not used on the live hot path. */
   let packed: number[] = [];
-  let disposed = false;
   let applyingLocal = false;
   const listeners = new Set<() => void>();
 
@@ -161,7 +222,6 @@ export function mountCellVoxelPaint(
     mapSize = { x: ms.x, y: ms.y, z: ms.z };
     cellSize = { x: cs.x, y: cs.y, z: cs.z };
     if (ms.corrected || cs.corrected) {
-      // Persist sane extents so the engine can allocate maps / meshes.
       applyingLocal = true;
       if (ms.corrected) {
         deps.onDispatch(
@@ -185,6 +245,7 @@ export function mountCellVoxelPaint(
       }
       applyingLocal = false;
     }
+    // Keep a fallback copy for offline paint; live strokes ignore this.
     packed = ensurePackedBuffer(comp.packedData, mapSize);
     let mats = parseMaterials(comp.materials);
     if (mats.length === 0) {
@@ -207,11 +268,9 @@ export function mountCellVoxelPaint(
     notify();
   };
 
-  const commitPacked = (next: number[], softApplied: boolean): void => {
+  const commitPackedFallback = (next: number[]): void => {
     if (componentId === null) return;
     packed = next;
-    // Only skip full reload when the live engine already shows the stroke.
-    if (softApplied) deps.markPaintMutation?.();
     applyingLocal = true;
     deps.onDispatch(
       componentUpdate(
@@ -226,39 +285,23 @@ export function mountCellVoxelPaint(
     notify();
   };
 
-  const applyStroke = (
-    kind: 'place' | 'erase',
-  ): void => {
-    if (!active || !brushTarget || !mapSize) return;
-    const cell =
-      kind === 'place'
-        ? {
-            materialIndex: selectedMaterial,
-            shapeIndex: 1,
-            emissionIntensity: 0,
-            visible: true,
-          }
-        : {
-            materialIndex: 0,
-            shapeIndex: 0,
-            emissionIntensity: 0,
-            visible: true,
-          };
-    // Prefer engine setCellData → flatten packedData for the document.
-    if (componentId !== null && deps.applyLiveCell) {
-      const fromEngine = deps.applyLiveCell(componentId, brushTarget, cell);
-      if (fromEngine) {
-        commitPacked(fromEngine, true);
-        return;
-      }
+  const applyStroke = (kind: 'place' | 'erase'): void => {
+    if (!active || !brushTarget || !mapSize || componentId === null) return;
+    const result = applyVoxelStroke({
+      componentId,
+      brushTarget,
+      mapSize,
+      kind,
+      selectedMaterial,
+      packed,
+      applyLiveCell: deps.applyLiveCell,
+      markVoxelDirty: deps.markVoxelDirty,
+      commitPackedFallback,
+    });
+    if (result === 'live') {
+      renderChrome();
+      notify();
     }
-    // Fallback: local buffer math + full reload.
-    const next =
-      kind === 'place'
-        ? placeCellAt(packed, mapSize, brushTarget, selectedMaterial)
-        : eraseCellAt(packed, mapSize, brushTarget);
-    if (!next) return;
-    commitPacked(next, false);
   };
 
   const api: CellVoxelPaintHandle = {
@@ -342,14 +385,12 @@ export function mountCellVoxelPaint(
 
   const unsubDoc = deps.subscribeDocument(() => loadFromDocument());
   const unsubSel = deps.subscribeSelection(() => {
-    // Keep paint bound to its component; closing is explicit / tool-driven.
     notify();
   });
 
   renderChrome();
 
   return () => {
-    disposed = true;
     unsubDoc();
     unsubSel();
     if (handle === api) handle = null;

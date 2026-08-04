@@ -48,3 +48,51 @@ export function sceneStructureKey(file: OmosceneFile | null): string {
   walkNode(file.scene);
   return parts.join('|');
 }
+
+/**
+ * cell-map fields that are large, engine-computed/derived, and must not
+ * affect authoring-region identity — only their *presence* (via a cheap
+ * stub) matters, never their content. Mirrors schema.ts's
+ * `excludeFromInspector` list for cell-map, minus `materials` (texture-key
+ * changes there legitimately need a re-register-with-atlas cold boot).
+ */
+const VOLATILE_CELL_MAP_FIELDS = new Set([
+  'packedData',
+  'meshes',
+  'chunks',
+  'chunkGridSize',
+  'materialMap',
+  'shapeMap',
+  'emissionMap',
+  'visibilityMap',
+  'smoothingWeights',
+  'needsGPUUpdate',
+]);
+
+/** Clone scene JSON with large derived cell-map fields replaced by cheap stubs. */
+function sceneWithoutVoxelPayload(node: unknown): unknown {
+  if (Array.isArray(node)) {
+    return node.map(sceneWithoutVoxelPayload);
+  }
+  if (!node || typeof node !== 'object') return node;
+  const row = node as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (VOLATILE_CELL_MAP_FIELDS.has(key)) {
+      out[key] = Array.isArray(value) ? { _len: value.length } : '<stubbed>';
+      continue;
+    }
+    out[key] = sceneWithoutVoxelPayload(value);
+  }
+  return out;
+}
+
+/**
+ * Authoring region identity: engine + scene without voxel/derived payloads.
+ * packedData (and other large engine-computed cell-map fields) content
+ * changes must not force cold boot; structure / materials / mapSize / ids
+ * still distinguish documents.
+ */
+export function sceneRegionKey(file: OmosceneFile): string {
+  return `${file.engine}::${JSON.stringify(sceneWithoutVoxelPayload(file.scene))}`;
+}

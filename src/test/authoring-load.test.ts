@@ -122,6 +122,20 @@ test('flattenLivePackedData reads forEach getter or array', () => {
   );
 });
 
+test('flattenLivePackedData returns null for unreadable packedData shapes', () => {
+  // Neither array nor forEach-capable, and no serialize fallback provided —
+  // this is the real-world shape mismatch that produces an empty flush
+  // (see .design/audit00.md §1.1 / tasks/00a).
+  assert.equal(flattenLivePackedData({ packedData: undefined }), null);
+  assert.equal(flattenLivePackedData({ packedData: 42 }), null);
+  assert.equal(flattenLivePackedData({}), null);
+  // Serialize fallback provided but doesn't yield a packedData array either.
+  assert.equal(
+    flattenLivePackedData({}, () => ({ packedData: 'nope' })),
+    null,
+  );
+});
+
 test('deserializeAuthoringRoot awaits {component,errors} shape', async () => {
   const { deserializeAuthoringRoot } = await import(
     '../views/viewport/authoring-load'

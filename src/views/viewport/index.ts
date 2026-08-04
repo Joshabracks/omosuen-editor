@@ -14,6 +14,12 @@ import {
   mountCellVoxelPaint,
 } from '../../scene/cell-voxel-paint';
 import { createAuthoringSyncBridge } from './authoring-sync';
+import {
+  canPatchFlushedIntoCurrent,
+  flushIsComplete,
+  mergeCellMapPackedData,
+} from './cell-map-flush';
+import { sceneRegionKey } from './entities';
 import { loadEngineUmd } from './engine-loader';
 import { mountGizmoOverlay, type GizmoOverlayHandle } from './gizmo-overlay';
 import {
@@ -25,6 +31,8 @@ import {
   camerasEqual,
   editorCameraFromUnknown,
 } from './view-camera';
+
+export { sceneRegionKey } from './entities';
 
 export const VIEWPORT_VIEW_ID = 'viewport';
 
@@ -41,6 +49,19 @@ export interface ViewportDeps {
    * incremental protocol messages reach the live engine graph.
    */
   readonly registerPanel: (bridge: Bridge) => () => void;
+  /** Mark document dirty without mutating scene JSON (live voxel paint). */
+  readonly markVoxelDirty: () => void;
+  /** Register pre-save flush of live cell-maps into the document. */
+  readonly setBeforeSave: (
+    hook: ((file: OmosceneFile) => Promise<OmosceneFile>) | null,
+  ) => void;
+  /**
+   * Patch sceneDocument without scene:load (flush on unload / cold boot).
+   */
+  readonly patchDocumentSilent: (
+    file: OmosceneFile,
+    options?: { readonly dirty?: boolean },
+  ) => void;
   /** Prefer scene file engine; fall back to project pin / default. */
   readonly resolveEngineVersion: () => Promise<string>;
   readonly ensureEngine: (version: string) => Promise<{
@@ -80,6 +101,10 @@ export function mountAuthoringViewport(
   let bootGeneration = 0;
   let lastSceneRegionKey = '';
   let lastLoadedVersion = '';
+  /** Scene file last loaded into the live session (flush target). */
+  let lastBootFile: OmosceneFile | null = null;
+  /** True after live paint until a successful flush. */
+  let voxelDirty = false;
   let viewCamera: EditorCameraState = editorCameraFromUnknown(
     deps.getDocument()?.editor.camera,
   );
@@ -97,9 +122,6 @@ export function mountAuthoringViewport(
       deps.onStatus?.(message);
     }
   };
-
-  const sceneRegionKey = (file: OmosceneFile): string =>
-    `${file.engine}::${JSON.stringify(file.scene)}`;
 
   const syncViewCameraFromDocument = (): void => {
     const file = deps.getDocument();
@@ -143,6 +165,48 @@ export function mountAuthoringViewport(
     });
   };
 
+  /**
+   * True only when `patches` covers every live cell-map the session knows
+   * about. Partial capture (e.g. one map's packedData wasn't introspectable)
+   * must not clear voxelDirty — the un-captured voxels would otherwise be
+   * silently lost with no retry.
+   */
+  const flushFullyCaptured = (
+    patches: ReadonlyMap<number, number[]>,
+  ): boolean => {
+    const expectedIds = session?.getLiveCellMapIds() ?? [];
+    const { complete, missing } = flushIsComplete(expectedIds, patches);
+    if (!complete) {
+      console.warn(
+        `[voxel-flush] captured ${patches.size}/${expectedIds.length} live cell-map(s); ` +
+          `missing ids [${missing.join(', ')}] — keeping voxelDirty for retry`,
+      );
+    }
+    return complete;
+  };
+
+  /**
+   * Flush live cell-maps into `target` only. Never assume getDocument()
+   * matches the live session (document may already be swapped).
+   */
+  const flushLiveInto = async (
+    target: OmosceneFile,
+  ): Promise<OmosceneFile> => {
+    if (!session || !voxelDirty) return target;
+    const patches = await session.flushLiveCellMaps();
+    if (flushFullyCaptured(patches)) voxelDirty = false;
+    if (patches.size === 0) return target;
+    return mergeCellMapPackedData(target, patches);
+  };
+
+  const flushLiveIntoSync = (target: OmosceneFile): OmosceneFile => {
+    if (!session || !voxelDirty) return target;
+    const patches = session.flushLiveCellMapsSync();
+    if (flushFullyCaptured(patches)) voxelDirty = false;
+    if (patches.size === 0) return target;
+    return mergeCellMapPackedData(target, patches);
+  };
+
   const ensurePaint = (): void => {
     if (disposePaint || disposed) return;
     disposePaint = mountCellVoxelPaint(container, {
@@ -152,9 +216,10 @@ export function mountAuthoringViewport(
       subscribeSelection: deps.subscribeSelection,
       onDispatch: deps.onDispatch,
       applyLiveCell: (id, coord, cell) =>
-        session?.applyCellPaint(id, coord, cell) ?? null,
-      markPaintMutation: () => {
-        // Live sync applies packedData updates without reload.
+        session?.applyCellPaint(id, coord, cell) ?? false,
+      markVoxelDirty: () => {
+        voxelDirty = true;
+        deps.markVoxelDirty();
       },
     });
     unsubPaint =
@@ -167,6 +232,33 @@ export function mountAuthoringViewport(
   const coldBoot = async (file: OmosceneFile): Promise<void> => {
     const gen = ++bootGeneration;
     try {
+      // Computed once and reused below — sceneRegionKey walks + stringifies
+      // the whole scene tree, so don't pay for it twice per boot.
+      const incomingRegionKey = sceneRegionKey(file);
+      const sameRegionAsLast =
+        lastSceneRegionKey !== '' && incomingRegionKey === lastSceneRegionKey;
+
+      // Persist live voxels into the *previous* boot file before rebuild.
+      // Never merge into an already-swapped incoming document by colliding ids.
+      if (session && lastBootFile && voxelDirty) {
+        const flushed = await flushLiveInto(lastBootFile);
+        lastBootFile = flushed;
+        if (
+          sameRegionAsLast &&
+          canPatchFlushedIntoCurrent(
+            deps.getDocument(),
+            flushed,
+            sceneRegionKey,
+          )
+        ) {
+          const current = deps.getDocument()!;
+          if (flushed !== current) {
+            deps.patchDocumentSilent(flushed, { dirty: true });
+          }
+        }
+        if (disposed || gen !== bootGeneration) return;
+      }
+
       setStatus(`Loading engine ${file.engine}…`, 'info');
       const version = (await deps.resolveEngineVersion()) || file.engine;
       if (disposed || gen !== bootGeneration) return;
@@ -201,11 +293,22 @@ export function mountAuthoringViewport(
         setStatus(mismatch, 'warn');
       }
 
-      viewCamera = editorCameraFromUnknown(file.editor.camera);
-      await session.loadScene(file.scene, viewCamera);
+      const current = deps.getDocument();
+      // Same-region rebuild may use flushed document; region change always uses incoming file.
+      const currentRegionKey =
+        sameRegionAsLast && current ? sceneRegionKey(current) : null;
+      const useCurrentAsBootFile =
+        sameRegionAsLast && current && currentRegionKey === lastSceneRegionKey;
+      const bootFile = useCurrentAsBootFile ? current : file;
+      const bootFileRegionKey = useCurrentAsBootFile
+        ? currentRegionKey!
+        : incomingRegionKey;
+      viewCamera = editorCameraFromUnknown(bootFile.editor.camera);
+      await session.loadScene(bootFile.scene, viewCamera);
       if (disposed || gen !== bootGeneration) return;
 
-      lastSceneRegionKey = sceneRegionKey(file);
+      lastBootFile = bootFile;
+      lastSceneRegionKey = bootFileRegionKey;
       lastLoadedVersion = version;
       const rect = canvasHost.getBoundingClientRect();
       session.resize(rect.width, rect.height);
@@ -230,13 +333,6 @@ export function mountAuthoringViewport(
     },
     getHandles: () => session?.getHandles() ?? null,
     getDocument: deps.getDocument,
-    isSameSceneRegion: (file) =>
-      Boolean(session) &&
-      sceneRegionKey(file) === lastSceneRegionKey &&
-      session!.loadedVersion === lastLoadedVersion,
-    onSceneLoad: async (file) => {
-      await coldBoot(file);
-    },
     onSelect: () => {
       overlay?.updatePointerPolicy();
       overlay?.refresh();
@@ -274,6 +370,13 @@ export function mountAuthoringViewport(
 
   const unregisterPanel = deps.registerPanel(safeBridge);
 
+  deps.setBeforeSave(async (file) => {
+    if (!session || !voxelDirty) return file;
+    const next = await flushLiveInto(file);
+    lastBootFile = next;
+    return next;
+  });
+
   const observer = new ResizeObserver((entries) => {
     const entry = entries[0];
     if (!entry) return;
@@ -301,6 +404,22 @@ export function mountAuthoringViewport(
   return () => {
     disposed = true;
     bootGeneration += 1;
+    deps.setBeforeSave(null);
+    // Sync dump into the last booted file — never into a swapped document.
+    if (session && lastBootFile && voxelDirty) {
+      const flushed = flushLiveIntoSync(lastBootFile);
+      lastBootFile = flushed;
+      if (
+        canPatchFlushedIntoCurrent(
+          deps.getDocument(),
+          flushed,
+          sceneRegionKey,
+        ) &&
+        flushed !== deps.getDocument()
+      ) {
+        deps.patchDocumentSilent(flushed, { dirty: true });
+      }
+    }
     unregisterPanel();
     safeBridge.dispose();
     unsubDoc();

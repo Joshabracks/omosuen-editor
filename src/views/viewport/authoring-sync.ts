@@ -1,15 +1,18 @@
 /**
  * Live authoring sync — DocumentController Bridge applies incremental
  * EditorMessages onto the engine graph (no full scene reload).
+ *
+ * `scene:load` is NOT handled here — `viewport/index.ts`'s `safeBridge`
+ * intercepts it directly (region-key + engine-version comparison, then
+ * `coldBoot`) and never forwards it into this bridge's `dispatch`. Do not
+ * add a `scene:load` case back without also wiring that forwarding, or it
+ * will be unreachable dead code (see .design/tasks/00e).
  */
 
 import type { Bridge, BridgeListener } from '../../bridge/protocol-bridge';
 import type { OmosceneFile, SerializedComponent } from '../../omoscene';
 import type { EditorMessage } from '../../protocol';
 import { findComponentById } from '../../scene';
-import {
-  flattenLivePackedData,
-} from './authoring-load';
 import { isAuthoringDisplayType } from './authoring-allowlist';
 import {
   ensureAtlasCompiled,
@@ -23,10 +26,6 @@ export interface AuthoringSyncDeps {
   readonly api: OmosuenEngineApi;
   readonly getHandles: () => AuthoringSceneHandles | null;
   readonly getDocument: () => OmosceneFile | null;
-  /** Cold-boot when scene:load carries a new scene region / engine. */
-  readonly onSceneLoad: (file: OmosceneFile) => void | Promise<void>;
-  /** True when scene:load should skip rebuild (editor-metadata only). */
-  readonly isSameSceneRegion: (file: OmosceneFile) => boolean;
   readonly onSelect?: (ids: readonly number[]) => void;
   readonly onDesync?: (reason: string) => void;
 }
@@ -46,13 +45,10 @@ export function createAuthoringSyncBridge(
     if (disposed) return;
 
     switch (msg.kind) {
-      case 'scene:load': {
-        if (deps.isSameSceneRegion(msg.file)) {
-          return;
-        }
-        await deps.onSceneLoad(msg.file);
+      case 'scene:load':
+        // Handled by viewport/index.ts's safeBridge before it ever reaches
+        // this bridge — see the module doc comment above.
         return;
-      }
       case 'component:select': {
         deps.onSelect?.(msg.ids);
         return;
@@ -223,7 +219,7 @@ function applyUpdate(
   if (!live) return;
 
   if (property === 'packedData' && Array.isArray(value)) {
-    applyPackedData(deps.api, live, value as number[]);
+    // Engine cell-map is voxel SoT while live — do not re-apply dumps.
     return;
   }
 
@@ -232,29 +228,6 @@ function applyUpdate(
   } catch {
     // Some proxies reject assignment; ignore soft failures.
   }
-}
-
-function applyPackedData(
-  api: OmosuenEngineApi,
-  live: Record<string, unknown>,
-  packed: number[],
-): void {
-  const current = live.packedData;
-  if (
-    current &&
-    typeof current === 'object' &&
-    !Array.isArray(current) &&
-    typeof (current as { indexSet?: unknown }).indexSet === 'function'
-  ) {
-    const indexSet = (current as { indexSet: (i: number, v: number) => void })
-      .indexSet;
-    for (let i = 0; i < packed.length; i++) {
-      indexSet(i, packed[i]! >>> 0);
-    }
-    return;
-  }
-  live.packedData = packed;
-  void flattenLivePackedData(live, (c) => api.serializeComponentRecursive(c));
 }
 
 function hydrateEngineValue(api: OmosuenEngineApi, value: unknown): unknown {
