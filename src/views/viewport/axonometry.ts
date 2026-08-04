@@ -1,7 +1,14 @@
 /**
  * Axonometric projection helpers for the authoring gizmo overlay.
- * Convention matches the V1 preview overlay (pan/zoom + flipped screen Y).
- * Yaw rotates world XZ before iso projection (independent of scene cameras).
+ *
+ * Matches the engine screen-pick math in
+ * `omosuen/src/component/camera/screen-pick/projection-math.ts`:
+ *   projScale = zoom²
+ *   screen Y = (isoY - camIsoY) * projScale + H/2  (no extra DOM flip)
+ *   yaw: rx = c*x + s*z, rz = -s*x + c*z
+ *
+ * The engine's WebGL clip already flips Y (`vec2(1,-1)`); overlay canvas is
+ * Y-down like the engine's pixel pick space — do not invert again.
  */
 
 export interface OverlayCamera {
@@ -12,7 +19,7 @@ export interface OverlayCamera {
   readonly vpH: number;
   /** Axonometric elevation degrees (0..90). */
   readonly angle: number;
-  /** Yaw around world Y in degrees. */
+  /** Yaw around world Y in degrees (engine orbitYaw). */
   readonly yaw: number;
 }
 
@@ -33,25 +40,38 @@ export interface Vec3 {
   readonly z: number;
 }
 
+/** Engine `ISO_H` — constant horizontal spread (cos 30°). */
+const ISO_H = 0.8660254;
+
 export function getAngleValues(angleDeg: number): AngleValues {
   const angle = Math.max(0, Math.min(90, angleDeg));
   const rad = (angle * Math.PI) / 180;
   return {
-    cos: 0.8660254,
+    cos: ISO_H,
     sin: Math.sin(rad),
     hs: Math.cos(rad) * 1.1547005,
   };
 }
 
-/** Rotate world XZ by yaw (degrees) around +Y. */
+/** Engine projScale — zoom is applied squared. */
+export function projScale(zoom: number): number {
+  const z = Number.isFinite(zoom) ? zoom : 1;
+  return z * z;
+}
+
+/**
+ * Rotate world XZ by yaw (degrees) around +Y — matches engine orbitYaw:
+ *   rx = x*cos + z*sin
+ *   rz = -x*sin + z*cos
+ */
 export function applyYaw(wx: number, wz: number, yawDeg: number): Vec2 {
   if (!yawDeg) return { x: wx, y: wz };
   const rad = (yawDeg * Math.PI) / 180;
   const c = Math.cos(rad);
   const s = Math.sin(rad);
   return {
-    x: wx * c - wz * s,
-    y: wx * s + wz * c,
+    x: wx * c + wz * s,
+    y: -wx * s + wz * c,
   };
 }
 
@@ -73,10 +93,10 @@ function projectDirection(
   yawDeg: number,
 ): Vec2 {
   const spun = applyYaw(wx, wz, yawDeg);
-  const isoX = av.cos * spun.x - av.cos * spun.y;
-  const isoY = av.sin * spun.x - av.hs * wy + av.sin * spun.y;
-  // Screen delta matches worldToScreen derivative (y flipped).
-  return { x: isoX, y: -isoY };
+  const isoX = av.cos * (spun.x - spun.y);
+  const isoY = av.sin * (spun.x + spun.y) - av.hs * wy;
+  // Screen delta matches worldToScreen (no Y flip).
+  return { x: isoX, y: isoY };
 }
 
 export function worldToScreen(
@@ -87,11 +107,12 @@ export function worldToScreen(
 ): Vec2 {
   const av = getAngleValues(cam.angle);
   const spun = applyYaw(wx, wz, cam.yaw);
-  const isoX = av.cos * spun.x - av.cos * spun.y;
-  const isoY = av.sin * spun.x - av.hs * wy + av.sin * spun.y;
+  const isoX = av.cos * (spun.x - spun.y);
+  const isoY = av.sin * (spun.x + spun.y) - av.hs * wy;
+  const scale = projScale(cam.zoom);
   return {
-    x: (isoX - cam.panX) * cam.zoom + cam.vpW / 2,
-    y: cam.vpH / 2 - (isoY - cam.panY) * cam.zoom,
+    x: (isoX - cam.panX) * scale + cam.vpW / 2,
+    y: (isoY - cam.panY) * scale + cam.vpH / 2,
   };
 }
 
@@ -103,16 +124,17 @@ export function screenToWorldOnPlane(
   groundY = 0,
 ): Vec3 {
   const av = getAngleValues(cam.angle);
-  const isoX = (sx - cam.vpW / 2) / Math.max(cam.zoom, 1e-6) + cam.panX;
-  const isoY = cam.panY - (sy - cam.vpH / 2) / Math.max(cam.zoom, 1e-6);
-  // Solve for spun x/z with wy = groundY:
-  // isoX = cos*(sx) - cos*(sz)
-  // isoY = sin*(sx) - hs*groundY + sin*(sz)
+  const scale = Math.max(projScale(cam.zoom), 1e-6);
+  const isoX = (sx - cam.vpW / 2) / scale + cam.panX;
+  const isoY = (sy - cam.vpH / 2) / scale + cam.panY;
+  // isoX = cos*(rx - rz)
+  // isoY = sin*(rx + rz) - hs*groundY
   const cos = av.cos || 1e-6;
-  const spunX = (isoX / cos + (isoY + av.hs * groundY) / (av.sin || 1e-6)) / 2;
-  const spunZ = ((isoY + av.hs * groundY) / (av.sin || 1e-6) - isoX / cos) / 2;
-  // Inverse yaw
-  const rad = (-cam.yaw * Math.PI) / 180;
+  const sin = av.sin < 0.01 ? 0.01 : av.sin;
+  const spunX = (isoX / cos + (isoY + av.hs * groundY) / sin) / 2;
+  const spunZ = ((isoY + av.hs * groundY) / sin - isoX / cos) / 2;
+  // Inverse of applyYaw (transpose of [[c,s],[-s,c]]).
+  const rad = (cam.yaw * Math.PI) / 180;
   const c = Math.cos(rad);
   const s = Math.sin(rad);
   return {

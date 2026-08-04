@@ -1,27 +1,63 @@
 /**
- * Live EngineSceneCodec backed by window.Omosuen (4a/4b).
- * Authoring display uses an injected EditorCamera — not scene cameras.
+ * Live authoring engine session — cold-boot via authoring-scene builder;
+ * incremental edits via id→live map (no full reload on ordinary edits).
  */
 
-import type { EditorCameraState } from '../../omoscene';
-import type { EngineSceneCodec } from '../../omoscene';
-import type { SerializedScene } from '../../omoscene';
-import type { OmosuenEngineApi } from './engine-loader';
+import type {
+  EditorCameraState,
+  EngineSceneCodec,
+  SerializedScene,
+} from '../../omoscene';
 import {
-  EDITOR_CAMERA_NAME,
-  EDITOR_CAM_TRANSFORM_NAME,
-  prepareSceneForAuthoring,
-} from './prepare';
-import { isoPanToWorld } from './view-camera-map';
+  flattenLivePackedData,
+  registerAndSwitchAuthoringScene,
+  waitForEngineInit,
+} from './authoring-load';
+import {
+  buildAuthoringScene,
+  ensureAtlasCompiled,
+  type AuthoringSceneHandles,
+} from './authoring-scene';
+import type { OmosuenEngineApi } from './engine-loader';
+import { clampViewCamera } from './view-camera';
+import { isoPanToWorld, worldToIsoPan } from './view-camera-map';
 
 export interface AuthoringEngineSession {
   readonly api: OmosuenEngineApi;
   readonly codec: EngineSceneCodec;
   readonly loadedVersion: string;
-  loadScene(scene: SerializedScene, viewCamera?: EditorCameraState): void;
+  /** Cold-boot (or rebuild) the authoring display scene. */
+  loadScene(
+    scene: SerializedScene,
+    viewCamera?: EditorCameraState,
+  ): Promise<void>;
+  getHandles(): AuthoringSceneHandles | null;
   applyViewCamera(cam: EditorCameraState): void;
+  /** Read EditorCameraState from the live EditorCam (for overlay sync). */
+  readLiveViewCamera(): EditorCameraState | null;
+  /**
+   * Soft-paint a cell on the live cell-map.
+   * Returns flattened packedData for the document when successful, else null.
+   */
+  applyCellPaint(
+    componentId: number,
+    coord: { x: number; y: number; z: number },
+    cell: {
+      materialIndex: number;
+      shapeIndex: number;
+      emissionIntensity: number;
+      visible: boolean;
+    },
+  ): number[] | null;
   resize(width: number, height: number): void;
   dispose(): void;
+}
+
+export interface AuthoringSessionOptions {
+  readonly readImageDataUrl?: (
+    relativePath: string,
+  ) => Promise<string | null>;
+  readonly onCameraMoved?: () => void;
 }
 
 const AUTHORING_SCENE_KEY = 'authoring';
@@ -30,11 +66,12 @@ export function createAuthoringEngineSession(
   api: OmosuenEngineApi,
   loadedVersion: string,
   canvasHost: HTMLElement,
+  options: AuthoringSessionOptions = {},
 ): AuthoringEngineSession {
   let started = false;
   let disposed = false;
-  let liveCamera: Record<string, unknown> | null = null;
-  let liveTransform: Record<string, unknown> | null = null;
+  let handles: AuthoringSceneHandles | null = null;
+  let loadGeneration = 0;
 
   const codec: EngineSceneCodec = {
     serializeFromEngine() {
@@ -45,7 +82,7 @@ export function createAuthoringEngineSession(
       return api.serializeComponentRecursive(active) as SerializedScene;
     },
     deserializeIntoEngine(scene) {
-      loadScene(scene);
+      void loadScene(scene);
     },
   };
 
@@ -59,6 +96,19 @@ export function createAuthoringEngineSession(
       if (isGizmoOverlay(canvas)) continue;
       canvasHost.appendChild(canvas);
     }
+    // Viewport may append its own container — move into host.
+    const orphansDiv = document.body.querySelectorAll(
+      ':scope > div.omosuen-viewport, :scope > div[class*="viewport"]',
+    );
+    for (const el of orphansDiv) {
+      canvasHost.appendChild(el);
+    }
+    if (handles?.viewport) {
+      const container = handles.viewport.container as HTMLElement | undefined;
+      if (container && container.parentElement !== canvasHost) {
+        canvasHost.appendChild(container);
+      }
+    }
     for (const canvas of canvasHost.querySelectorAll('canvas')) {
       if (isGizmoOverlay(canvas)) continue;
       const el = canvas as HTMLCanvasElement;
@@ -68,80 +118,172 @@ export function createAuthoringEngineSession(
     }
   }
 
-  function resolveLiveRefs(): void {
-    liveCamera = null;
-    liveTransform = null;
-    const active = api.getActiveScene?.();
-    if (!active) return;
-    liveCamera = findNamedComponent(active, EDITOR_CAMERA_NAME);
-    liveTransform = findNamedComponent(active, EDITOR_CAM_TRANSFORM_NAME);
-    if (!liveTransform && liveCamera) {
-      const parent = (liveCamera as { parent?: unknown }).parent;
-      if (parent) {
-        liveTransform = findNamedComponent(parent, EDITOR_CAM_TRANSFORM_NAME);
-        if (!liveTransform) {
-          liveTransform = findTypedComponent(parent, 'transform');
-        }
-      }
-    }
-  }
-
-  function loadScene(
+  async function loadScene(
     scene: SerializedScene,
     viewCamera?: EditorCameraState,
-  ): void {
+  ): Promise<void> {
     if (disposed) return;
-    const prepared = prepareSceneForAuthoring(scene, viewCamera);
+    const gen = ++loadGeneration;
+
+    handles?.disposeInput();
+    handles = null;
+
     if (!started) {
       api.init();
       started = true;
     }
-    const root = api.deserializeComponentRecursive(prepared.scene);
-    if (!root) {
-      throw new Error('Engine failed to deserialize scene');
+
+    const rect = canvasHost.getBoundingClientRect();
+    const built = await buildAuthoringScene({
+      api,
+      scene,
+      hostWidth: rect.width || 800,
+      hostHeight: rect.height || 600,
+      viewCamera,
+      readImageDataUrl: options.readImageDataUrl,
+      onCameraMoved: options.onCameraMoved,
+    });
+    if (disposed || gen !== loadGeneration) {
+      built.disposeInput();
+      return;
     }
-    api.registerScene(AUTHORING_SCENE_KEY, root);
-    api.switchScene(AUTHORING_SCENE_KEY);
+    handles = built;
+
+    await registerAndSwitchAuthoringScene(api, AUTHORING_SCENE_KEY, built.root);
+    if (disposed || gen !== loadGeneration) return;
     api.start(30);
-    resolveLiveRefs();
+    await waitForEngineInit(api);
+    if (disposed || gen !== loadGeneration) return;
+    // Texture images finish loading during init — compile atlas so cell-map
+    // materials resolve albedoTextureKey → packedFrames.
+    await ensureAtlasCompiled(built.atlasManager);
+    if (disposed || gen !== loadGeneration) return;
     if (viewCamera) applyViewCamera(viewCamera);
     requestAnimationFrame(() => {
+      if (disposed || gen !== loadGeneration) return;
       adoptCanvases();
-      resolveLiveRefs();
       if (viewCamera) applyViewCamera(viewCamera);
+      const r = canvasHost.getBoundingClientRect();
+      resize(r.width, r.height);
     });
   }
 
   function applyViewCamera(cam: EditorCameraState): void {
-    if (disposed) return;
-    if (!liveCamera || !liveTransform) resolveLiveRefs();
-    if (liveCamera) {
-      liveCamera.zoom = cam.zoom;
-      liveCamera.axonometricAngle = cam.axonometricAngle;
+    if (disposed || !handles) return;
+    const { camera, transform } = handles;
+    if (camera) {
+      camera.zoom = cam.zoom;
+      camera.axonometricAngle = cam.axonometricAngle;
+      const setOrbitYaw = camera.setOrbitYaw as
+        | ((deg: number) => void)
+        | undefined;
+      if (typeof setOrbitYaw === 'function') {
+        setOrbitYaw.call(camera, cam.yaw);
+      } else {
+        camera.orbitYaw = cam.yaw;
+      }
     }
-    if (liveTransform) {
-      // Classic iso inverse (yaw on rotation.y for the engine).
+    if (transform) {
+      // World position encodes iso pan at yaw 0; orbitYaw rotates the view.
       const world = isoPanToWorld({ ...cam, yaw: 0 });
-      setVec3Prop(liveTransform, 'position', world.x, world.y, world.z);
-      setVec3Prop(liveTransform, 'rotation', 0, cam.yaw, 0);
+      setVec3Prop(transform, 'position', world.x, world.y, world.z);
+      setVec3Prop(transform, 'rotation', 0, 0, 0);
+    }
+  }
+
+  function readLiveViewCamera(): EditorCameraState | null {
+    if (disposed || !handles?.camera || !handles.transform) return null;
+    const camera = handles.camera;
+    const transform = handles.transform;
+    const pos = transform.position as
+      | { x?: number; y?: number; z?: number }
+      | undefined;
+    const wx = typeof pos?.x === 'number' ? pos.x : 0;
+    const wy = typeof pos?.y === 'number' ? pos.y : 0;
+    const wz = typeof pos?.z === 'number' ? pos.z : 0;
+    const yaw =
+      typeof camera.orbitYaw === 'number' && Number.isFinite(camera.orbitYaw)
+        ? camera.orbitYaw
+        : 0;
+    const zoom =
+      typeof camera.zoom === 'number' && Number.isFinite(camera.zoom)
+        ? camera.zoom
+        : 1;
+    const angle =
+      typeof camera.axonometricAngle === 'number' &&
+      Number.isFinite(camera.axonometricAngle)
+        ? camera.axonometricAngle
+        : 30;
+    // Position was written at yaw 0; orbitYaw is separate.
+    const pan = worldToIsoPan(wx, wy, wz, angle, 0);
+    return clampViewCamera({
+      panX: pan.panX,
+      panY: pan.panY,
+      zoom,
+      axonometricAngle: angle,
+      yaw,
+    });
+  }
+
+  function applyCellPaint(
+    componentId: number,
+    coord: { x: number; y: number; z: number },
+    cell: {
+      materialIndex: number;
+      shapeIndex: number;
+      emissionIntensity: number;
+      visible: boolean;
+    },
+  ): number[] | null {
+    if (disposed) return null;
+    const live =
+      handles?.idToLive.get(componentId) ??
+      findComponentByIdDeep(api.getActiveScene?.(), componentId);
+    if (
+      !live ||
+      typeof (live as { setCellData?: unknown }).setCellData !== 'function'
+    ) {
+      return null;
+    }
+    const Vector3D = api.Vector3D;
+    const pos = Vector3D
+      ? new Vector3D(coord.x, coord.y, coord.z)
+      : { x: coord.x, y: coord.y, z: coord.z };
+    try {
+      (
+        live as {
+          setCellData: (p: unknown, c: unknown) => void;
+        }
+      ).setCellData(pos, cell);
+      return flattenLivePackedData(live, (c) =>
+        api.serializeComponentRecursive(c),
+      );
+    } catch {
+      return null;
     }
   }
 
   function resize(width: number, height: number): void {
     if (disposed || width <= 0 || height <= 0) return;
-    for (const canvas of canvasHost.querySelectorAll('canvas')) {
-      if (isGizmoOverlay(canvas)) continue;
-      const el = canvas as HTMLCanvasElement;
-      const dpr = window.devicePixelRatio || 1;
-      el.width = Math.max(1, Math.floor(width * dpr));
-      el.height = Math.max(1, Math.floor(height * dpr));
+    const w = Math.max(1, Math.floor(width));
+    const h = Math.max(1, Math.floor(height));
+    const vp = handles?.viewport;
+    if (vp && typeof vp.resize === 'function') {
+      (vp.resize as (width: number, height: number) => void).call(vp, w, h);
     }
+    const cam = handles?.camera;
+    if (cam && typeof cam.resize === 'function') {
+      (cam.resize as () => void).call(cam);
+    }
+    // Do NOT stomp WebGL canvas.width/height with DPR — viewport.resize owns
+    // the buffer size. DPR scaling here desyncs the FBO and blanks cell-maps.
   }
 
   function dispose(): void {
     disposed = true;
-    liveCamera = null;
-    liveTransform = null;
+    loadGeneration += 1;
+    handles?.disposeInput();
+    handles = null;
     for (const child of [...canvasHost.children]) {
       if (!isGizmoOverlay(child)) child.remove();
     }
@@ -152,7 +294,10 @@ export function createAuthoringEngineSession(
     codec,
     loadedVersion,
     loadScene,
+    getHandles: () => handles,
     applyViewCamera,
+    readLiveViewCamera,
+    applyCellPaint,
     resize,
     dispose,
   };
@@ -176,48 +321,19 @@ function setVec3Prop(
   obj[key] = { x, y, z };
 }
 
-function findNamedComponent(
+function findComponentByIdDeep(
   root: unknown,
-  name: string,
-): Record<string, unknown> | null {
-  return walkFind(root, (node) => node.name === name);
-}
-
-function findTypedComponent(
-  root: unknown,
-  type: string,
-): Record<string, unknown> | null {
-  return walkFind(root, (node) => node.type === type);
-}
-
-function walkFind(
-  root: unknown,
-  pred: (node: Record<string, unknown>) => boolean,
+  id: number,
 ): Record<string, unknown> | null {
   if (!root || typeof root !== 'object') return null;
   const node = root as Record<string, unknown>;
-  if (pred(node)) return node;
-
-  const byName = (
-    node as { getComponentByName?: (n: string, deep?: boolean) => unknown }
-  ).getComponentByName;
-  if (typeof byName === 'function') {
-    try {
-      const hit = byName.call(node, String(node.name ?? ''), true);
-      void hit;
-    } catch {
-      // ignore
-    }
-  }
-
+  if (node.id === id) return node;
   const children = node.components;
   if (Array.isArray(children)) {
     for (const child of children) {
-      const found = walkFind(child, pred);
+      const found = findComponentByIdDeep(child, id);
       if (found) return found;
     }
   }
-
-  // Some engine graphs nest via child nexuses on the same array.
   return null;
 }

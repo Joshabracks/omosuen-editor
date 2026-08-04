@@ -39,17 +39,35 @@ test('yaw rotates projected points around Y', () => {
     angle: 30,
     yaw: 0,
   };
-  const a = worldToScreen(16, 0, 0, base);
-  const b = worldToScreen(16, 0, 0, { ...base, yaw: 90 });
+  // (16,0,16) is asymmetric under 90° yaw — screen position must move.
+  const a = worldToScreen(16, 0, 16, base);
+  const b = worldToScreen(16, 0, 16, { ...base, yaw: 90 });
   assert.notEqual(a.x, b.x);
+  assert.notEqual(a.y, b.y);
 });
 
 test('axis dirs point distinct screen directions', () => {
   const dirs = getAxisDirs(getAngleValues(30), 0);
   assert.ok(dirs.x.x > 0);
-  // +Y lowers isoY → screen Y increases with this projection.
-  assert.ok(dirs.y.y > 0);
+  // Engine convention: +Y raises isoY negative → smaller screen Y (toward top).
+  assert.ok(dirs.y.y < 0);
   assert.ok(dirs.z.x < 0);
+});
+
+test('worldToScreen Y matches engine (no extra flip)', () => {
+  const cam = {
+    panX: 0,
+    panY: 0,
+    zoom: 1,
+    vpW: 200,
+    vpH: 100,
+    angle: 30,
+    yaw: 0,
+  };
+  // Raising world Y should move toward the top of the canvas (smaller sy).
+  const ground = worldToScreen(0, 0, 0, cam);
+  const up = worldToScreen(0, 16, 0, cam);
+  assert.ok(up.y < ground.y);
 });
 
 test('extractGizmoEntities finds nexus with sibling transform only', () => {

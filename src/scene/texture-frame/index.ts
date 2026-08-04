@@ -263,9 +263,14 @@ export function mountTextureFrameTool(
       const tl = imageToScreen({ x: f.x, y: f.y }, cam);
       const br = imageToScreen({ x: f.x + f.w, y: f.y + f.h }, cam);
       const active = state.mode === 'framemap' && i === selected;
-      ctx.strokeStyle = active ? '#5ad' : 'rgba(255,220,80,0.75)';
+      const outline = active ? '#5ad' : 'rgba(255,220,80,0.75)';
+      const badgeBg = active
+        ? 'rgba(85,170,221,0.5)'
+        : 'rgba(255,220,80,0.5)';
+      ctx.strokeStyle = outline;
       ctx.lineWidth = active ? 2 : 1;
       ctx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+      drawFrameIndexBadge(ctx, i, br.x, tl.y, badgeBg);
       if (active) {
         const handles = handlePositions(f, cam);
         ctx.fillStyle = '#5ad';
@@ -528,4 +533,31 @@ export function mountTextureFrameTool(
     container.classList.remove('texture-frame-tool');
     container.replaceChildren();
   };
+}
+
+/** Index label anchored to the top-right of a frame outline. */
+function drawFrameIndexBadge(
+  ctx: CanvasRenderingContext2D,
+  index: number,
+  right: number,
+  top: number,
+  background: string,
+): void {
+  const label = String(index);
+  ctx.font = '10px ui-sans-serif, system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const padX = 3;
+  const padY = 1;
+  const metrics = ctx.measureText(label);
+  const tw = Math.ceil(metrics.width);
+  const th = 10;
+  const bw = tw + padX * 2;
+  const bh = th + padY * 2;
+  const bx = right - bw;
+  const by = top;
+  ctx.fillStyle = background;
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.fillStyle = '#000';
+  ctx.fillText(label, bx + padX, by + padY);
 }

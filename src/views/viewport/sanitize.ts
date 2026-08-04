@@ -6,21 +6,19 @@ import type { SerializedComponent, SerializedScene } from '../../omoscene';
 
 /** Types safe to run in the static/scrubbing authoring viewport. */
 export const AUTHORING_VISUAL_TYPES = new Set([
-  'nexus',
-  'transform',
-  'sprite',
-  'camera',
-  'viewport',
-  'light',
-  'cell-map',
-  'collider',
-  'event-collider',
-  'ui-overlay',
-  'texture-map',
   'atlas-manager',
-  'animation-controller',
+  'texture-map',
+  'cell-map',
+  'transform',
+  'nexus',
+  'sprite',
+  'light',
   'animation-map',
+  'viewport',
 ]);
+
+// Re-export strict display allowlist (same set — kept for import stability).
+export { AUTHORING_DISPLAY_TYPES } from './authoring-allowlist';
 
 /**
  * Deep-clone a scene region, dropping non-visual / logic components so the

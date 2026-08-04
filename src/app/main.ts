@@ -35,6 +35,11 @@ import {
   ANIMATION_TIMELINE_VIEW_ID,
 } from '../scene/animation-timeline';
 import {
+  getCellMaterialsHandle,
+  CELL_MATERIALS_VIEW_ID,
+} from '../scene/cell-materials';
+import { getCellVoxelPaintHandle } from '../scene/cell-voxel-paint';
+import {
   getTextureFrameHandle,
   TEXTURE_FRAME_VIEW_ID,
 } from '../scene/texture-frame';
@@ -69,6 +74,7 @@ import {
   type ProblemDiagnostic,
 } from '../views/problems';
 import { SCENE_TREE_VIEW_ID } from '../views/scene-tree';
+import { VIEWPORT_VIEW_ID } from '../views/viewport';
 import {
   TEXT_BUFFER_VIEW_ID,
   getEditorsHandle,
@@ -246,6 +252,14 @@ let openAnimationTimelineImpl: (componentId: number) => void = () => {
   // assigned after dock boots
 };
 
+let openCellMaterialsImpl: (componentId: number) => void = () => {
+  // assigned after dock boots
+};
+
+let openCellVoxelPaintImpl: (componentId: number) => void = () => {
+  // assigned after dock boots
+};
+
 registerEditorTool({
   id: 'texture-frame',
   open(ctx) {
@@ -267,6 +281,30 @@ registerEditorTool({
         : Number(ctx.componentId);
     if (!Number.isFinite(id)) return;
     openAnimationTimelineImpl(id);
+  },
+});
+
+registerEditorTool({
+  id: 'cell-materials',
+  open(ctx) {
+    const id =
+      typeof ctx.componentId === 'number'
+        ? ctx.componentId
+        : Number(ctx.componentId);
+    if (!Number.isFinite(id)) return;
+    openCellMaterialsImpl(id);
+  },
+});
+
+registerEditorTool({
+  id: 'cell-voxel-paint',
+  open(ctx) {
+    const id =
+      typeof ctx.componentId === 'number'
+        ? ctx.componentId
+        : Number(ctx.componentId);
+    if (!Number.isFinite(id)) return;
+    openCellVoxelPaintImpl(id);
   },
 });
 
@@ -425,11 +463,13 @@ registerShellViews(
     applyEditorCamera: (camera) => {
       const file = shellDocument.editorState.sceneDocument.get();
       if (!file) return;
-      shellDocument.replaceDocument(
+      // Persist editor.camera without broadcasting scene:load (avoids viewport rebuild).
+      shellDocument.editorState.sceneDocument.set(
         withEditorMetadata(file, { ...file.editor, camera }),
-        { dirty: true },
       );
+      shellDocument.editorState.dirty.set(true);
     },
+    registerPanel: (bridge) => shellDocument.registerPanel(bridge),
     resolveEngineVersion: async () => {
       const file = shellDocument.editorState.sceneDocument.get();
       if (file?.engine) return file.engine;
@@ -478,6 +518,32 @@ registerShellViews(
           source: 'viewport',
         },
       ]);
+    },
+    readImageDataUrl: async (relativePath) => {
+      const api = window.omosuen;
+      if (!api?.readDataUrl) return null;
+      try {
+        return await api.readDataUrl(relativePath);
+      } catch {
+        return null;
+      }
+    },
+  },
+  {
+    getDocument: () => shellDocument.editorState.sceneDocument.get(),
+    subscribeDocument: (cb) =>
+      shellDocument.editorState.sceneDocument.subscribe(() => cb()),
+    onDispatch: (msg) => {
+      shellDocument.dispatchFromHost(msg);
+    },
+    readImageDataUrl: async (relativePath) => {
+      const api = window.omosuen;
+      if (!api?.readDataUrl) return null;
+      try {
+        return await api.readDataUrl(relativePath);
+      } catch {
+        return null;
+      }
     },
   },
   {
@@ -694,6 +760,30 @@ async function boot(): Promise<void> {
     getAnimationTimelineHandle()?.open(componentId);
     shellState.data.statusMessage = `Animations — component ${componentId}`;
     appendOutput(`Opened animation-timeline tool for #${componentId}`, 'debug');
+  };
+  openCellMaterialsImpl = (componentId) => {
+    applyLayout(
+      insertView(
+        shellState.data.layout as DockLayout,
+        CELL_MATERIALS_VIEW_ID,
+        layoutIds,
+      ),
+    );
+    getCellMaterialsHandle()?.open(componentId);
+    shellState.data.statusMessage = `Materials — component ${componentId}`;
+    appendOutput(`Opened cell-materials tool for #${componentId}`, 'debug');
+  };
+  openCellVoxelPaintImpl = (componentId) => {
+    applyLayout(
+      insertView(
+        shellState.data.layout as DockLayout,
+        VIEWPORT_VIEW_ID,
+        layoutIds,
+      ),
+    );
+    getCellVoxelPaintHandle()?.open(componentId);
+    shellState.data.statusMessage = `Voxel paint — component ${componentId}`;
+    appendOutput(`Opened cell-voxel-paint for #${componentId}`, 'debug');
   };
   wireTeardown();
   await bootBridge(info);

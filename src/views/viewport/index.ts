@@ -1,16 +1,21 @@
 /**
- * Dockable authoring viewport — engine WebGL host + gizmo overlay (4a/4b).
+ * Dockable authoring viewport — engine WebGL host + gizmo overlay.
  *
- * Mounted into a `:preserve` dock host; canvas survives retab/split via
- * DockController.moveTo (same pattern as Monaco).
+ * Cold-boots on scene:load; incremental add/remove/move/update via
+ * DocumentController Bridge (no JSON.stringify full-reload path).
  */
 
+import type { Bridge } from '../../bridge/protocol-bridge';
 import type { EditorCameraState, OmosceneFile } from '../../omoscene';
 import { withEditorMetadata } from '../../omoscene';
 import type { EditorMessage } from '../../protocol';
+import {
+  getCellVoxelPaintHandle,
+  mountCellVoxelPaint,
+} from '../../scene/cell-voxel-paint';
+import { createAuthoringSyncBridge } from './authoring-sync';
 import { loadEngineUmd } from './engine-loader';
 import { mountGizmoOverlay, type GizmoOverlayHandle } from './gizmo-overlay';
-import { sceneStructureKey } from './entities';
 import {
   createAuthoringEngineSession,
   type AuthoringEngineSession,
@@ -31,6 +36,11 @@ export interface ViewportDeps {
   readonly onDispatch: (message: EditorMessage) => void;
   /** Persist editor.camera without treating it as a scene mutation. */
   readonly applyEditorCamera: (camera: EditorCameraState) => void;
+  /**
+   * Register the authoring sync Bridge with DocumentController so
+   * incremental protocol messages reach the live engine graph.
+   */
+  readonly registerPanel: (bridge: Bridge) => () => void;
   /** Prefer scene file engine; fall back to project pin / default. */
   readonly resolveEngineVersion: () => Promise<string>;
   readonly ensureEngine: (version: string) => Promise<{
@@ -38,6 +48,10 @@ export interface ViewportDeps {
     readonly umdUrl: string;
   }>;
   readonly readEngineUmd: (version: string) => Promise<string>;
+  /** Resolve workspace-relative images for texture-maps in the authoring scene. */
+  readonly readImageDataUrl?: (
+    relativePath: string,
+  ) => Promise<string | null>;
   /** Optional project manifest engine for mismatch warnings. */
   readonly getProjectEngineVersion?: () => Promise<string | null>;
   readonly onStatus?: (message: string) => void;
@@ -60,11 +74,12 @@ export function mountAuthoringViewport(
 
   let session: AuthoringEngineSession | null = null;
   let overlay: GizmoOverlayHandle | null = null;
+  let disposePaint: (() => void) | null = null;
+  let unsubPaint: (() => void) | null = null;
   let disposed = false;
   let bootGeneration = 0;
-  let lastStructureKey = '';
+  let lastSceneRegionKey = '';
   let lastLoadedVersion = '';
-  let lastScenePropsKey = '';
   let viewCamera: EditorCameraState = editorCameraFromUnknown(
     deps.getDocument()?.editor.camera,
   );
@@ -83,6 +98,9 @@ export function mountAuthoringViewport(
     }
   };
 
+  const sceneRegionKey = (file: OmosceneFile): string =>
+    `${file.engine}::${JSON.stringify(file.scene)}`;
+
   const syncViewCameraFromDocument = (): void => {
     const file = deps.getDocument();
     if (!file) return;
@@ -92,6 +110,16 @@ export function mountAuthoringViewport(
       session?.applyViewCamera(viewCamera);
       overlay?.refresh();
     }
+  };
+
+  const syncViewCameraFromEngine = (): void => {
+    const live = session?.readLiveViewCamera();
+    if (!live || camerasEqual(live, viewCamera)) return;
+    viewCamera = live;
+    suppressCameraPersist = true;
+    deps.applyEditorCamera(live);
+    suppressCameraPersist = false;
+    overlay?.refresh();
   };
 
   const ensureOverlay = (): void => {
@@ -115,98 +143,136 @@ export function mountAuthoringViewport(
     });
   };
 
-  const scenePropsKey = (file: OmosceneFile): string =>
-    // Cheap fingerprint of scene JSON values (structure + properties).
-    JSON.stringify(file.scene);
+  const ensurePaint = (): void => {
+    if (disposePaint || disposed) return;
+    disposePaint = mountCellVoxelPaint(container, {
+      getDocument: deps.getDocument,
+      subscribeDocument: deps.subscribeDocument,
+      getSelection: deps.getSelection,
+      subscribeSelection: deps.subscribeSelection,
+      onDispatch: deps.onDispatch,
+      applyLiveCell: (id, coord, cell) =>
+        session?.applyCellPaint(id, coord, cell) ?? null,
+      markPaintMutation: () => {
+        // Live sync applies packedData updates without reload.
+      },
+    });
+    unsubPaint =
+      getCellVoxelPaintHandle()?.subscribe(() => {
+        overlay?.updatePointerPolicy();
+        overlay?.refresh();
+      }) ?? null;
+  };
 
-  const applyDocument = async (forceBoot: boolean): Promise<void> => {
+  const coldBoot = async (file: OmosceneFile): Promise<void> => {
     const gen = ++bootGeneration;
-    const file = deps.getDocument();
-    if (!file) {
-      setStatus('No scene loaded', 'info');
-      overlay?.refresh();
-      return;
-    }
-
-    if (suppressCameraPersist) {
-      syncViewCameraFromDocument();
-      return;
-    }
-
-    const structureKey = sceneStructureKey(file);
-    const propsKey = scenePropsKey(file);
-    const structureChanged =
-      forceBoot || structureKey !== lastStructureKey || !session;
-    const propsChanged = propsKey !== lastScenePropsKey;
-
-    // Editor-metadata-only updates (camera / treeState / selection mirror).
-    if (!forceBoot && !structureChanged && !propsChanged && session) {
-      syncViewCameraFromDocument();
-      ensureOverlay();
-      overlay?.refresh();
-      return;
-    }
-
     try {
-      if (structureChanged || session?.loadedVersion !== lastLoadedVersion) {
-        setStatus(`Loading engine ${file.engine}…`, 'info');
-        const version = (await deps.resolveEngineVersion()) || file.engine;
-        if (disposed || gen !== bootGeneration) return;
+      setStatus(`Loading engine ${file.engine}…`, 'info');
+      const version = (await deps.resolveEngineVersion()) || file.engine;
+      if (disposed || gen !== bootGeneration) return;
 
-        await deps.ensureEngine(version);
-        if (disposed || gen !== bootGeneration) return;
+      await deps.ensureEngine(version);
+      if (disposed || gen !== bootGeneration) return;
 
-        const api = await loadEngineUmd(version, deps.readEngineUmd);
-        if (disposed || gen !== bootGeneration) return;
+      const api = await loadEngineUmd(version, deps.readEngineUmd);
+      if (disposed || gen !== bootGeneration) return;
 
-        if (!session || session.loadedVersion !== version) {
-          session?.dispose();
-          session = createAuthoringEngineSession(api, version, canvasHost);
-          overlay?.dispose();
-          overlay = null;
-        }
-
-        const projectEngine = deps.getProjectEngineVersion
-          ? await deps.getProjectEngineVersion()
-          : null;
-        const mismatch =
-          engineVersionMismatchWarning(file.engine, version) ??
-          (projectEngine
-            ? engineVersionMismatchWarning(file.engine, projectEngine)
-            : null);
-        if (mismatch) {
-          setStatus(mismatch, 'warn');
-        }
-
-        viewCamera = editorCameraFromUnknown(file.editor.camera);
-        session.loadScene(file.scene, viewCamera);
-        lastStructureKey = structureKey;
-        lastScenePropsKey = propsKey;
-        lastLoadedVersion = version;
-        const rect = canvasHost.getBoundingClientRect();
-        session.resize(rect.width, rect.height);
-        session.applyViewCamera(viewCamera);
-        if (!mismatch) {
-          setStatus(`Engine ${version}`, 'info');
-        }
-      } else if (session && propsChanged) {
-        viewCamera = editorCameraFromUnknown(file.editor.camera);
-        session.loadScene(file.scene, viewCamera);
-        lastScenePropsKey = propsKey;
-        const rect = canvasHost.getBoundingClientRect();
-        session.resize(rect.width, rect.height);
-        session.applyViewCamera(viewCamera);
-      } else {
-        syncViewCameraFromDocument();
+      if (!session || session.loadedVersion !== version) {
+        session?.dispose();
+        session = createAuthoringEngineSession(api, version, canvasHost, {
+          readImageDataUrl: deps.readImageDataUrl,
+          onCameraMoved: () => {
+            syncViewCameraFromEngine();
+          },
+        });
+        overlay?.dispose();
+        overlay = null;
       }
 
+      const projectEngine = deps.getProjectEngineVersion
+        ? await deps.getProjectEngineVersion()
+        : null;
+      const mismatch =
+        engineVersionMismatchWarning(file.engine, version) ??
+        (projectEngine
+          ? engineVersionMismatchWarning(file.engine, projectEngine)
+          : null);
+      if (mismatch) {
+        setStatus(mismatch, 'warn');
+      }
+
+      viewCamera = editorCameraFromUnknown(file.editor.camera);
+      await session.loadScene(file.scene, viewCamera);
+      if (disposed || gen !== bootGeneration) return;
+
+      lastSceneRegionKey = sceneRegionKey(file);
+      lastLoadedVersion = version;
+      const rect = canvasHost.getBoundingClientRect();
+      session.resize(rect.width, rect.height);
+      session.applyViewCamera(viewCamera);
       ensureOverlay();
+      ensurePaint();
+      overlay?.updatePointerPolicy();
       overlay?.refresh();
+      if (!mismatch) {
+        setStatus(`Engine ${version}`, 'info');
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setStatus(message, 'error');
     }
   };
+
+  const syncBridge = createAuthoringSyncBridge({
+    get api() {
+      if (!session) throw new Error('No authoring session');
+      return session.api;
+    },
+    getHandles: () => session?.getHandles() ?? null,
+    getDocument: deps.getDocument,
+    isSameSceneRegion: (file) =>
+      Boolean(session) &&
+      sceneRegionKey(file) === lastSceneRegionKey &&
+      session!.loadedVersion === lastLoadedVersion,
+    onSceneLoad: async (file) => {
+      await coldBoot(file);
+    },
+    onSelect: () => {
+      overlay?.updatePointerPolicy();
+      overlay?.refresh();
+    },
+    onDesync: (reason) => {
+      console.warn(`[authoring-sync] ${reason}`);
+      const file = deps.getDocument();
+      if (file) void coldBoot(file);
+    },
+  });
+
+  const safeBridge: Bridge = {
+    dispatch(msg) {
+      if (msg.kind === 'scene:load') {
+        if (
+          session &&
+          sceneRegionKey(msg.file) === lastSceneRegionKey &&
+          session.loadedVersion === lastLoadedVersion
+        ) {
+          syncViewCameraFromDocument();
+          overlay?.refresh();
+          return;
+        }
+        void coldBoot(msg.file);
+        return;
+      }
+      if (!session) return;
+      syncBridge.dispatch(msg);
+      overlay?.updatePointerPolicy();
+      overlay?.refresh();
+    },
+    onMessage: (listener) => syncBridge.onMessage(listener),
+    dispose: () => syncBridge.dispose(),
+  };
+
+  const unregisterPanel = deps.registerPanel(safeBridge);
 
   const observer = new ResizeObserver((entries) => {
     const entry = entries[0];
@@ -218,20 +284,31 @@ export function mountAuthoringViewport(
   observer.observe(canvasHost);
 
   ensureOverlay();
-  void applyDocument(true);
+  ensurePaint();
+
+  // Light document subscribe: camera metadata + overlay refresh only (no reload).
   const unsubDoc = deps.subscribeDocument(() => {
-    void applyDocument(false);
+    if (disposed || suppressCameraPersist) return;
+    syncViewCameraFromDocument();
+    overlay?.updatePointerPolicy();
+    overlay?.refresh();
   });
   const unsubSel = deps.subscribeSelection(() => {
+    overlay?.updatePointerPolicy();
     overlay?.refresh();
   });
 
   return () => {
     disposed = true;
     bootGeneration += 1;
+    unregisterPanel();
+    safeBridge.dispose();
     unsubDoc();
     unsubSel();
+    unsubPaint?.();
     observer.disconnect();
+    disposePaint?.();
+    disposePaint = null;
     overlay?.dispose();
     overlay = null;
     session?.dispose();

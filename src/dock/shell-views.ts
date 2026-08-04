@@ -30,6 +30,11 @@ import {
   type AnimationTimelineDeps,
 } from '../scene/animation-timeline';
 import {
+  mountCellMaterialsTool,
+  CELL_MATERIALS_VIEW_ID,
+  type CellMaterialsDeps,
+} from '../scene/cell-materials';
+import {
   mountTextureFrameTool,
   TEXTURE_FRAME_VIEW_ID,
   type TextureFrameDeps,
@@ -52,6 +57,7 @@ export function registerShellViews(
   viewportDeps: ViewportDeps,
   textureFrameDeps: TextureFrameDeps,
   animationTimelineDeps: AnimationTimelineDeps,
+  cellMaterialsDeps: CellMaterialsDeps,
 ): void {
   registry.register({
     id: SCENE_TREE_VIEW_ID,
@@ -98,5 +104,10 @@ export function registerShellViews(
     title: 'Animations',
     mount: (container) =>
       mountAnimationTimelineTool(container, animationTimelineDeps),
+  });
+  registry.register({
+    id: CELL_MATERIALS_VIEW_ID,
+    title: 'Materials',
+    mount: (container) => mountCellMaterialsTool(container, cellMaterialsDeps),
   });
 }

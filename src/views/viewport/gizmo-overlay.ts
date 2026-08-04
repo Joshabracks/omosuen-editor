@@ -10,9 +10,12 @@ import {
   componentUpdate,
   type EditorMessage,
 } from '../../protocol';
+import { getCellVoxelPaintHandle } from '../../scene/cell-voxel-paint';
+import { findComponentById } from '../../scene/mutation';
 import {
   getAngleValues,
   getAxisDirs,
+  screenToWorldOnPlane,
   worldToScreen,
   type OverlayCamera,
   type Vec3,
@@ -26,9 +29,7 @@ import {
   type ViewportOverlayModel,
 } from './capabilities';
 import {
-  createViewCameraController,
   editorCameraFromUnknown,
-  type ViewCameraController,
 } from './view-camera';
 
 const GIZMO_LENGTH = 64;
@@ -50,6 +51,11 @@ export interface GizmoOverlayHandle {
   readonly refresh: () => void;
   readonly resize: () => void;
   readonly dispose: () => void;
+  /**
+   * Toggle overlay hit-testing: auto when paint or translate gizmo is active,
+   * none otherwise so engine input-controller receives pan/zoom.
+   */
+  readonly updatePointerPolicy: () => void;
   /** Contribution-driven paint modes present in the current scene (4c / 6b hook). */
   readonly paintModes: () => readonly string[];
 }
@@ -84,15 +90,21 @@ export function mountGizmoOverlay(
     livePos: Vec3;
   } | null = null;
 
-  const viewController: ViewCameraController = createViewCameraController({
-    getCamera: () => deps.getViewCamera(),
-    setCamera: (cam) => {
-      deps.setViewCamera(cam);
-      schedule();
-    },
-    onCommit: (cam) => deps.onViewCameraCommit(cam),
-  });
-  const detachView = viewController.attach(canvas);
+  // Camera pan/zoom/orbit is owned by the engine input-controller (window
+  // target). Overlay only handles gizmos / paint / click-select.
+
+  const updatePointerPolicy = (): void => {
+    // Overlay handles gizmos / paint / click-select. Camera pan/zoom uses the
+    // engine input-controller on `window`, so keeping hit-testing on does not
+    // block middle-drag or wheel.
+    const paintActive = Boolean(getCellVoxelPaintHandle()?.active());
+    const hasTranslate = Boolean(
+      resolveTranslateSelection(entities, deps.getSelection()),
+    );
+    const needsHits =
+      paintActive || hasTranslate || drag !== null || entities.length > 0;
+    canvas.style.pointerEvents = needsHits ? 'auto' : 'none';
+  };
 
   const pointer = (event: PointerEvent): { x: number; y: number } => {
     const rect = canvas.getBoundingClientRect();
@@ -151,7 +163,14 @@ export function mountGizmoOverlay(
     ctx.clearRect(0, 0, cssW, cssH);
 
     if (overlayModel.showGrid) {
-      drawGrid(ctx, cam);
+      const paint = getCellVoxelPaintHandle();
+      const ms = paint?.active() ? paint.mapSize() : null;
+      const cs = paint?.active() ? paint.cellSize() : null;
+      if (ms && cs) {
+        drawCellMapGrid(ctx, cam, ms, cs, paint!.brushHeight());
+      } else {
+        drawGrid(ctx, cam);
+      }
     }
     drawOrigin(ctx, cam);
 
@@ -162,6 +181,16 @@ export function mountGizmoOverlay(
       drawLightHelper(ctx, cam, light);
     }
 
+    const paint = getCellVoxelPaintHandle();
+    const paintActive = Boolean(paint?.active());
+    if (paintActive) {
+      const target = paint!.brushTarget();
+      const cs = paint!.cellSize();
+      if (target && cs) {
+        drawCellHighlight(ctx, cam, target, cs);
+      }
+    }
+
     const selection = resolveTranslateSelection(entities, deps.getSelection());
     for (const entity of entities) {
       const selected =
@@ -169,7 +198,7 @@ export function mountGizmoOverlay(
         (selection.entity.nexusId === entity.nexusId ||
           selection.entity.transformId === entity.transformId);
       drawEntityLabel(ctx, cam, entity, selected);
-      if (selected && entity.translateEnabled) {
+      if (!paintActive && selected && entity.translateEnabled) {
         const sp = worldToScreen(
           entity.position.x,
           entity.position.y,
@@ -190,7 +219,29 @@ export function mountGizmoOverlay(
   };
 
   const onPointerDown = (event: PointerEvent): void => {
-    if (viewController.gesture()) return;
+    const paint = getCellVoxelPaintHandle();
+    if (paint?.active()) {
+      const cam = buildCamera();
+      if (cam && (event.button === 0 || event.button === 2)) {
+        const { x: mx, y: my } = pointer(event);
+        const cs = paint.cellSize();
+        const groundY = (cs?.y ?? 1) * paint.brushHeight();
+        paint.updateBrushFromWorld(screenToWorldOnPlane(mx, my, cam, groundY));
+      }
+      if (event.button === 0) {
+        event.preventDefault();
+        paint.place();
+        schedule();
+        return;
+      }
+      if (event.button === 2) {
+        event.preventDefault();
+        paint.erase();
+        schedule();
+        return;
+      }
+      return;
+    }
     if (event.button !== 0 || event.altKey) return;
     const cam = buildCamera();
     if (!cam) return;
@@ -228,10 +279,19 @@ export function mountGizmoOverlay(
   };
 
   const onPointerMove = (event: PointerEvent): void => {
-    if (viewController.gesture()) return;
     const cam = buildCamera();
     if (!cam) return;
     const { x: mx, y: my } = pointer(event);
+
+    const paint = getCellVoxelPaintHandle();
+    if (paint?.active()) {
+      const cs = paint.cellSize();
+      const groundY = (cs?.y ?? 1) * paint.brushHeight();
+      const world = screenToWorldOnPlane(mx, my, cam, groundY);
+      paint.updateBrushFromWorld(world);
+      schedule();
+      return;
+    }
 
     if (drag) {
       const dirs = getAxisDirs(getAngleValues(cam.angle), cam.yaw);
@@ -289,9 +349,50 @@ export function mountGizmoOverlay(
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (viewController.handleKeyDown(event)) {
-      event.preventDefault();
+    const paint = getCellVoxelPaintHandle();
+    if (paint?.active()) {
+      if (event.key === 't' || event.key === 'T') {
+        event.preventDefault();
+        paint.close();
+        schedule();
+        return;
+      }
+      if (
+        event.key === 'q' ||
+        event.key === 'Q' ||
+        event.key === '-' ||
+        event.key === '_'
+      ) {
+        event.preventDefault();
+        paint.setBrushHeight(paint.brushHeight() - 1);
+        schedule();
+        return;
+      }
+      if (
+        event.key === 'e' ||
+        event.key === 'E' ||
+        event.key === '+' ||
+        event.key === '='
+      ) {
+        event.preventDefault();
+        paint.setBrushHeight(paint.brushHeight() + 1);
+        schedule();
+        return;
+      }
+    } else if (
+      (event.key === 't' || event.key === 'T') &&
+      overlayModel.paintModes.includes('paint.cell-map')
+    ) {
+      const file = deps.getDocument();
+      const cellMapId = resolveSelectedCellMapId(file, deps.getSelection());
+      if (cellMapId !== null && paint) {
+        event.preventDefault();
+        paint.open(cellMapId);
+        schedule();
+        return;
+      }
     }
+    // Camera keys are owned by the engine EditorCam input-controller.
   };
 
   canvas.addEventListener('pointerdown', onPointerDown);
@@ -299,18 +400,27 @@ export function mountGizmoOverlay(
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerUp);
   canvas.addEventListener('keydown', onKeyDown);
+  canvas.addEventListener('contextmenu', (e) => {
+    if (getCellVoxelPaintHandle()?.active()) e.preventDefault();
+  });
 
   refreshEntities();
+  updatePointerPolicy();
   schedule();
 
   return {
     refresh() {
       if (disposed) return;
       refreshEntities();
+      updatePointerPolicy();
       schedule();
     },
     resize() {
       schedule();
+    },
+    updatePointerPolicy() {
+      if (disposed) return;
+      updatePointerPolicy();
     },
     paintModes() {
       return overlayModel.paintModes;
@@ -318,7 +428,6 @@ export function mountGizmoOverlay(
     dispose() {
       disposed = true;
       if (raf) cancelAnimationFrame(raf);
-      detachView();
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
@@ -350,6 +459,116 @@ function drawGrid(ctx: CanvasRenderingContext2D, cam: OverlayCamera): void {
     ctx.stroke();
   }
   ctx.restore();
+}
+
+function drawCellMapGrid(
+  ctx: CanvasRenderingContext2D,
+  cam: OverlayCamera,
+  mapSize: { x: number; y: number; z: number },
+  cellSize: { x: number; y: number; z: number },
+  brushHeight: number,
+): void {
+  const y = brushHeight * cellSize.y;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(142, 188, 58, 0.35)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= mapSize.x; x += 1) {
+    const a = worldToScreen(x * cellSize.x, y, 0, cam);
+    const b = worldToScreen(x * cellSize.x, y, mapSize.z * cellSize.z, cam);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  for (let z = 0; z <= mapSize.z; z += 1) {
+    const a = worldToScreen(0, y, z * cellSize.z, cam);
+    const b = worldToScreen(mapSize.x * cellSize.x, y, z * cellSize.z, cam);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawCellHighlight(
+  ctx: CanvasRenderingContext2D,
+  cam: OverlayCamera,
+  coord: { x: number; y: number; z: number },
+  cellSize: { x: number; y: number; z: number },
+): void {
+  const x0 = coord.x * cellSize.x;
+  const y0 = coord.y * cellSize.y;
+  const z0 = coord.z * cellSize.z;
+  const x1 = x0 + cellSize.x;
+  const y1 = y0 + cellSize.y;
+  const z1 = z0 + cellSize.z;
+  const corners = [
+    worldToScreen(x0, y0, z0, cam),
+    worldToScreen(x1, y0, z0, cam),
+    worldToScreen(x1, y0, z1, cam),
+    worldToScreen(x0, y0, z1, cam),
+    worldToScreen(x0, y1, z0, cam),
+    worldToScreen(x1, y1, z0, cam),
+    worldToScreen(x1, y1, z1, cam),
+    worldToScreen(x0, y1, z1, cam),
+  ];
+  const edges: Array<[number, number]> = [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 0],
+    [4, 5],
+    [5, 6],
+    [6, 7],
+    [7, 4],
+    [0, 4],
+    [1, 5],
+    [2, 6],
+    [3, 7],
+  ];
+  ctx.save();
+  ctx.strokeStyle = 'rgba(142, 188, 58, 0.95)';
+  ctx.lineWidth = 2;
+  for (const [a, b] of edges) {
+    const p = corners[a]!;
+    const q = corners[b]!;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(q.x, q.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function resolveSelectedCellMapId(
+  file: OmosceneFile | null,
+  selection: readonly number[],
+): number | null {
+  if (!file || selection.length === 0) return null;
+  for (const id of selection) {
+    const comp = findComponentById(file.scene, id);
+    if (comp?.type === 'cell-map' && typeof comp.id === 'number') return comp.id;
+  }
+  // Selection may be a child under a nexus that also has a cell-map sibling —
+  // walk from root for the first cell-map when paint mode is available.
+  return findFirstCellMapId(file.scene);
+}
+
+function findFirstCellMapId(
+  root: { type: string; id?: number; components?: readonly unknown[] },
+): number | null {
+  if (root.type === 'cell-map' && typeof root.id === 'number') return root.id;
+  const children = Array.isArray(root.components) ? root.components : [];
+  for (const child of children) {
+    if (typeof child === 'object' && child !== null) {
+      const hit = findFirstCellMapId(
+        child as { type: string; id?: number; components?: readonly unknown[] },
+      );
+      if (hit !== null) return hit;
+    }
+  }
+  return null;
 }
 
 function drawOrigin(ctx: CanvasRenderingContext2D, cam: OverlayCamera): void {
